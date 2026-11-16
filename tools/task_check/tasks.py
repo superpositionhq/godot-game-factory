@@ -1,0 +1,304 @@
+"""Tasks as the checker reads them: GameTask JSON (docs/schemas/game-task.schema.json) from a game repo's orphan `tasks`
+branch (`tasks`, else `origin/tasks`: Tasks/<name>.json), checked against the schema and the rules the schema can't
+say (tools/validate-game.py), and their checks with the schema's defaults filled in, so the rest of the checker reads
+plain dicts: every check has `required`, `weight` and `needs`; a probe's measure has every optional field (None when
+unset, `of` "count"); points, selections and task plays have their defaults (an object point's `offset`, a teleport's
+`yaw`). Units are metres, Y is up."""
+
+import hashlib
+import importlib.util
+import json
+import os
+import subprocess
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TOOLS = os.path.dirname(HERE)
+REFS = ("tasks", "origin/tasks")  # where a game's tasks live (validate-game.py TASKS_REFS)
+STILL_WORKS = "still_works"  # the milestone of what a task must leave working (godot-write-tasks section 5)
+SAMPLED = ("player", "camera", "objects", "widgets", "components", "screen", "spawns", "audio", "ui", "render")
+AUDIO_STARTED = ("started",)  # counted per sample's interval, summed by default (as spawns)
+WHOLE_SCREEN = [0.0, 0.0, 1.0, 1.0]
+ANGLES = ("yaw", "pitch", "roll", "world_yaw", "world_pitch")  # world_yaw, world_pitch: components fields
+ANGLE_PREFIXES = ("rel_yaw:", "world_yaw:", "world_pitch:", "world_roll:")
+ZERO = [0.0, 0.0, 0.0]
+_validator = None
+
+
+def validator():
+    """tools/validate-game.py as a module (its JSON Schema subset and the task rules beyond the schema)."""
+    global _validator
+    if _validator is None:
+        spec = importlib.util.spec_from_file_location("validate_game", os.path.join(TOOLS, "validate-game.py"))
+        _validator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_validator)
+    return _validator
+
+
+def problems(task):
+    """What makes `task` (a dict) unreadable for the checker: schema errors and the rules beyond the schema."""
+    v = validator()
+    found = list(v.check_schema(task, v.SCHEMAS["game-task"]))
+    if not found:
+        found += v.task_semantic_errors(task)
+    return found
+
+
+def git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
+
+
+def tasks_ref(repo):
+    """The repo's tasks branch (`tasks`, else `origin/tasks`), or None."""
+    return next((r for r in REFS if git(repo, "rev-parse", "--verify", "-q", r + "^{commit}").returncode == 0), None)
+
+
+def read_tasks(repo):
+    """(ref, {name: (task dict or None, raw bytes, why unreadable or None)}) of every Tasks/<name>.json on the tasks
+    branch."""
+    ref = tasks_ref(repo)
+    if ref is None:
+        return None, {}
+    listing = git(repo, "-c", "core.quotepath=off", "ls-tree", "--name-only", ref + ":Tasks").stdout
+    out = {}
+    for name in listing.decode("utf-8", "replace").splitlines():
+        if not name.endswith(".json"):
+            continue
+        stem = name[:-len(".json")]
+        shown = git(repo, "show", f"{ref}:Tasks/{name}")
+        if shown.returncode != 0:
+            out[stem] = (None, b"", f"cannot read Tasks/{name} on {ref}")
+            continue
+        try:
+            data = json.loads(shown.stdout.decode("utf-8-sig"))
+        except ValueError as e:
+            out[stem] = (None, shown.stdout, f"Tasks/{name} is not JSON ({e})")
+            continue
+        out[stem] = (data, shown.stdout, None)
+    return ref, out
+
+
+def digest(raw):
+    """The task file's sha256 (a result names the version of the task it checked)."""
+    return hashlib.sha256(raw).hexdigest()
+
+
+# -- defaults -----------------------------------------------------------------------------------------------------------
+
+
+def _floats(values):
+    return [float(v) for v in values]
+
+
+def point(p):
+    """A point with its defaults: {"xyz"}, {"player", "offset"}, {"camera", "forward"}, {"object", "offset"}."""
+    if "xyz" in p:
+        return {"xyz": _floats(p["xyz"])}
+    if "player" in p:
+        return {"player": True, "offset": _floats(p.get("offset", ZERO))}
+    if "camera" in p:
+        return {"camera": True, "forward": float(p.get("forward", 0.0))}
+    return {"object": select(p["object"]), "offset": _floats(p.get("offset", ZERO))}
+
+
+def near(n):
+    """A `near` with its point filled in, its radius and its height band (`y_min`, `y_max` as numbers, `y_relative`)
+    only where set, as written."""
+    out = {"point": point(n["point"]), "radius": float(n["radius"])}
+    for k in ("y_min", "y_max"):
+        if n.get(k) is not None:
+            out[k] = float(n[k])
+    if n.get("y_relative") is not None:
+        out["y_relative"] = n["y_relative"]
+    return out
+
+
+def select(s):
+    """An object, widget or component selection as written, without unset keys, its `near`, `owner` and `has` filled
+    in."""
+    out = {}
+    for k, v in s.items():
+        if v is None:
+            continue
+        if k == "near":
+            out[k] = near(v)
+        elif k in ("owner", "has"):
+            out[k] = select(v)
+        else:
+            out[k] = v
+    return out
+
+
+def measure(m):
+    """A probe's measure with every optional field: window, at, agg, to_angle, to_axis (None when unset), `of`
+    ("count") for selections, `field` ("count") for the log, a player measure's `to` with its defaults, a screen
+    measure's `rect` (the whole frame when unset), an audio measure's `select` ({} when unset), and a ui measure's
+    `select` ({} when unset), `of` ("count") and `match` (None)."""
+    out = dict(m)
+    kind = out["probe"]
+    if kind in SAMPLED:
+        for k in ("window", "at", "agg", "to_angle", "to_axis"):
+            out.setdefault(k, None)
+        if kind in ("objects", "widgets", "components"):
+            out.setdefault("of", "count")
+            out.setdefault("match", None)
+            out["select"] = select(out["select"])
+        if kind == "player":
+            out["to"] = point(out["to"]) if out.get("to") is not None else None
+        if kind == "screen":
+            out["rect"] = _floats(out.get("rect") or WHOLE_SCREEN)
+        if kind == "audio":
+            out["select"] = select(out.get("select") or {})
+        if kind == "ui":
+            out.setdefault("of", "count")
+            out.setdefault("match", None)
+            out["select"] = select(out.get("select") or {})
+    elif kind == "log":
+        out.setdefault("field", "count")
+    return out
+
+
+def spot(value):
+    """A touch's place as the probe reads it: a point of the screen [fx, fy], or {"widget": name}."""
+    return {"widget": value["widget"]} if isinstance(value, dict) else _floats(value)
+
+
+def inputs(rows):
+    """A task play's inputs as the probe reads them: keys, axes, clicks, cursor moves, teleports (`yaw` 0 when unset:
+    a teleport always turns the player), teleports next to an object (`distance` 2 m and `offset` 0 when unset, `face`
+    only when set), either with `hold` only when set, waits in real time, named shots, scene loads, view turns, and
+    touches (`tap`, `drag`: `finger` 0 unless said, `hold` and `over` only when set)."""
+    out = []
+    for r in rows or []:
+        row = {"t": float(r["t"])}
+        if "teleport_to" in r:
+            row.update(teleport_to=select(r["teleport_to"]), distance=float(r.get("distance", 2.0)),
+                       offset=_floats(r.get("offset", ZERO)))
+            if r.get("face") is not None:
+                row["face"] = point(r["face"])
+        elif "teleport" in r:
+            row.update(teleport=_floats(r["teleport"]), yaw=float(r.get("yaw", 0.0)))
+        elif "wait" in r:
+            row.update(wait=float(r["wait"]))
+        elif "shot" in r:
+            row.update(shot=r["shot"])
+        elif "scene" in r:
+            row.update(scene=r["scene"])
+        elif "view" in r:
+            row.update(view=_floats(r["view"]))
+        elif "tap" in r:
+            row.update(tap=spot(r["tap"]), finger=int(r.get("finger", 0)))
+            if r.get("hold") is not None:
+                row["hold"] = float(r["hold"])
+        elif "drag" in r:
+            row.update(drag=[spot(x) for x in r["drag"]], finger=int(r.get("finger", 0)))
+            for k in ("over", "hold"):
+                if r.get(k) is not None:
+                    row[k] = float(r[k])
+        elif "cursor" in r:
+            row.update(cursor=_floats(r["cursor"]))
+        elif "widget" in r:
+            row.update(widget=r["widget"], click=True)
+        elif "axis" in r:
+            row.update(key=r["key"], axis=float(r["axis"]))
+        else:
+            row.update(key=r["key"], press=bool(r["press"]))
+        if r.get("hold") is not None and ("teleport" in r or "teleport_to" in r):
+            row["hold"] = float(r["hold"])
+        out.append(row)
+    return out
+
+
+def waited(p):
+    """The real seconds a play's waits add to it (0 for the checker's own plays)."""
+    return sum(i["wait"] for i in p["inputs"] if "wait" in i) if isinstance(p, dict) else 0.0
+
+
+def play(p):
+    """A check's play: "look", "drive", or a task play with its defaults (inputs, every). Its own `scene` and `args`
+    are kept only when the task play has the key: a key that is there takes the place of the task's play_scene /
+    play_args (a `"scene": null` opens the project's main scene), one that isn't leaves them (place)."""
+    if isinstance(p, str):
+        return p
+    out = {"name": p["name"], "seconds": int(p["seconds"]), "inputs": inputs(p.get("inputs")),
+           "every": float(p["every"]) if p.get("every") is not None else None}
+    if "scene" in p:
+        out["scene"] = p["scene"]
+    if "args" in p:
+        out["args"] = list(p["args"] or [])
+    return out
+
+
+def place(task, p):
+    """(scene, args) a play opens: a task play's own `scene` / `args` where it has the key, else the task's play_scene
+    (a `res://` scene path; None: the project's main scene) and play_args."""
+    scene, args = task.get("play_scene"), list(task.get("play_args") or [])
+    if isinstance(p, dict):
+        scene = p["scene"] if "scene" in p else scene
+        args = list(p["args"]) if "args" in p else args
+    return scene, args
+
+
+def player(task):
+    """The task's `player` (an object select naming the player object for every play), filled in, or None (the probe
+    finds the player itself)."""
+    return select(task["player"]) if task.get("player") is not None else None
+
+
+def check(c):
+    """A check with `required` (True), `weight` (1) and `needs` ([]); a probe's play and measure with their
+    defaults."""
+    out = dict(c)
+    out.setdefault("required", True)
+    out.setdefault("weight", 1)
+    out.setdefault("needs", [])
+    if out.get("kind") == "build":
+        out.setdefault("fails_at_start", False)
+    if out.get("kind") == "boot":
+        out.setdefault("seconds", 60)
+    if out.get("kind") == "file_exists":
+        out.setdefault("min_count", 1)
+    if out.get("kind") == "probe":
+        out["play"] = play(out["play"])
+        out["measure"] = measure(out["measure"])
+    return out
+
+
+def checks(task):
+    """Every check of `task`, in order, each with its milestone's name: [(group, check)]."""
+    return [(m["name"], check(c)) for m in task["milestones"] for c in m["checks"]]
+
+
+def play_name(c):
+    return c["play"] if isinstance(c["play"], str) else c["play"]["name"]
+
+
+def relative(c):
+    """How a probe's threshold depends on the start: "calibrate", "start" (start_times / start_plus) or None."""
+    expect = c["expect"]
+    if "calibrate" in expect:
+        return "calibrate"
+    return "start" if "start_times" in expect or "start_plus" in expect else None
+
+
+def is_angle(field, turn=None):
+    """Whether a measure's field is an angle (degrees, normalised to (-180, 180]): yaw, pitch, roll, rel_yaw:,
+    world_yaw:, world_pitch:, world_roll:, components' world_yaw and world_pitch, and a reflected property (prop:) a
+    probe compares with to_angle / to_axis."""
+    return field in ANGLES or field.startswith(ANGLE_PREFIXES) or \
+        (turn is not None and field.startswith("prop:"))
+
+
+def fails_at_start(task):
+    """The task's build check that says its start doesn't build (making it build is the task), or None."""
+    return next((c for _, c in checks(task) if c["kind"] == "build" and c["fails_at_start"]), None)
+
+
+def gating(task):
+    """The names of the task's required probes."""
+    return {c["name"] for _, c in checks(task) if c["kind"] == "probe" and c["required"]}
+
+
+def still_works(task):
+    """The names of the required probes of the task's still_works milestone."""
+    required = gating(task)
+    return {c["name"] for group, c in checks(task) if group == STILL_WORKS and c["name"] in required}

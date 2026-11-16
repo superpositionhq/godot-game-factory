@@ -1,0 +1,116 @@
+# Task try: run a task with a coding agent (internal)
+
+**Contractors don't run this**: it takes up to 25 minutes a task and more. Judge a task's difficulty in the game
+session instead (godot-write-tasks skill, section 6). We run the try on submitted tasks.
+
+The task check ([task-check.md](task-check.md)) proves a task is fair: the start fails it and the reference passes.
+The task try tells you whether it is hard enough. It gives the task to your own coding agent, Claude Code or Codex on
+your own subscription, exactly as an agent gets it in the cloud, then grades what the agent left with the task's own
+probes. Every task must be a long thread of multiple edits (godot-write-tasks skill, section 1); if your agent solves
+it easily, the task isn't done yet.
+
+```powershell
+python tools\task-try.py %GGF_ROOT%\games\<slug> --task <task-name> --agent claude
+python tools\task-try.py %GGF_ROOT%\games\<slug> --task <task-name> --agent codex --runs 3
+python tools\task-try.py %GGF_ROOT%\games\<slug> --task %GGF_ROOT%\tasks\<slug>\Tasks\<task-name>.json --agent claude
+```
+
+Each task prints one line, for example:
+
+```
+0/3 solved  stealth-fix-guards-lose-the-player  (best 4/7 required checks)
+2/3 solved  rally-racer-corr-chase-camera  (best 7/7 required checks)
+```
+
+Options: `--runs N` (default 1), `--model M` (the harness's model; default its own), `--agent-arg ARG` (an extra
+argument for the harness, repeatable), `--keep` (keep the workspaces; the start's and the reference's copies go
+before an agent starts), `--out DIR`, `--scratch DIR`, `--direct`, `--timeout S`, `--build-timeout S` (as the task
+check's).
+
+## Before you run it
+
+- The task check says VALID (`tools/task-check.py`). The try builds the start and the reference too, but tells you
+  nothing useful about a task that isn't valid.
+- `claude` or `codex` is on PATH and logged in (run it once by hand). The try runs it headless: Claude Code with
+  `-p --permission-mode bypassPermissions` and its hooks off, Codex with `exec -s danger-full-access`; the agent can
+  run anything on your computer, as a game session can.
+- Requirements as the task check's: Windows with the factory's Godot 4.7 and a desktop session, Python 3.12, git and
+  Git LFS with both commits' objects fetched. Disk: one full copy of the game per run (the agent edits it, so it
+  can't be a hardlink) with its own `.godot/`, plus the start and the reference built once.
+- Time: the agent gets the task's `limits.max_minutes` (Claude Code also its `max_turns`), then one build and the
+  plays per run. The grade starts without the agent's `.godot/`, so it imports every asset again. A long thread can
+  take hours per run; start it before you leave the machine.
+- Ctrl+C stops the agent, everything it started and every Godot job of the try, and deletes the try's folder (unless
+  `--keep`). A workspace kept with `--keep` stays where a later try's agent could reach it, and with `--runs` above 1
+  a later run's agent could read an earlier run's: delete kept workspaces when you are done.
+
+## What it does
+
+1. Builds and measures the start and the reference once, as the task check does, for the probes' thresholds, and
+   deletes both copies before the first agent starts: the reference is the answer, and it would lie two folders above
+   the agent's workspace. If a threshold can't be measured at all (the checker's own error while it plays the start
+   or the reference, not a probe that is merely uncalibrated), the try ends in ERROR before any agent starts: run
+   `task-check.py` on the task first.
+2. Per run, copies the game at `seed.commit` into a workspace `<drive>:\.task-try\<id>\run<N>\<game>`: every file of
+   that commit without `Tasks/`, `History/`, `Dataset/` or `Dataset.zip`, in a fresh git repository with one commit.
+   The workspace is outside the machine root, the game repo and its other worktrees, so the harness reads none of
+   their `AGENTS.md` or `CLAUDE.md`, and outside the results folder, where the start's and the reference's plays are:
+   a `--scratch` inside one of them, or with the results folder inside it, is refused with what to pass instead.
+3. Starts the harness in the workspace with the brief as its prompt: the task's instruction, the scene and arguments
+   QA plays (`play_scene`, `play_args`) and where the Godot editor is. Nothing of the grader's half. The machine's
+   recording hooks record nothing for it (`GGF_NO_RECORDING`, and `UGF_NO_RECORDING` and `GF_NO_RECORDING` for
+   another factory's hooks that the machine may also have), so a try never enters a game's record. Its environment
+   has no `GGF_ROOT`, `GGF_CONFIG`, `GGF_OUT` or `GGF_ORG` (they point at the machine root, the deliverables and the
+   game repos), and the settings file that turns Claude Code's hooks off lies in the try's own folder, so the agent's
+   command line names no path into the game repo.
+4. When the agent stops (or its time runs out), stops whatever it left running in the workspace (an editor or a
+   game: any process whose command line names the workspace), removes the build outputs (`.godot/`, `Build/`,
+   `Logs/`, `android/`: besides the import cache, `.godot/` holds the agent's editor state, which a game's files never
+   carry), adds the task probe as `addons/task_probe/`, builds it afresh and plays the agent's game (on a desktop of
+   its own, as the task check's plays) and runs every check but judges and packaging, against the thresholds of
+   step 1.
+5. Plays each `judge` check's plays on the agent's game and saves the screenshots the cloud's judge would be shown
+   under `<task>\run<N>\judge-shots\<check>\agent\`, with `ask.md` ([task-check.md](task-check.md), VALID and
+   INVALID). No model is asked: the run's number leaves judges out, and the result lists them in `judges_pending`.
+   `--no-judge-shots` skips this.
+
+Results: `<repo>\.task-tries\<task>.json` (format `task-try/1`): per run `solved` (every required check passed),
+`score` (the weighted share of checks passed, as the cloud scores it, judges left out), `required_passed` of
+`required`, `milestones` reached, `seconds`, `timed_out`, `turns` and `usd` when the harness reports them, the
+`checks` rows, `peeked`, and `why` when the agent's game couldn't be graded at all (it moved the project off Godot
+4.7, removed or relinked the workspace or left a link (a symbolic link or a junction) anywhere among the game's
+files, since the grade would write through it (`<path> is now a link to <target>: not graded`; the build outputs and
+`.git` aren't looked into), or its build stopped with no word about the game, twice with no script error or at its
+time limit: the `why` then names the build log kept under `<task>\run<N>\build\`); `status` is `DONE`, or `ERROR`
+with its `reasons` when the try couldn't run (the line then reads `ERROR   <task>: ...`, for example a start or
+reference that doesn't build: run the task check first). A task that doesn't validate gets a result file only when
+its name has a task name's form; otherwise only its printed line. Each run's transcript is
+`<task>\run<N>\transcript.jsonl`, its plays beside it, and the brief the agent read `<task>\brief.md`; the start's and
+the reference's plays are in `<task>\start\` and `<task>\reference\`, as the task check keeps them.
+
+## Reading the result
+
+- **Longest run under 25 minutes:** shorter than the guide (about 25 minutes or more). It's a guide, not a
+  requirement: a task the agent doesn't solve is a good task at any length. The printed line notes it. A run that hit
+  its own time limit or crashed says nothing about length.
+- **`judges_pending` lists a check:** look at its pictures and answer `ask.md` before you call the task too easy or
+  held. A run that passes every probe but fails a required judge isn't solved.
+- **Solved in any run, quickly:** too easy. Extend the thread back to an earlier attempt, merge it with its
+  neighbouring issues, or drop it (godot-write-tasks section 6).
+- **Never solved, but some required checks pass:** what a hard task looks like. Read the transcript: the agent should
+  fail because the work is long and the cause is far away, not because the brief is missing something a player would
+  know or the play scene is wrong.
+- **Nothing passes, not even the build:** check the agent could run the game at all (the transcript); an agent that
+  never found the editor says nothing about the task.
+- **`peeked` lists a folder** (the printed line: `transcript names ...: it may have read the answer`): the transcript
+  names your game repo or another of its worktrees (the tasks worktree: the history and the answer), the try's
+  results folder (the start's and the reference's plays), the machine root or your agent's own folders (`~\.claude`,
+  `~\.codex`, `~\.agents`: its sessions, memory and skills), as a whole name (`~\.claude` is not `~\.claude.json`), in
+  any spelling a shell gives them (`C:\...`, `C:/...`, `/c/...`, `~/...`, `$HOME`, `$USERPROFILE`,
+  `$env:USERPROFILE`, `%USERPROFILE%`). That run doesn't count: the cloud agent can't reach them. Run it again, or
+  from an account that can't read those folders. A relative path or a variable the agent read isn't seen, so a run
+  without `peeked` is no proof it stayed inside.
+
+The try is advice for you. The cloud's own runs and grade decide approval and difficulty. Codex runs with a home of
+its own (your login, every skill off), but Claude Code also has your own harness settings, skills and memory, which
+the cloud agent doesn't; keep them out of its way when you can.
