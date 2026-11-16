@@ -798,8 +798,8 @@ def denied_play_args(args):
 
 # fields whose threshold is never a literal: how bright a light, how big a component's bounds, how loud a sound and
 # how fast a part spins depend on what a build chose (docs/task-probes.md)
-NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'spin'), 'objects': ('spin',),
-                 'audio': ('volume', 'max_volume', 'level')}
+NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'glow', 'spin'),
+                 'objects': ('glow', 'spin'), 'audio': ('volume', 'max_volume', 'level')}
 AUDIO_NAMED = ('sounds', 'repeats')   # read from the names of the streams that started, over the whole window
 UI_SIGNATURE_AGGS = ('changes', 'any', 'all', 'count')  # a ui signature's value means nothing; whether it changes does
 WAITS = 300   # seconds of real time a task play's waits add at most
@@ -925,6 +925,38 @@ def task_play_errors(n, play, plays):
     return errs
 
 
+def captures(value):
+    """Whether a measure or a play's inputs can make the probe draw a view of its own: an objects or components
+    measure of `lit` or `glow` (a part whose light only a drawing tells is drawn alone), or a select anywhere in it
+    with `has.lit`."""
+    if isinstance(value, dict):
+        if value.get('probe') in ('objects', 'components') and value.get('field') in ('lit', 'glow'):
+            return True
+        if isinstance(value.get('has'), dict) and value['has'].get('lit') is True:
+            return True
+        return any(captures(v) for v in value.values())
+    return isinstance(value, list) and any(captures(v) for v in value)
+
+
+def render_errors(checks):
+    """A play that takes a render measure (draw calls, triangles) takes no reading that makes the probe render
+    (`captures`): the counts would hold the probe's own renders, and a budget a correct game keeps could read as
+    broken. A budget check gets a play of its own (docs/task-probes.md, section 2.20)."""
+    reads, capturing = set(), {}
+    for c in checks:
+        if c.get('kind') != 'probe' or not isinstance(c.get('measure'), dict):
+            continue
+        play = c.get('play')
+        name = play if isinstance(play, str) else (play.get('name') if isinstance(play, dict) else None)
+        if c['measure'].get('probe') == 'render':
+            reads.add(name)
+        if captures(c['measure']) or (isinstance(play, dict) and captures(play.get('inputs'))):
+            capturing.setdefault(name, c.get('name'))
+    return [f'play {name} takes a render measure and also makes the probe render (check {capturing[name]}: a lit or '
+            'glow reading, or a select with has.lit): give the render measure a play with none of them'
+            for name in sorted(x for x in reads & set(capturing) if x)]
+
+
 def probe_errors(c, seed, ref, plays):
     """A probe check's rules beyond the schema (docs/task-probes.md):
     a task play is not named look/drive, has no input at or after its end, sets no flag of the checker's own, and
@@ -1004,7 +1036,8 @@ def task_semantic_errors(t):
     object the player is) and the probe rules (probe_errors); a task whose start doesn't build (a build check's
     `fails_at_start`) has nothing that needs the start played: no start-relative threshold, no before/after judge
     (docs/task-probes.md, 3.1); and a task play's `after` names task plays of the task, never itself, in no cycle
-    (play_after_errors)."""
+    (play_after_errors); and a play that takes a render measure takes no reading that makes the probe render
+    (render_errors)."""
     errs, seen, plays = [], set(), {}
     seed = t.get('seed') if isinstance(t.get('seed'), dict) else None
     ref = seed.get('reference') if seed else None
@@ -1064,7 +1097,7 @@ def task_semantic_errors(t):
             if missing:
                 errs.append(f'check {n} needs {missing}, which come later or do not exist')
             seen.add(n)
-    return errs + play_after_errors(checks)
+    return errs + play_after_errors(checks) + render_errors(checks)
 
 
 def play_after_errors(checks):

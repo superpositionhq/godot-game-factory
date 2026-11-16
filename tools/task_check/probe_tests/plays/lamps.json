@@ -1,0 +1,19 @@
+{
+  "seconds": 4,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/Lamps.tscn",
+  "inputs": [
+    {"t": 2.0, "key": "<Keyboard>/l", "press": true},
+    {"t": 2.1, "key": "<Keyboard>/l", "press": false}
+  ],
+  "queries": [
+    {"id": "lamps", "kind": "objects", "select": {"tag": "lamp", "inactive": true}, "fields": ["glow", "lit"]},
+    {"id": "lit", "kind": "objects", "select": {"tag": "lamp", "has": {"lit": true}}, "fields": []},
+    {"id": "bulbs", "kind": "components", "select": {"component": "Light3D", "inactive": true}, "fields": ["glow", "lit", "on"]},
+    {"id": "shades", "kind": "components", "select": {"component": "MeshInstance3D", "name": "Shade", "owner": {"tag": "lamp"}}, "fields": ["glow", "lit"]},
+    {"id": "effects", "kind": "components", "select": {"component": "CPUParticles3D"}, "fields": ["glow", "lit"]},
+    {"id": "others", "kind": "components", "select": {"component": "Camera3D"}, "fields": ["glow", "lit"]},
+    {"id": "drawn", "kind": "render", "fields": ["draw_calls", "texture_mb", "triangles"]}
+  ]
+}

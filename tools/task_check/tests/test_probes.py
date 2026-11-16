@@ -495,6 +495,26 @@ class MoreFairReadings(unittest.TestCase):
         self.assertIsNone(probes.reduce(jungle, {"measures": {qid: sampled([None])}}),
                           "a play that measured no audio measures nothing, never 0")
 
+    def test_a_lamp_reads_lit_whatever_lights_it(self):
+        lamp = {"tag": "lamp", "has": {"lit": True}}
+        lit = m(probe="objects", select=lamp, field="lit", of="all", at="end")
+        (query,) = probes.needs(lit)
+        self.assertEqual(query, {"kind": "objects", "select": lamp, "fields": ["lit"]})
+        rows = [[{"name": "A", "lit": 0.0}, {"name": "B", "lit": 0.0}],
+                [{"name": "A", "lit": 1.0, "glow_sources": "light"}, {"name": "B", "lit": 1.0, "glow_sources": "effect"}]]
+        self.assertEqual(probes.reduce(lit, objects_play(lit, rows)), 1)
+        glow = m(probe="objects", select=lamp, field="glow", of="sum", at="end")
+        self.assertEqual(probes.query_id(probes.needs(glow)[0]), probes.query_id(query), "one query, both fields")
+        bright = [[{"name": "A", "glow": 2.0}, {"name": "B", "glow_read": "unread"}]]
+        self.assertEqual(probes.reduce(glow, objects_play(glow, bright)), 2, "a lamp that can't be read adds nothing")
+        unread = m(probe="objects", select={"name": "B"}, field="glow", of="first")
+        self.assertIsNone(probes.reduce(unread, objects_play(unread, [[{"name": "B", "glow_read": "unread"}]])))
+        bulb = m(probe="components", select={"component": "Light3D", "owner": {"tag": "lamp"}}, field="glow", of="max")
+        self.assertEqual(probes.needs(bulb)[0]["fields"], ["glow"])
+        with self.assertRaisesRegex(ValueError, "glow depends on what a build chose"):
+            task_with(probe(measure={"probe": "objects", "select": lamp, "field": "glow", "of": "first"},
+                            expect={"op": ">=", "value": 2}))
+
     def test_the_sounds_that_start_are_counted_per_interval_and_by_name(self):
         hit = m(probe="audio", select={"near": {"point": {"xyz": [1.2, 1.0, 0]}, "radius": 0.8}}, field="started_audible",
                 window=[2, 3])

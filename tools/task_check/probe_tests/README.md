@@ -39,7 +39,7 @@ FAIL  desktop.second       17 checks, 1 failed  0 s
 
 Headless, the engine runs the scene tree, the scripts, the input events, the physics and the audio mix, but draws
 nothing: a headless play writes no screenshot, a `screen` sample has no value and `render` reads 0. `--rendered` runs
-the plays that need a drawn frame instead (`frame`), in a window, twice over: as a desktop game (`desktop`: a
+the plays that need a drawn frame instead (`frame`, `lamps_drawn`), in a window, twice over: as a desktop game (`desktop`: a
 1920x1080 project read at 960x540) and as a portrait phone game (`portrait`: a 1080x1920 project on the Mobile
 renderer played at 1080x1920, whatever the screen). It needs a GPU and a desktop; `--desk` starts each play on a
 Windows desktop of its own (`../desk.py`), as the checker does, so nothing shows on the screen.
@@ -85,6 +85,8 @@ with an id of its own.
 | `second` | the spec's `scene` opened, a 2D player and a 2D camera, a 2D node pinned ahead of the player, a `scene` input, a scene the project lacks |
 | `contact` | a contact staged and read: `set` (a property on the nearest match a `where` picks, a colour's part on every match, a class first), `pin` (`front` of the player at its own height and facing it, held while the player's own blow lands; `at` a point), `damage` (from a named object, from the player, onto the player, through a node below, a method with a third argument), `damage_taken` (none for an object no stage struck), `frozen` (none before the hit, 0.2 s after it with a child spawned and freed meanwhile, a stop of the game's time), `world` (the game slowed for three frames, its time stopped for four, a pause of six), `"player": false`, and every stage's miss |
 | `sounds` | the sounds that start: one-shots on players made and freed between two samples, one shorter than a frame, a player played again while it plays (in the next frame too; a 3D one; a looping stream; one whose stream picks a take), a pause and its end (no start), a placed one out of earshot, one on a muted bus and one on a bus that sends to it (not audible), a stream without a name, a player of voices (the samples' `voices_unseen`); `started` on its own rule beside them; selects by name, bus, owner (of a player freed by then) and `near` (a point that isn't there: no value); two plays agree on every start |
+| `lamps` | `lit`, `glow` and `has.lit` (`scenes/Lamps.tscn`, built in `game/lamps.gd`): a lamp lit by a light, a coloured one, an emissive and an unshaded material, a particle effect (lit, no glow), smoke (not lit), a hidden lamp, a 2D light; each off and on; lights, meshes and effects as components; headless, the lamps whose light only a drawing tells (a shader of the game's own, a texture on the emission) have no value, and the play says why |
+| `lamps_drawn` (`--rendered`) | the same play with a frame: a shader that emits and a white emission texture read lit, the same shader with its emission off and a black emission texture read dark, each drawn alone; the first sample is completed by its frame; `probe.log` holds what each drawing found and the frame's draw calls |
 | `errors` | every `query_errors` line a bad query gives, the task's `player` select, a row that is no input |
 | `refuse` | a spec of another format: exit code 2, nothing written |
 | `idle` | without `-taskProbe` the addon does nothing |

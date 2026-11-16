@@ -6,7 +6,7 @@
   "inputs": [{"t": 0.2, "nothing": 1}, {"t": 0.3, "key": "<Stick>/x", "press": true}],
   "queries": [
     {"id": "a", "kind": "nope"},
-    {"id": "b", "kind": "objects", "select": {"component": "Lantren"}, "fields": ["x", "glow"]},
+    {"id": "b", "kind": "objects", "select": {"component": "Lantren"}, "fields": ["x", "sheen"]},
     {"id": "c", "kind": "components", "select": {"name": "Ball"}, "fields": []},
     {"id": "d", "kind": "widgets", "select": {"text": "("}, "fields": ["text"]},
     {"id": "e", "kind": "spawns", "component": "Nope"},

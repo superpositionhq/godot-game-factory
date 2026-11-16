@@ -1311,6 +1311,50 @@ class Schema(unittest.TestCase):
                     {'t': 1, 'tap': [0.5, 0.5], 'hold': 0}, {'t': 9, 'key': 'Android_Back', 'press': True}):
             self.assertNotEqual(self.ok(dict(play, inputs=[bad]), 'TaskPlay'), [], bad)
 
+    def test_lit_and_glow(self):
+        lamp = {'tag': 'lamp', 'has': {'lit': True}}
+        for probe, select in (('objects', lamp), ('components', {'component': 'Light3D', 'owner': lamp})):
+            lit = probe_check({'probe': probe, 'select': select, 'field': 'lit', 'of': 'first'}, 'look',
+                              {'op': '>=', 'value': 1})
+            self.assertEqual(self.ok(lit, 'Probe'), [], probe)
+            self.assertEqual(vg.probe_errors(lit, {'commit': 'a'}, 'b', {}), [], 'whether it is lit is a fact')
+            glow = probe_check({'probe': probe, 'select': select, 'field': 'glow', 'of': 'first'})
+            self.assertEqual(self.ok(glow, 'Probe'), [], probe)
+            self.assertEqual(vg.probe_errors(glow, {'commit': 'a'}, 'b', {}), [])
+            literal = dict(glow, expect={'op': '>=', 'value': 2})
+            self.assertEqual(vg.probe_errors(literal, {'commit': 'a'}, 'b', {}),
+                             [f"check p: a {probe} measure's glow depends on what a build chose, so its threshold is "
+                              'calibrated or relative to the start, never a literal value'])
+        self.assertNotEqual(self.ok({'lit': False}, 'Has'), [])   # only true: a part that is lit
+
+    def test_a_render_measure_shares_its_play_with_no_reading_that_draws(self):
+        """A lit or glow reading, or a select with has.lit, may make the probe draw a part alone: those draw calls
+        are in the frame's totals, so a budget is read in a play with none of them."""
+        budget = dict(probe_check({'probe': 'render', 'field': 'draw_calls', 'agg': 'max'}, 'look',
+                                  {'op': '<=', 'value': 700}), name='budget')
+        lamp = {'tag': 'lamp'}
+        tour = {'name': 'tour', 'seconds': 10, 'inputs': [{'t': 1, 'teleport_to': {'has': {'lit': True}}}]}
+        for reading, play in (
+                ({'probe': 'objects', 'select': lamp, 'field': 'lit', 'of': 'first'}, 'look'),
+                ({'probe': 'components', 'select': {'component': 'Light3D'}, 'field': 'glow', 'of': 'max'}, 'look'),
+                ({'probe': 'objects', 'select': {'has': {'lit': True}}, 'field': 'count'}, 'look'),
+                ({'probe': 'player', 'field': 'y'}, tour)):
+            checks = [dict(budget, play=play), dict(probe_check(reading, play, {'op': '>=', 'calibrate': 0.5}), name='lamp')]
+            name = play if isinstance(play, str) else play['name']
+            by = 'lamp' if isinstance(play, str) else 'budget'   # the tour's own inputs select by has.lit
+            self.assertEqual(vg.render_errors(checks), [
+                f'play {name} takes a render measure and also makes the probe render (check {by}: a lit or glow '
+                'reading, or a select with has.lit): give the render measure a play with none of them'], reading)
+        apart = [budget, dict(probe_check({'probe': 'objects', 'select': lamp, 'field': 'lit'}, 'drive'), name='lamp')]
+        self.assertEqual(vg.render_errors(apart), [])
+        plain = [budget, dict(probe_check({'probe': 'objects', 'select': lamp, 'field': 'count'}, 'look'), name='lamp')]
+        self.assertEqual(vg.render_errors(plain), [])
+        t = task('a' * 40, 'b' * 40)
+        t['milestones'][2]['checks'] += [budget, dict(probe_check({'probe': 'objects', 'select': lamp, 'field': 'lit'},
+                                                                  'look', {'op': '>=', 'value': 1}), name='lamp_lit')]
+        self.assertTrue(any('takes a render measure and also makes the probe render' in e
+                            for e in vg.task_semantic_errors(t)))
+
     def test_sounds_that_start(self):
         near = {'near': {'point': {'object': {'tag': 'door'}}, 'radius': 3}, 'sound_class': 'SFX'}
         for field in ('started', 'started_audible', 'sounds', 'repeats'):   # how many started: a literal value

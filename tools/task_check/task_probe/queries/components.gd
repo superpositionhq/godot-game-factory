@@ -9,7 +9,7 @@ extends "../query.gd"
 const Motion := preload("../motion.gd")
 const PLAIN := [
 	"count", "active", "visible", "x", "y", "z", "speed", "spin", "extent_x", "extent_y", "extent_z", "simulating",
-	"intensity", "on", "world_yaw", "world_pitch",
+	"intensity", "on", "world_yaw", "world_pitch", "lit", "glow",
 ]
 const EFFECTS := ["GPUParticles3D", "CPUParticles3D", "GPUParticles2D", "CPUParticles2D"]
 
@@ -23,6 +23,8 @@ var _mesh := ""
 var _owner: Dictionary = {}
 var _near: Dictionary = {}
 var _motion := Motion.new()
+var _waiting: Array = []  # [row, node]: rows whose lit waits for a part being drawn alone (the frame's end tells)
+var _rows: Array = []
 
 
 func load_query() -> void:
@@ -46,15 +48,18 @@ func load_query() -> void:
 
 
 func frame(_dt: float) -> void:
+	Find.light_tick()
 	_motion.frame()
 
 
 func sample(_t: float, sample: Dictionary) -> void:
 	var rows: Array = []
+	_waiting.clear()
 	if not _broken:
 		for n in _match():
 			rows.append(_row(n))
 	_motion.end_sample()
+	_rows = rows
 	write_rows(rows, sample)
 
 
@@ -187,8 +192,35 @@ func _row(n: Node) -> Dictionary:
 			"on":
 				if n is Light3D or n is Light2D:
 					v = 1.0 if _on(n) else 0.0
+			"lit", "glow":
+				var light: Variant = Find.light_of(n)
+				if light != null and light.get("drawing", false) and (_waiting.is_empty() or _waiting[-1][0] != row):
+					_waiting.append([row, weakref(n)])
+				v = Find.light_field(light, f, row)
 			_:
 				v = Find.own_prop(n, f.substr(5))
 		if v != null:
 			row[f] = v
 	return row
+
+
+func needs_frame() -> bool:
+	return not _waiting.is_empty()
+
+
+func frame_drawn(_image: Image, sample: Dictionary) -> void:
+	## the parts drawn alone in this frame are read, and the rows that waited for them get their lit
+	Find.light_collect()
+	for waiting: Array in _waiting:
+		var n: Node = (waiting[1] as WeakRef).get_ref()
+		if n == null:
+			continue
+		var row: Dictionary = waiting[0]
+		var light: Variant = Find.light_of(n)
+		for f in fields:
+			if f == "lit" or f == "glow":
+				var v: Variant = Find.light_field(light, f, row)
+				if v != null:
+					row[f] = v
+	_waiting.clear()
+	write_rows(_rows, sample)

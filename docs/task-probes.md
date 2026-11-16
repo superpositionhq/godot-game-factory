@@ -267,9 +267,9 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
   alone has none).
 
 Where the number depends on what a build chose, the threshold is calibrated or relative to the start, never a literal
-value, and `tools/validate-game.py` refuses a literal: `objects` `spin`; `components` `intensity`, `extent_*` and
-`spin`; every `screen` field; `audio` `volume`, `max_volume` and `level`. Each section says why. A `render` field
-takes a literal: a budget is a number of its own (section 2.20).
+value, and `tools/validate-game.py` refuses a literal: `objects` `glow` and `spin`; `components` `intensity`,
+`extent_*`, `glow` and `spin`; every `screen` field; `audio` `volume`, `max_volume` and `level`. Each section says
+why. A `render` field takes a literal: a budget is a number of its own (section 2.20).
 
 When the start can't be measured (its play ended before the window, or nothing the measure selects is there yet, as
 in a task that adds it), a calibrated threshold anchors on the fix alone: `r - 0.25 * |r|` for `>`/`>=`,
@@ -398,7 +398,7 @@ Which measure answers which question (each section has its fields, defaults and 
 |---|---|
 | where the player is, how far it moved, how fast | `player` (2.2) |
 | where the camera sits, whether the player is in view or hidden from it | `camera` (2.3) |
-| an object: there or not, where, its state (`prop:`, `anim:`), how fast it moves or turns | `objects` (2.4) |
+| an object: there or not, where, its state (`prop:`, `anim:`), how fast it moves or turns, whether it gives light (`lit`: a lamp, whatever lights it) | `objects` (2.4) |
 | one part of an object: a light that is on, a live effect, a mesh, a part that spins | `components` (2.5) |
 | one UI widget's own state: a bar's value, a toggle, a picture | `widgets` (2.6) |
 | how many objects appeared or went | `spawns` (2.9) |
@@ -512,19 +512,21 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     `{"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": false}]}`. Name only members the task doesn't
     ask to change, or another solution fails for its names.
   - `has`: a part the object carries, `{"has": {"component": ..., "visible": true, "near": {"point": <Point>,
-    "radius": m}}}`: the object matches when at least one of its parts (the node itself or a node below it; the
-    shown ones, all of them when the select says `"inactive": true`) matches every key given. `component` is the
-    part's class, as a `components` select names it; `visible: true` keeps a node that draws (a 3D visual node, a 2D
-    canvas item) and is shown; `near` measures from the part's own place, not the object's; `"simulating": true`
-    keeps a `RigidBody3D` or `RigidBody2D` that isn't frozen (or a collision shape of one). At least one key, and
-    only `true` for `visible` and `simulating`. The way to select by what an object does ("an object with a drawn
-    mesh near here", "an object a player can shove") rather than by the class or name a build gave it:
+    "radius": m}}}`: the object matches when at least one of its parts (the node itself or a node below it; the shown
+    ones, all of them when the select says `"inactive": true`) matches every key given. `component` is the part's
+    class, as a `components` select names it; `lit: true` keeps a part that gives off light, as the components `lit`
+    field reads it (a light that is on, a mesh that gives light by its materials or as drawn alone, a live effect that
+    draws light: section 2.5); `visible: true` keeps a node that draws (a 3D visual node, a 2D canvas item) and is
+    shown; `near` measures from the part's own place, not the object's; `"simulating": true` keeps a `RigidBody3D` or
+    `RigidBody2D` that isn't frozen (or a collision shape of one). At least one key, and only `true` for `lit`,
+    `visible` and `simulating`. The way to select by what an object does ("an object that gives light", "an object
+    with a drawn mesh near here", "an object a player can shove") rather than by the class or name a build gave it:
     `{"teleport_to": {"has": {"simulating": true, "near": ...}}}` reaches the nearest object a player can shove,
     whichever nodes a build used. It works in every object select: these, other measures' (`owner`), points (section
     2.13) and `teleport_to` (section 1.1). Because a part may be a node below, a node that holds others (the scene's
     root, a spawner that parents what it spawns, a pool) matches whatever one of its children matches: keep it out
-    with a `component` the node itself must be (`{"component": "MeshInstance3D", "has": {...}}`), a `name`, a
-    `near` or a height band (section 2.13).
+    with a `component` the node itself must be (`{"component": "MeshInstance3D", "has": {...}}`), a `name`, a `near`
+    or a height band (section 2.13).
   - `inactive: true`: nodes that aren't shown match too (they read `active` 0).
 - `field`:
   - `count`: the selection's size (`of` ignored);
@@ -571,6 +573,20 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     `AnimationPlayer` in the object that is playing, else of a playing `AnimatedSprite2D` or `AnimatedSprite3D`, else
     the current state of an `AnimationTree` whose root is a state machine. Read an AI's state with `anim:`, `clip`
     or a `prop:` of the node that holds it;
+  - `lit`: 1 when the object gives off light, whatever made it: a light in it is on, a mesh in it is drawn with a
+    material that gives light, or an effect in it is live and draws light (each as the components `lit` field reads
+    one source, section 2.5; the object's sources are itself and the nodes below it). **This is the way to check
+    for light**: a lamp lit by a `Light3D`, one drawn with an emissive or an unshaded material and one a particle
+    effect lights read the same. Takes a literal;
+  - `glow`: how much light, one amount summed over its lit sources so either kind compares: a light's energy times
+    its colour's luminance, a mesh's brightest material's light times a quarter of the surface of its box (section
+    2.5). **Its threshold is calibrated or relative to the start, never a literal value.** An object lit by an
+    effect, or by a part that had to be drawn alone to be read (a shader of its own, a texture on its light), has
+    no `glow`: gate on `lit`. Neither `lit` nor `glow` has a value while a part of it can't be read and no other
+    source is lit. A row with `lit` or `glow` also carries
+    `glow_sources`, the kinds lit (`light`, `emissive`, `unlit`, `effect`), and `glow_read`, how its parts were
+    read (`props`: from their materials' properties; `drawn`: drawn alone in a room without light; `bound`: with a
+    texture taken as white; `unread`: a part couldn't be read), for the logs; neither is a field to measure;
   - `frozen` (seconds): the object's own short stop, a hit stop too short for a screenshot: the longest stop that
     ended since the previous sample, 0 when none did. The probe follows the object frame by frame from the first
     sample that reads it (which has no value): the node itself, the nodes below it at that moment (64 at most)
@@ -634,11 +650,54 @@ not the node the `owner` select matched).
 - `intensity` (a `Light3D`'s `light_energy`, a `Light2D`'s `energy`) and `on` (1 when the light lights the scene:
   shown, of an energy above 0; a `Light2D` also enabled). A lamp switched off by energy 0 or by hiding the light
   reads 0 when the select says `"inactive": true`; without it, a hidden light is no longer selected (no row: `count`
-  drops, `"of": "max"` has no value). No value for a node that is no light;
+  drops, `"of": "max"` has no value). No value for a node that is no light. They see lights only: use them when a
+  task really needs a light node, else `lit` and `glow`;
+- `lit` and `glow`: whether one source gives off light and how much, read from what the engine holds of it, and
+  for a part whose light its properties don't tell, by drawing it alone (below). No value for a node that is no
+  source.
+  - **A light** (`Light3D`, `Light2D`): `lit` when it is shown, its energy is above 0 and its colour isn't black (a
+    `Light2D` also enabled; a light that takes light away, `light_negative` or a subtracting 2D light, never);
+    `glow` its energy times its colour's linear luminance.
+  - **A 3D part** (a `MeshInstance3D`, a `MultiMeshInstance3D`, a CSG shape): dark when it isn't drawn (hidden, or
+    faded out by its `transparency`). Else it is read **from its materials' properties** where they tell: a
+    standard material with emission on gives its emission colour times its emission energy, an unshaded one its
+    albedo colour, any other standard material nothing; `lit` when the brightest gives more than a luminance of
+    0.01, and `glow` is that light times a quarter of the surface of the part's box in m2, scaled (what a glowing
+    surface that size gives every way). `glow_read` is `props`.
+  - **Where the properties don't tell**, the part is **drawn alone**: a material that isn't a standard one (a
+    `ShaderMaterial`: its light is its shader's own code), or a standard material with a texture on the colour read
+    (an emission texture may be black where the mesh shows, or bright where the colour is black), and no other
+    material of the part that surely gives light. The probe draws the part's mesh with its own materials in a room
+    of its own with no light at all (black background, no ambient or reflected light), from three sides, 48 x 48
+    pixels each: whatever shows there is the part's own light. `lit` when at least 3 pixels are brighter than a
+    linear luminance of 0.02; `glow_read` is `drawn`, and the part has **no `glow`** (a yes or a no is what such a
+    drawing gives on every renderer; an amount is not). The mesh is drawn as it rests: a skinned mesh without its
+    pose, a shader that reads the world around it or the time without them. A drawing is kept until what the
+    part's light depends on changes (its mesh, a material, a shader parameter), then it is drawn again, so a
+    shader that changes its light by time alone is read as it was when last drawn. The first sample that reads a
+    part is completed when its frame is drawn; a select's `has.lit` reads the last drawing, so a part never read
+    before, or one whose materials changed in that very frame, matches from the next sample on. The play's
+    `probe.log` says what each drawing found (`lit: Lamp/Shade drawn alone in a room without light: 3076 bright
+    pixel(s), lit`).
+  - **A 3D effect** (`GPUParticles3D`, `CPUParticles3D`): `lit` when it is emitting, shown and what it draws (its
+    draw passes' or its mesh's materials) gives light by its materials' properties, a texture taken as white
+    (`glow_read` `bound`), so a spark effect reads lit and smoke drawn with a shaded material doesn't. It has no
+    `glow`, and one drawn with a shader of its own can't be read (`glow_read` `unread`, no value): an effect isn't
+    drawn alone, since its particles are its state of the moment. A CSG shape isn't either: a texture on its light
+    is taken as white, a shader of its own is unread.
+  - Not read as sources: a sprite, a label or a decal in 3D, and everything a 2D game draws but its `Light2D`s
+    (in 2D every picture is drawn at its own brightness, so none says "lit"): read a lamp drawn that way by a
+    property the start names, or by the frame's brightness (`screen`, section 2.15).
+  - **Gate "the lamp is on" with `lit`; read `glow` only where the ask is about how bright.** A part read from
+    its properties counts its brightest material over its whole box, so a lamp post with a small glowing bulb reads
+    the post's size: compare a `glow` with itself, calibrated or relative to the start, or select the bulb by
+    `mesh` or by its name. `glow` has no value for a lamp an effect, a texture or a shader of its own lights.
+  - These readings can make the probe draw, and what it draws is in the frame's `render` counts (3 draw calls a
+    part drawn, in the frame it is drawn): a play that takes a `render` measure takes none of them (section 2.20).
 - `prop:<path>`: a property of the node itself or a variable of its script, as an object's `prop:` reads it
   (`{"component": "AudioStreamPlayer3D"}` with `prop:pitch_scale`);
-- **`intensity`, `extent_*` and `spin` thresholds are calibrated or relative to the start, never a literal value**;
-  `on`, `simulating`, positions and speeds take a literal.
+- **`intensity`, `extent_*`, `glow` and `spin` thresholds are calibrated or relative to the start, never a literal
+  value**; `on`, `lit`, `simulating`, positions and speeds take a literal.
 
 ### 2.6 `widgets`: the UI's own nodes
 
@@ -905,6 +964,10 @@ budget is a number of its own: `{"op": "<=", "value": 700}`.
 - `texture_mb` holds the engine's own render targets and default textures too: some 10 to 20 MiB before a game adds
   anything, more at a larger frame. A play draws the game at its project's own size, so a mobile game's budget is
   read at its phone's size.
+- The counts are of everything the renderer drew in the frame, the probe's own drawings among them: a `lit` or
+  `glow` reading, or a select with `has.lit`, may draw a part alone (section 2.5), 3 draw calls each. So **a play
+  that takes a `render` measure takes none of those**, in its measures or its inputs; `tools/validate-game.py`
+  refuses a task where one does. Give the budget check a play of its own.
 - The first sample of a play, before any frame was drawn, has no counts. A reachable view is reached with the
   play's inputs (teleports, a scenario's `args`): give a budget check a play that goes where the game is heaviest,
   and read `"agg": "max"`.
@@ -1076,6 +1139,10 @@ task is void.
 - **Hidden is not gone from the tree.** A node switched off by hiding it is still in the tree: a select without
   `"inactive": true` no longer finds it, one with it reads its `active` 0. A light switched off by energy 0 is still
   shown: read its `on`.
+- **A lamp need not be a light node.** A build may light a lamp with a `Light3D`, with an emissive or an unshaded
+  material and no light at all, with a shader of its own, or with a particle effect: read `lit` of the lamp, which
+  sees them all, not `count` or `on` of its lights; `glow`, calibrated or relative to the start, only where the ask
+  is about how bright, and never in a play that also reads a `render` budget.
 - **A broken object still draws.** A crate broken into pieces may keep every piece drawn and in its group, so
   `count` and `visible` can't see it go: read `simulating` of the crate, or the pieces' `speed`.
 - **A HUD need not be one kind of node.** A build may show its score in a `Label`, a `RichTextLabel` or a `Button`:

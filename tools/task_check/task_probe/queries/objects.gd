@@ -7,13 +7,15 @@ const Motion := preload("../motion.gd")
 const Stops := preload("../stops.gd")
 const PLAIN := [
 	"count", "x", "y", "z", "yaw", "pitch", "roll", "scale", "extent_x", "extent_y", "extent_z", "active", "hidden",
-	"collision", "speed", "spin", "simulating", "facing_vs_velocity", "clip", "frozen", "damage_taken",
+	"collision", "speed", "spin", "simulating", "facing_vs_velocity", "clip", "frozen", "damage_taken", "lit", "glow",
 ]
 const PREFIXES := ["prop:", "anim:", "forward:", "rel_yaw:", "world_yaw:", "world_pitch:", "world_roll:"]
 const MAX_SPIN_PARTS := 64
 
 var _select: Dictionary = {}
 var _motion := Motion.new()
+var _waiting: Array = []  # [row, node]: rows whose lit waits for a part being drawn alone (the frame's end tells)
+var _rows: Array = []
 var _stops := Stops.new()
 
 
@@ -24,22 +26,26 @@ func load_query() -> void:
 
 
 func frame(dt: float) -> void:
+	Find.light_tick()
 	_motion.frame()
 	_stops.frame(dt)
 
 
 func sample(_t: float, sample: Dictionary) -> void:
 	var rows: Array = []
+	_waiting.clear()
 	for n in Find.objects(_select):
 		rows.append(_row(n))
 	_motion.end_sample()
 	_stops.end_sample()
+	_rows = rows
 	write_rows(rows, sample)
 
 
 func _row(n: Node) -> Dictionary:
 	var row := {"name": String(n.name), "class": Find.class_of(n)}
 	var dt: float = 1.0 / probe.fps
+	var light: Variant = null
 	for f in fields:
 		var v: Variant = null
 		if f == "speed" or f == "facing_vs_velocity":
@@ -48,6 +54,12 @@ func _row(n: Node) -> Dictionary:
 				v = (velocity as Vector3).length()
 			elif velocity != null and (velocity as Vector3).length() >= 0.1 and Find.forward(n) != null:
 				v = rad_to_deg((Find.forward(n) as Vector3).angle_to(velocity))
+		elif f == "lit" or f == "glow":
+			if light == null:
+				light = Find.light_of_object(n)
+				if light.get("drawing", false):
+					_waiting.append([row, weakref(n)])
+			v = Find.light_field(light, f, row)
 		else:
 			v = _field(n, f, dt)
 		if v != null:
@@ -197,3 +209,25 @@ static func _anim(n: Node, parameter: String) -> Variant:
 			var v: Variant = p.get(path)
 			return Find.plain(v) if v is bool or v is int or v is float else null
 	return null
+
+
+func needs_frame() -> bool:
+	return not _waiting.is_empty()
+
+
+func frame_drawn(_image: Image, sample: Dictionary) -> void:
+	## the parts drawn alone in this frame are read, and the rows that waited for them get their lit
+	Find.light_collect()
+	for waiting: Array in _waiting:
+		var n: Node = (waiting[1] as WeakRef).get_ref()
+		if n == null:
+			continue
+		var row: Dictionary = waiting[0]
+		var light: Variant = Find.light_of_object(n)
+		for f in fields:
+			if f == "lit" or f == "glow":
+				var v: Variant = Find.light_field(light, f, row)
+				if v != null:
+					row[f] = v
+	_waiting.clear()
+	write_rows(_rows, sample)
