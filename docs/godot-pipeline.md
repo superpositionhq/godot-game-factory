@@ -74,10 +74,10 @@ the log to `Logs/godot-ps1/` and prints the lines that matter (script errors, `[
 
 | Mode | Runs | GPU |
 |---|---|---|
-| `import` | `--headless --import`, then fails on a script error in the log: this is "the project compiles" | no |
+| `import` | `--headless --import`, then every `.gd` of the project loaded once (`--headless --script`; the import alone parses only the scripts the editor opens); fails on a script that does not parse or compile: this is "the project compiles" | no |
 | `step -Script steps/<x>.gd -Reason "..."` | one committed generator script, headless (`--headless --script`), with its `workflow.jsonl` row (op `editor.step`, the script and the sha256 of its text as it ran) | no |
 | `row -Op <op> -Target <t> -Reason "..." [-Params '<json>'] [-Direction <id>]` | one `workflow.jsonl` row for work done by hand (a scene written, a script edited, a setting changed) | no |
-| `build [-Android] [-Reason "..."]` | `--headless --export-release "Windows Desktop" Build/Windows/<Project>.exe`; with `-Android` (a mobile game) also `Build/Android/<Project>.apk` when the machine has the toolchain, else the APK is skipped by name; one `build.player` row | no |
+| `build [-Android] [-Reason "..."]` | `import` first (both passes; a project whose scripts do not parse is never exported), then `--headless --export-release "Windows Desktop" Build/Windows/<Project>.exe`; with `-Android` (a mobile game) also `Build/Android/<Project>.apk` when the machine has the toolchain, else the APK is skipped by name; one `build.player` row | no |
 | `play [-Scenario <n>] [-Seconds 60] [-Shots <n>] [-Extra "..."] [-Tag <name>]` | the project from its source, rendered at the game's exact frame size (`-size`), with `-scenario <n>` when `-Scenario` is given; `-Shots n` saves n evenly spaced PNG frames to `Logs/godot-ps1/<tag>/`; stopped after `-Seconds` | yes |
 | `autoplay [-Scenario <n>] [-MaxSeconds 120] [-Seed 0] [-Skill 1] [-Audible] [-Extra "..."]` | the built player as a recording runs it (the AutoPlay drop-in), in real time and without a movie: the bot plays scenario n for at most `-MaxSeconds`, starting at once, on a Windows desktop of its own (nothing on the screen; muted unless `-Audible`); the run's files go to `Logs/autoplay/<time>_s<n>/`, which `tools/godot-pipeline/validate-run.ps1 <folder>` checks | yes |
 
@@ -90,7 +90,7 @@ Facts that cost time before:
   engine is run headless only for what only it can do: the import (`.godot/`, and the `.import` and `.uid` files that
   are committed), a generator script, an export.
 - **Import before export.** An export of a project that was never imported can miss resources: the pipeline's
-  build imports first, and a session runs `import` before its own `build`.
+  build imports first, and `Scripts/godot.ps1 build` runs `import` first itself.
 - **`--headless` renders nothing**: no screenshots, no frames to read back, no movie.
 - **A game's own arguments come after `--`** (`godot --path <project> -- -scenario 2`): what stands before it is the
   engine's, and the engine does not show its own arguments to a script.

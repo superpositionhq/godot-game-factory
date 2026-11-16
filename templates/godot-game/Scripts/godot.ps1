@@ -14,8 +14,8 @@
 # `row` appends one workflow.jsonl row for work done by hand (a scene written, a script edited, a setting changed), with
 # the id and seq that follow the file's last row. -Params is a JSON object, or the path of a file that holds one. An op
 # user.direction is written as the user's row (params {"direction": "...", "via": "..."}).
-# `build` exports the Windows player to Build/Windows/__PROJECT__.exe (one file) and logs a build.player row. -Android
-# (a mobile game) also exports Build/Android/__PROJECT__.apk when this machine has the Android toolchain
+# `build` runs `import` first (a project whose scripts do not parse is never exported), then exports the Windows
+# player to Build/Windows/__PROJECT__.exe (one file) and logs a build.player row. -Android (a mobile game) also exports Build/Android/__PROJECT__.apk when this machine has the Android toolchain
 # (machine\get-android.ps1); without it the APK is skipped by name and the Windows build is the result.
 # `play` runs the project from source, rendered, at the game's exact frame size (1920x1080; a portrait mobile game
 # 1080x1920, whatever the window shows), and stops it after -Seconds. -Shots n saves n evenly spaced PNG frames of
@@ -364,36 +364,40 @@ function Show-Run([string]$Dir, [int]$Code) {
   else { Write-Host "the player ended with exit code ${Code}: a crash, or it was killed (read game.log)" }
 }
 
-switch ($Mode) {
-  'import' {
-    $log = Join-Path $Logs 'import.log'
-    $code = Invoke-Godot 'import' $log @('--import')
-    $bad = Show-Errors $log
-    if ($code -eq 0 -and $bad -gt 0) { Write-Host "the import ended, but $bad line(s) of its log are script errors: the project does not compile"; $code = 1 }
-    if ($code -ne 0) { Done $code }
-    # every script loaded once, under a step's time limit. Not every SCRIPT ERROR of this log counts: the autoloads
-    # wake in this run with no scene to play, and one may fail at run time for that alone.
-    $pass = Join-Path $Logs 'scripts_pass.gd'
-    [IO.File]::WriteAllText($pass, ($ScriptsPass -replace "`r`n", "`n"), $utf8)
-    $log = Join-Path $Logs 'import_scripts.log'
-    $code = Invoke-Godot 'import scripts' $log @('--script', $pass) $TimeoutSeconds
-    $failed = @()
-    if (Test-Path $log) {
-      $lines = @(Get-Content -LiteralPath $log)
-      for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match 'SCRIPT ERROR: (?:Parse|Compile) Error|Failed to load script|^SCRIPT_FAILED ') {
-          $failed += $lines[$i].Trim()
-          if ($i + 1 -lt $lines.Count -and $lines[$i + 1] -match '^\s+at: ') { $failed += '  ' + $lines[$i + 1].Trim() }
-        }
+# `import`, and the first thing `build` does: the engine's import, then every script loaded once. Returns the exit code
+# (0: the project compiles).
+function Invoke-Import {
+  $log = Join-Path $Logs 'import.log'
+  $code = Invoke-Godot 'import' $log @('--import')
+  $bad = Show-Errors $log
+  if ($code -eq 0 -and $bad -gt 0) { Write-Host "the import ended, but $bad line(s) of its log are script errors: the project does not compile"; $code = 1 }
+  if ($code -ne 0) { return $code }
+  # every script loaded once, under a step's time limit. Not every SCRIPT ERROR of this log counts: the autoloads
+  # wake in this run with no scene to play, and one may fail at run time for that alone.
+  $pass = Join-Path $Logs 'scripts_pass.gd'
+  [IO.File]::WriteAllText($pass, ($ScriptsPass -replace "`r`n", "`n"), $utf8)
+  $log = Join-Path $Logs 'import_scripts.log'
+  $code = Invoke-Godot 'import scripts' $log @('--script', $pass) $TimeoutSeconds
+  $failed = @()
+  if (Test-Path $log) {
+    $lines = @(Get-Content -LiteralPath $log)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+      if ($lines[$i] -match 'SCRIPT ERROR: (?:Parse|Compile) Error|Failed to load script|^SCRIPT_FAILED ') {
+        $failed += $lines[$i].Trim()
+        if ($i + 1 -lt $lines.Count -and $lines[$i + 1] -match '^\s+at: ') { $failed += '  ' + $lines[$i + 1].Trim() }
       }
     }
-    $failed | Select-Object -First 60 | ForEach-Object { Write-Host $_ }
-    $done = (Test-Path $log) -and (Select-String -Path $log -Pattern '^SCRIPTS_DONE ' -Quiet)
-    if ($code -eq 124) { Write-Host "stopped after $TimeoutSeconds s: loading the project's scripts did not end (Logs/godot-ps1/import_scripts.log)" }
-    elseif ($failed.Count) { Write-Host 'the project does not compile: the scripts above do not parse'; if ($code -eq 0) { $code = 1 } }
-    elseif (-not $done) { Write-Host 'the pass that loads every script did not finish (Logs/godot-ps1/import_scripts.log)'; if ($code -eq 0) { $code = 1 } }
-    Done $code
   }
+  $failed | Select-Object -First 60 | ForEach-Object { Write-Host $_ }
+  $done = (Test-Path $log) -and (Select-String -Path $log -Pattern '^SCRIPTS_DONE ' -Quiet)
+  if ($code -eq 124) { Write-Host "stopped after $TimeoutSeconds s: loading the project's scripts did not end (Logs/godot-ps1/import_scripts.log)" }
+  elseif ($failed.Count) { Write-Host 'the project does not compile: the scripts above do not parse'; if ($code -eq 0) { $code = 1 } }
+  elseif (-not $done) { Write-Host 'the pass that loads every script did not finish (Logs/godot-ps1/import_scripts.log)'; if ($code -eq 0) { $code = 1 } }
+  return $code
+}
+
+switch ($Mode) {
+  'import' { Done (Invoke-Import) }
   'step' {
     $rel = ($Script -replace '\\', '/') -replace '^(\./|res://)', ''
     if ($rel -notmatch '^steps/[A-Za-z0-9_][A-Za-z0-9_./-]*\.gd$' -or $rel -match '\.\.') { Write-Error 'pass -Script steps/<name>.gd (a generator script under steps/)'; exit 2 }
@@ -423,6 +427,14 @@ switch ($Mode) {
     $log = Join-Path $Logs 'build.log'
     $out = Join-Path $Proj 'Build\Windows'
     $exe = Join-Path $out '__PROJECT__.exe'
+    # the import first (both passes): a build never exports a project whose scripts do not parse
+    $code = Invoke-Import
+    if ($code -ne 0) {
+      $why = "the project does not import (exit code $code): no build was made (Logs/godot-ps1/import.log, import_scripts.log)"
+      Write-Host $why
+      [void](Add-Row 'build.player' 'Build/Windows/__PROJECT__.exe' ([ordered]@{ result = 'Failed'; configuration = 'release'; preset = 'Windows Desktop'; error = $why }) $Reason 'failed')
+      Done $code
+    }
     Reset-BuildFolder $out
     $start = Get-Date
     $code = Invoke-Godot 'build' $log @('--export-release', 'Windows Desktop', $exe)
@@ -440,7 +452,7 @@ switch ($Mode) {
       if (-not $toolchain) {
         $why = 'this machine has no Android toolchain (missing: ' + ((@(Get-GGFAndroidParts | Where-Object { -not $_.present } | ForEach-Object { $_.name })) -join ', ') + '; machine\get-android.ps1 installs it)'
         Write-Host "APK skipped: $why. The Windows build is the result."
-        $p['android'] = [ordered]@{ status = 'skipped'; reason = $why }
+        $p['apk'] = [ordered]@{ status = 'skipped'; reason = $why }
       } else {
         $logA = Join-Path $Logs 'build_android.log'
         $outA = Join-Path $Proj 'Build\Android'
@@ -462,11 +474,11 @@ switch ($Mode) {
         [void](Show-Errors $logA)
         $okA = ($codeA -eq 0 -and (Test-Path -LiteralPath $apk))
         if ($okA) {
-          $p['android'] = [ordered]@{ status = 'ok'; apk = $apkRel; bytes = (Get-Item -LiteralPath $apk).Length; seconds = [int]((Get-Date) - $startA).TotalSeconds }
+          $p['apk'] = [ordered]@{ status = 'ok'; file = $apkRel; bytes = (Get-Item -LiteralPath $apk).Length }
           Write-Host "APK: $apkRel"
         } else {
           $why = Get-FirstError $logA
-          $p['android'] = [ordered]@{ status = 'failed'; reason = $why; seconds = [int]((Get-Date) - $startA).TotalSeconds }
+          $p['apk'] = [ordered]@{ status = 'failed'; reason = $why }
           $p['result'] = 'Failed'; $p['error'] = "the APK was not built: $why (Logs/godot-ps1/build_android.log)"
           Write-Host $p['error']
           $ok = $false; $code = $(if ($codeA -ne 0) { $codeA } else { 1 })
