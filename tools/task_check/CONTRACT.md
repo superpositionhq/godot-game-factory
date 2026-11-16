@@ -104,7 +104,7 @@ Measures:
 - `spawns`: `{"probe": "spawns", "component": "<class>", "field": "spawned|destroyed"}`.
 - `audio` fields: `count`, `audible`, `volume`, `max_volume`, `level`, `started`.
 - `render`: `{"probe": "render", "field": "draw_calls|triangles|texture_mb"}`.
-- `world`: `{"probe": "world", "field": "time_scale|paused"}`.
+- `world`: `{"probe": "world", "field": "time_scale|flow|paused"}`.
 
 The validator's rules beyond the schema include:
 
@@ -277,8 +277,9 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   a rectangle 28 primitives and 2 draw calls); the texture memory holds the engine's own render targets and default
   textures, 10 to 19 MiB before a game adds anything; a `--headless` play reads 0.
 - **world** (`queries/world.gd`): `Engine.time_scale` and `SceneTree.paused` read every frame before the game's
-  scripts and once more at the sample, after them; the value is `time_scale`, the lowest read since the previous
-  sample (a read of a paused tree counts as 0), and `paused`, 1 when a read found the tree paused. A value its
+  scripts and once more at the sample, after them; the value is `time_scale`, the lowest `Engine.time_scale` read since the
+  previous sample, `flow`, the lowest of the same reads with a read of a paused tree counted as 0, and `paused`, 1
+  when a read found the tree paused. A value its
   scripts set in the sample's own frame is in that sample and, while it lasts, in the next.
 - **log**: the lines of the play's log (`--log-file`, kept as `play.log`) that match, read by the checker.
 

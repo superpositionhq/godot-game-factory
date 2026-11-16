@@ -351,11 +351,11 @@ fix's play.
 - **a hit stop** (0.05 to 0.1 s: no screenshot shows it), by the wording of the ask. "The one struck freezes for
   an instant": `objects` `frozen` of it (section 2.4), `"agg": "max"` over a tight window right after the contact.
   It reads the stop however a build makes it: the object's own script holding it, the tree paused, or the game's
-  time stopped. "The game holds for an instant": `world` `time_scale` (section 2.21) with `"agg": "min"` below 1 in
-  that window, which a slowed game, a stopped one and a paused tree all read. Add a second `world` probe only for
-  what the ask itself says: "the rest of the fight plays on" is `time_scale` `min` == 1; "without pausing the game"
-  is `paused` `max` == 0. Never pair a stop with `paused` == 0 otherwise: a build that makes its hit stop by pausing
-  the tree is a fair one. Never read `frozen` on an object a pin or a teleport holds. The start's play must read
+  time stopped. "The game holds for an instant": `world` `flow` (section 2.21) with `"agg": "min"` below 1 in that
+  window, which a slowed game, a stopped one and a paused tree all read. "Time slows": `world` `time_scale` with
+  `"agg": "min"` below 1, the engine's own value. Add a second `world` probe only for what the ask itself says:
+  "the rest of the fight plays on" is `flow` `min` == 1; "without pausing the game" is `paused` `max` == 0. Never
+  pair a stop with `paused` == 0 otherwise: a build that makes its hit stop by pausing the tree is a fair one. Never read `frozen` on an object a pin or a teleport holds. The start's play must read
   no stop;
 - **a stagger, a knock-back or an interrupted action** (behaviour, not looks): the animation that plays in a short
   window after the hit and not before it (`clip` with `match`, an `anim:` parameter); the object unable to act (the
@@ -385,7 +385,7 @@ Which measure answers which question (each section has its fields, defaults and 
 | what plays, how loud at the listener, a sound that starts | `audio` (2.16) |
 | what the HUD or a menu shows: text, a number, a clock, whether it updates | `ui` (2.18) |
 | what the renderer drew, against a budget: draw calls, triangles, texture memory | `render` (2.20) |
-| the game as a whole: how slow its time ran, whether it was paused | `world` (2.21) |
+| the game as a whole: how slow its time ran, whether it went on, whether it was paused | `world` (2.21) |
 | what a blow, a shot or a hit taken did: a short stop, the damage a staged hit did | `objects` `frozen`, `damage_taken` (2.4), with the contact staged (1.4) |
 
 How a play gets there (keys, clicks, teleports, waits): section 1.1; touches: section 1.3; a contact made to happen
@@ -849,11 +849,17 @@ budget is a number of its own: `{"op": "<=", "value": 700}`.
 
 ### 2.21 `world`: the game as a whole
 
-`{"probe": "world", "field": "time_scale" | "paused"}`: `time_scale` is the lowest pace the game's time ran at over
-the frames since the previous sample: `Engine.time_scale`, and 0 in a frame the tree was paused, so a hit stop reads
-below 1 whether a build slows the game, stops its time or pauses the tree, even between samples (1 when it ran at
-its pace); `paused` is 1 when the game was paused (`get_tree().paused`) in any of them ("Escape pauses the game").
-Both take a literal. The play's clock counts on through either (section 1.1), so a window right after the contact holds
+`{"probe": "world", "field": "time_scale" | "flow" | "paused"}`, each read over the frames since the previous
+sample, so a stop of a few frames shows even between samples:
+
+- `time_scale`: the lowest `Engine.time_scale`, the engine's own value ("time slows"; 1 when it ran at its pace). A
+  paused tree doesn't change it;
+- `flow`: how the game went on, the lowest of 0 in a frame the tree was paused and `Engine.time_scale` otherwise. A
+  hit stop reads below 1 here whether a build slows the game, stops its time or pauses the tree ("the game holds");
+- `paused`: 1 when the game was paused (`get_tree().paused`) in any of them ("Escape pauses the game"; `== 0` for
+  "without pausing").
+
+All take a literal. The play's clock counts on through either (section 1.1), so a window right after the contact holds
 the stop.
 
 ## 3. What gates, and how a probe fails

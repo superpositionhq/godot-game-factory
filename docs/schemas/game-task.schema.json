@@ -1,5 +1,5 @@
 {
-  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`).",
+  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale, whether it went on and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`).",
   "$defs": {
     "AtCamera": {
       "additionalProperties": false,
@@ -3712,7 +3712,7 @@
     },
     "WorldMeasure": {
       "additionalProperties": false,
-      "description": "The game as a whole (docs/task-probes.md, section 2.21): `time_scale`, the lowest `Engine.time_scale` over the\nframes since the previous sample (a hit stop made by slowing the game, however short: 1 when it ran at its\npace); `paused`, 1 when the game was paused in any of those frames (\"Escape pauses the game\").",
+      "description": "The game as a whole (docs/task-probes.md, section 2.21), each the lowest over the frames since the previous\nsample: `time_scale`, the engine's `Engine.time_scale` (time slowed, however briefly: 1 when it ran at its pace);\n`flow`, how the game went on: 0 in a frame the tree was paused, else `Engine.time_scale` (a hit stop, whether a\nbuild slows the game, stops its time or pauses the tree); and `paused`, 1 when the game was paused in any of those\nframes (\"Escape pauses the game\").",
       "properties": {
         "agg": {
           "anyOf": [
@@ -3770,6 +3770,7 @@
         "field": {
           "enum": [
             "time_scale",
+            "flow",
             "paused"
           ],
           "title": "Field",

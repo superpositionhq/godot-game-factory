@@ -291,14 +291,16 @@ def check_contact(c, found):
     hero = row(found, "player", 5.2)
     c.eq("the player struck, by the nearest other that can be hurt",
          (hero.get("prop:health"), hero.get("prop:last_source"), hero.get("damage_taken")), (70, "Foe", 5))
-    # world: the lowest time scale and a pause, between samples too
+    # world: the lowest time scale, whether the game went on, and a pause, between samples too
     scale = {round(s["t"], 1): s["value"]["time_scale"] for s in samples(found, "world")}
-    c.eq("the game runs at its pace", {scale.get(t) for t in (1.0, 4.9, 5.3, 8.0)}, {1})
-    c.eq("a hit slows it for three frames, read in the sample after", scale.get(5.1), 0.25)
-    c.eq("its time stopped", scale.get(4.1), 0)
+    flow = {round(s["t"], 1): s["value"]["flow"] for s in samples(found, "world")}
+    c.eq("the game runs at its pace", {(scale.get(t), flow.get(t)) for t in (1.0, 4.9, 5.3, 8.0)}, {(1, 1)})
+    c.eq("a hit slows it for three frames, read in the sample after", (scale.get(5.1), flow.get(5.1)), (0.25, 0.25))
+    c.eq("a stop by a time scale of 0: both read 0", (scale.get(4.1), flow.get(4.1)), (0, 0))
     paused = {round(s["t"], 1): s["value"]["paused"] for s in samples(found, "world")}
     c.eq("a pause of six frames", [t for t in sorted(paused) if paused[t]], [5.5, 5.6, 5.7])
-    c.eq("a paused game's time stands", {scale.get(t) for t in (5.5, 5.6, 5.7)}, {0})
+    c.eq("a stop by a pause: the game holds, its time scale stays 1",
+         {(scale.get(t), flow.get(t)) for t in (5.5, 5.6, 5.7)}, {(1, 0)})
     c.eq("a stopped time is no pause", paused.get(4.1), 0)
     # pin at a point
     c.near("pinned at a point and an offset", math.dist([row(found, "post", 6.4).get(k, 99) for k in "xyz"], [3, 1, 0]), 0.0, 1e-3)

@@ -1284,7 +1284,7 @@ class Schema(unittest.TestCase):
                             {'op': '>=', 'value': 0.05})
             self.assertEqual(self.ok(c, 'Probe'), [], field)
         self.assertNotEqual(self.ok(probe_check({'probe': 'objects', 'select': live, 'field': 'focus_player'}), 'Probe'), [])
-        for field in ('time_scale', 'paused'):
+        for field in ('time_scale', 'flow', 'paused'):
             c = probe_check({'probe': 'world', 'field': field, 'window': [2, 3], 'agg': 'min'}, play, {'op': '<', 'value': 1})
             self.assertEqual(self.ok(c, 'Probe'), [], field)
             self.assertEqual(vg.probe_errors(c, {'commit': 'a'}, 'b', {}), [], field)

@@ -39,6 +39,6 @@
     {"id": "post", "kind": "objects", "select": {"name": "Post"}, "fields": ["damage_taken", "x", "y", "z"]},
     {"id": "player", "kind": "objects", "select": {"player": true}, "fields": ["damage_taken", "prop:health", "prop:last_source"]},
     {"id": "dummy", "kind": "objects", "select": {"name": "Dummy"}, "fields": ["damage_taken", "prop:hits"]},
-    {"id": "world", "kind": "world", "fields": ["paused", "time_scale"]}
+    {"id": "world", "kind": "world", "fields": ["flow", "paused", "time_scale"]}
   ]
 }

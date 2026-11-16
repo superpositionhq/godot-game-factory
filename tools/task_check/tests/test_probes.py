@@ -577,6 +577,12 @@ class MoreFairReadings(unittest.TestCase):
         task = task_with(probe("a", measure={"probe": "world", "field": "time_scale", "agg": "min"}),
                          probe("b", measure={"probe": "world", "field": "paused", "agg": "max"}))
         self.assertEqual(probes.plan(task)["look"], [{"id": qid, "kind": "world", "fields": ["paused", "time_scale"]}])
+        held = m(probe="world", field="flow", agg="min")
+        self.assertEqual(probes.query_id(probes.needs(held)[0]), qid)
+        stop = [{"time_scale": 1.0, "flow": 1.0, "paused": 0}, {"time_scale": 1.0, "flow": 0.0, "paused": 1}]
+        self.assertEqual(probes.reduce(held, {"measures": {qid: sampled(stop)}}), 0, "a stop made by a pause")
+        self.assertEqual(probes.reduce(m(probe="world", field="time_scale", agg="min"),
+                                       {"measures": {qid: sampled(stop)}}), 1, "which slows no time")
         frozen = m(probe="objects", select={"tag": "foe"}, field="frozen", of="max", agg="max")
         self.assertEqual(probes.needs(frozen)[0]["fields"], ["frozen"])
         stops = [[{"name": "Foe"}], [{"name": "Foe", "frozen": 0.0}], [{"name": "Foe", "frozen": 0.1}]]
