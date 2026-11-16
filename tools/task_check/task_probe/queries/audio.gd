@@ -2,12 +2,14 @@ extends "../query.gd"
 ## audio: what the player hears (contract section 3, docs/task-probes.md 2.16). Every AudioStreamPlayer,
 ## AudioStreamPlayer2D and AudioStreamPlayer3D that is playing and matches the select, at its volume at the listener:
 ## its own volume times, for a placed one, its attenuation at the listener's distance. Bus volumes are left out.
-## `level` and `peak` are the Master bus's mixed output since the previous sample. The sounds that start are watched
-## every frame, whatever the samples: a player that begins to play, one started again while it plays, and one that
-## began and ended between two frames (its `finished` signal tells); `started` and `started_audible` count them since
-## the previous sample and `starts` lists them by their stream's name.
+## `level` and `peak` are the Master bus's mixed output since the previous sample; `started`, how many matching players
+## were found playing that weren't the frame before. The sounds that start are watched every frame, whatever the
+## samples, by the playback each play() makes: a player that begins to play, one played again while it plays, and one
+## that began and ended between two frames (its `finished` signal tells); `started_audible` counts those audible as
+## they started and `starts` lists them all by their stream's name.
 ## "value": {"count", "audible", "volume", "max_volume", "loudest", "level", "peak", "started", "started_audible",
-## "starts": [{"t", "sound", "named"}], "starts_total", "listener"}
+## "starts": [{"t", "sound", "named"}], "starts_total", "listener", "voices_unseen" (true, only when a matching
+## player's stream plays voices of its own)}; null when the select's `near` point didn't resolve
 
 const AUDIBLE := 0.001  # a player at this volume (-60 dB) or louder is audible
 const MAX_STARTS := 64  # the starts a sample lists at most
@@ -26,15 +28,19 @@ static var _level_peak: Variant = null
 ## the players are watched once, whatever the queries: every start of the play, in order
 static var _watching := false
 static var _watch_stamp := -1
-static var _known: Dictionary = {}  # instance id -> {ref, playing, at, open, idle}
-static var _events: Array[Dictionary] = []  # {t, sound, named, bus, ref, place, audible}
+static var _known: Dictionary = {}  # instance id -> {ref, playback, open, idle}
+static var _events: Array[Dictionary] = []  # {t, sound, named, bus, line, place, audible}
 
 var _sound := ""
 var _bus := ""
 var _owner: Dictionary = {}
 var _near: Dictionary = {}
 var _next := 0  # the first start this query hasn't looked at
+var _playing: Dictionary = {}
+var _counting := false
 var _started := 0
+var _lost := false  # the near's point didn't resolve at a look since the previous sample
+var _voices := false  # a matching player played a stream whose voices can't be seen
 var _started_audible := 0
 var _starts: Array = []
 var _starts_total := 0
@@ -70,7 +76,7 @@ static func _meet(n: Node) -> void:
 	if not _is_player(n) or Find.is_own(n) or _known.has(n.get_instance_id()):
 		return
 	var id := n.get_instance_id()
-	_known[id] = {"ref": weakref(n), "playing": false, "at": 0.0, "open": false, "idle": 0}
+	_known[id] = {"ref": weakref(n), "playback": 0, "open": false, "idle": 0}
 	n.connect("finished", _ended.bind(id))
 
 
@@ -82,18 +88,15 @@ static func _ended(id: int) -> void:
 	if not e["open"] and n != null:
 		_note(n)  # it began and ended between two looks
 	e["open"] = false
-	e["playing"] = false
-	e["at"] = 0.0
+	e["playback"] = 0
 
 
-static func _restarts(n: Node) -> bool:
-	## whether a playback position that falls back means the sound was started again: a stream that doesn't loop
-	var stream: Variant = n.get("stream")
-	if stream is AudioStreamWAV:
-		return (stream as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_DISABLED
-	if stream is AudioStreamOggVorbis or stream is AudioStreamMP3:
-		return not bool(stream.get("loop"))
-	return false
+static func _playback(n: Node) -> int:
+	## which playback a player plays: every play() makes a new one, a pause keeps it; 0 when it plays nothing
+	if not n.is_inside_tree() or not bool(n.call("has_stream_playback")):
+		return 0
+	var playback: Variant = n.call("get_stream_playback")
+	return (playback as Object).get_instance_id() if playback is Object and is_instance_valid(playback) else 0
 
 
 static func _watch() -> void:
@@ -114,26 +117,48 @@ static func _watch() -> void:
 		if n == null:
 			_known.erase(id)
 			continue
-		var playing := n.is_inside_tree() and bool(n.get("playing"))
-		var at := float(n.call("get_playback_position")) if playing else 0.0
-		if playing:
+		var playback := _playback(n)
+		if playback != 0:
 			# those playing when the watch begins were not started in the play
-			if not first and (not e["playing"] or (_restarts(n) and at < e["at"] - 1e-4)):
+			if not first and playback != e["playback"]:
 				_note(n)
 			e["open"] = true
 			e["idle"] = 0
+			e["playback"] = playback
 		else:
 			e["idle"] += 1
 			if e["idle"] > IDLE_PASSES:
 				e["open"] = false  # stopped without ending: no `finished` comes
-		e["playing"] = playing
-		e["at"] = at
+				e["playback"] = 0
+
+
+static func _voiced(stream: Variant) -> bool:
+	## a stream that plays voices of its own inside one playback, which nothing lists
+	return stream is AudioStreamPolyphonic or stream is AudioStreamGenerator
+
+
+static func _holds_others(stream: Variant) -> bool:
+	## a stream that picks or mixes other streams: its own name says nothing of the sound that plays
+	if not (stream is AudioStream):
+		return false
+	for type: String in ["AudioStreamRandomizer", "AudioStreamPolyphonic", "AudioStreamPlaylist", "AudioStreamInteractive",
+			"AudioStreamSynchronized"]:
+		if (stream as AudioStream).is_class(type):
+			return true
+	return false
 
 
 static func _note(n: Node) -> void:
-	var name := Find.resource_name(n.get("stream"))
+	var stream: Variant = n.get("stream")
+	var name := Find.resource_name(stream)
+	var line: Array[int] = []  # the player and the nodes above it: an owner select matches one of them
+	var at := n
+	while at != null:
+		line.append(at.get_instance_id())
+		at = at.get_parent()
 	_events.append({
-		"t": Find.probe.elapsed(), "sound": name, "named": name != "", "bus": String(n.get("bus")), "ref": weakref(n),
+		"t": Find.probe.elapsed(), "sound": name, "named": name != "" and not _holds_others(stream),
+		"bus": String(n.get("bus")), "line": line,
 		"place": Find.place(n) if n is AudioStreamPlayer2D or n is AudioStreamPlayer3D else null,
 		"audible": _at_listener(n) * _bus_gain(String(n.get("bus"))) >= AUDIBLE,
 	})
@@ -173,6 +198,8 @@ func _players() -> Array[Node]:
 	if not _owner.is_empty() and owners.is_empty():
 		return found  # an owner select that matches nothing owns nothing
 	var centre: Variant = Find.point(Find.obj(_near, "point")) if not _near.is_empty() else null
+	if not _near.is_empty() and centre == null:
+		_lost = true
 	for n in Find.all_nodes():
 		if not _is_player(n) or not bool(n.get("playing")):
 			continue
@@ -189,14 +216,27 @@ func _players() -> Array[Node]:
 
 
 func _follow() -> void:
-	## the starts since this query last looked that its select matches
+	## the players that weren't playing in the frame before and are now (`started`), then the starts since this query
+	## last looked that its select matches
+	var now := {}
+	for n in _players():
+		now[n.get_instance_id()] = true
+		if _counting and not _playing.has(n.get_instance_id()):
+			_started += 1
+		if _voiced(n.get("stream")):
+			_voices = true
+	_counting = true
+	_playing = now
 	_watch()
 	if _next >= _events.size():
 		return
-	var owners: Array[Node] = []
+	var owners := {}
 	if not _owner.is_empty():
-		owners = Find.objects(_owner)
+		for o in Find.objects(_owner):
+			owners[o.get_instance_id()] = true
 	var centre: Variant = Find.point(Find.obj(_near, "point")) if not _near.is_empty() else null
+	if not _near.is_empty() and centre == null:
+		_lost = true
 	while _next < _events.size():
 		var e := _events[_next]
 		_next += 1
@@ -205,12 +245,13 @@ func _follow() -> void:
 		if _bus != "" and not String(e["bus"]).matchn(_bus):
 			continue
 		if not _owner.is_empty():
-			var n: Node = e["ref"].get_ref()
-			if n == null or not Find.owned_by(n, owners):
+			var owned := false
+			for id: int in e["line"]:
+				owned = owned or owners.has(id)
+			if not owned:
 				continue
 		if not _near.is_empty() and not Find.within(_near, centre, e["place"]):
 			continue
-		_started += 1
 		_starts_total += 1
 		if e["audible"]:
 			_started_audible += 1
@@ -247,10 +288,16 @@ func sample(_t: float, sample: Dictionary) -> void:
 		"level": _level, "peak": _level_peak, "started": _started, "started_audible": _started_audible,
 		"starts": _starts, "starts_total": _starts_total, "listener": _listener_name(),
 	}
+	if _voices:
+		sample["value"]["voices_unseen"] = true
+	if _lost:
+		sample["value"] = null  # near a point that wasn't there: nothing can be said of what plays near it
 	_started = 0
 	_started_audible = 0
 	_starts = []
 	_starts_total = 0
+	_lost = false
+	_voices = false
 
 
 static func _listener_3d() -> Node3D:

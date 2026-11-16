@@ -164,9 +164,11 @@ def main():
             same = ""
             if test.get("twice") and not args.once and found["probe"] is not None:
                 again = play(godot, copy, name, test, variant, args.rendered, args.desk)
-                same = "  same twice" if again["files"].get("probe.json") == found["files"].get("probe.json") else ""
+                # the whole file, or for a play paced to real time what its test says two plays agree on
+                read = test.get("same") or (lambda played: played["files"].get("probe.json"))
+                same = "  same twice" if again["probe"] is not None and read(again) == read(found) else ""
                 if not same:
-                    checks.fail("a second play wrote another probe.json")
+                    checks.fail("a second play read otherwise" if test.get("same") else "a second play wrote another probe.json")
             bad = [c for c in checks.done if not c[0]]
             failed += len(bad)
             print(f"{'FAIL' if bad else 'PASS'}  {variant}.{name:<12} {len(checks.done)} checks"

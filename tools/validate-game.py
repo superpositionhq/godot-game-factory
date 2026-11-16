@@ -771,6 +771,7 @@ def denied_play_args(args):
 # how fast a part spins depend on what a build chose (docs/task-probes.md)
 NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'spin'), 'objects': ('spin',),
                  'audio': ('volume', 'max_volume', 'level')}
+AUDIO_NAMED = ('sounds', 'repeats')   # read from the names of the streams that started, over the whole window
 UI_SIGNATURE_AGGS = ('changes', 'any', 'all', 'count')  # a ui signature's value means nothing; whether it changes does
 WAITS = 300   # seconds of real time a task play's waits add at most
 # seconds a finger stays up before it goes down again (docs/task-probes.md, section 1.3): the probe lifts a finger a
@@ -943,6 +944,9 @@ def probe_errors(c, seed, ref, plays):
             re.compile(pattern) if isinstance(pattern, str) else None
         except re.error as e:
             errs.append(f"check {n}: {pattern!r} isn't a regular expression ({e})")
+    if probe == 'audio' and field in AUDIO_NAMED and measure.get('agg') is not None:
+        errs.append(f"check {n}: an audio measure's {field} is read from the names of the sounds that started in its "
+                    'window: it takes no `agg`')
     if probe == 'ui':
         if (field == 'text') != (measure.get('match') is not None):
             errs.append(f'check {n}: a ui measure takes `match` exactly when its field is text')

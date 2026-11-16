@@ -474,11 +474,26 @@ def _heard_names(measure, probe):
             return None, "more sounds started than the probe lists, so their names can't all be read"
         rows += listed
     if any(r.get("named") is not True or not isinstance(r.get("sound"), str) for r in rows):
-        return None, "a sound that started has a stream made in code (no file, no name): no name tells it apart"
+        return None, ("a sound that started has no name to tell it by: a stream made in code, or one that picks or "
+                      "mixes other streams (a randomizer, a polyphonic stream)")
     names = [r["sound"] for r in sorted(rows, key=lambda r: r["t"] if _count(r.get("t")) else 0.0)]
     if measure["field"] == "sounds":
         return float(len(set(names))), None
     return float(sum(1 for a, b in zip(names, names[1:]) if a == b)), None
+
+
+VOICES = ("a player it selects plays voices of its own (a polyphonic or a generated stream): those starts are not "
+          "seen, read `level`")
+
+
+def _unseen_voices(measure, probe):
+    """A note for a reading of the sounds that start, or None: a sample the measure picks says a matching player's
+    stream plays voices of its own, which the probe can't see start."""
+    if measure["probe"] != "audio" or measure.get("field") not in tasks.AUDIO_STARTED + tasks.AUDIO_NAMED:
+        return None
+    (query,) = needs(measure)
+    picked = pick([(s["t"], s.get("value")) for s in _samples(probe, query_id(query))], measure)
+    return VOICES if any(isinstance(v, dict) and v.get("voices_unseen") is True for _, v in picked) else None
 
 
 def reduce(measure, probe, log=""):
@@ -526,7 +541,7 @@ def measured(measure, probe, log=""):
         return None, f"no samples in the window (the play ended at {fmt(ended(probe))} s)"
     value = aggregate([v for _, v in picked], default_agg(measure))
     if value is not None:
-        return value, None
+        return value, _unseen_voices(measure, probe)
     errors = _own_errors(measure, probe)
     said = f"; the probe said: {errors[0][:300]}" if errors else ""
     return None, f"no value in the window (nothing it selects was measured){said}"

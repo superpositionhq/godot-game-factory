@@ -20,8 +20,9 @@ The run:
 2. imports the copy (`--headless --import`), which must log no script error;
 3. runs each play as the checker runs one (`--fixed-fps 30 --disable-vsync --audio-driver Dummy`, the spec after
    `-- -taskProbe`), headless;
-4. checks what each play wrote, plays `touch` and `second` a second time (the second must write the same probe.json
-   as the first), prints one line per play and exits with 0 when everything passed.
+4. checks what each play wrote, plays `touch`, `second`, `contact` and `sounds` a second time (the second must write
+   the same probe.json as the first; `sounds`, paced to real time, must list the same starts), prints one line per
+   play and exits with 0 when everything passed.
 
 ```
 probe tests in /w/probe (addon: .../tools/task_check/task_probe)
@@ -51,7 +52,7 @@ One scene, `scenes/Main.tscn`, with something for every measure and input, `scen
 `Corpse`, a `Guard` whose `take_damage` is on a node below it, a `Dummy` whose `take_damage` has a third argument, a
 `Lamp` whose `take_damage` has one, and a `Post` that takes no damage; `game/duel.gd` gives the player a blow (J), a
 pause (P) and a stop of the game's time (O).
-`scenes/Sounds.tscn` (`game/sounds.gd`) starts a sound for each of the keys 1 to 8.
+`scenes/Sounds.tscn` (`game/sounds.gd`) starts a sound for each of its keys and pauses the game for six frames on P.
 
 | Node | What it is for |
 |---|---|
@@ -83,7 +84,7 @@ with an id of its own.
 | `touch` | a tap on a named Control, a drag that holds the stick over, a second finger's tap meanwhile, `<Keyboard>/escape` as the phone's back button (the spec says `touch`), a Control by its class, and the misses: a widget that isn't there, a finger still down |
 | `second` | the spec's `scene` opened, a 2D player and a 2D camera, a 2D node pinned ahead of the player, a `scene` input, a scene the project lacks |
 | `contact` | a contact staged and read: `set` (a property on the nearest match a `where` picks, a colour's part on every match, a class first), `pin` (`front` of the player at its own height and facing it, held while the player's own blow lands; `at` a point), `damage` (from a named object, from the player, onto the player, through a node below, a method with a third argument), `damage_taken` (none for an object no stage struck), `frozen` (none before the hit, 0.2 s after it with a child spawned and freed meanwhile, a stop of the game's time), `world` (the game slowed for three frames, its time stopped for four, a pause of six), `"player": false`, and every stage's miss |
-| `sounds` | the sounds that start: one-shots on players made and freed between two samples, one shorter than a frame, one started again while it plays, a placed one out of earshot and one on a muted bus (started, not audible), a stream without a name; selects by name, bus, owner and `near` |
+| `sounds` | the sounds that start: one-shots on players made and freed between two samples, one shorter than a frame, a player played again while it plays (in the next frame too; a 3D one; a looping stream; one whose stream picks a take), a pause and its end (no start), a placed one out of earshot, one on a muted bus and one on a bus that sends to it (not audible), a stream without a name, a player of voices (the samples' `voices_unseen`); `started` on its own rule beside them; selects by name, bus, owner (of a player freed by then) and `near` (a point that isn't there: no value); two plays agree on every start |
 | `errors` | every `query_errors` line a bad query gives, the task's `player` select, a row that is no input |
 | `refuse` | a spec of another format: exit code 2, nothing written |
 | `idle` | without `-taskProbe` the addon does nothing |
@@ -92,6 +93,6 @@ with an id of its own.
 | `frame` (`--rendered`) | screenshots of exactly the frame's size without alpha, a tap on a named Control landing, `screen` and `render` with values, at 960x540 and at 1080x1920 |
 
 Not covered by a play: `clip` and `anim:`, a 2D game's `extent_*`, `rel_yaw:` and audio fall-off, a 2D player `near`
-a point, a compressed stream (Ogg, MP3) started again while it plays, `has` `visible`,
+a point, `has` `visible`,
 `facing_vs_velocity`, a widget's `percent` of a slider and its `brush`, a mouse `delta`, a gamepad axis, `face` of a
 `teleport_to`.

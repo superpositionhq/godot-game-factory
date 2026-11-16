@@ -116,6 +116,7 @@ The validator's rules beyond the schema include:
   task check;
 - the task's `player` select names no `player` and no point on the player (it says which node the player is);
 - a project path (the task's `play_scene`, a task play's `scene`) has no `.` or `..` part and no empty one;
+- an audio measure's `sounds` or `repeats` takes no `agg` (`AUDIO_NAMED`);
 - a warning, never an error, when a `teleport_to`, a `pin`, a `damage`'s `to`, a `set`'s `on` without `all`, an
   object point or an `"of": "first"` measure takes its one object by a wildcard name and nothing else: a spawner, a
   pool or a parent named like the things fits too;
@@ -269,22 +270,32 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   (drained every frame, shared by every audio query); null when no audio was mixed since. A select's `near` keeps a
   2D or 3D player whose place is within it (`Find.within`), never an `AudioStreamPlayer`. The value also holds
   `loudest` (the loudest player's stream name) and `listener` (its node's name).
+  `started` counts the matching players whose `playing` is true and wasn't the pass before, since the previous
+  sample (one played again while it plays isn't counted; one a pause held counts when it plays on).
   The sounds that start are watched once for every audio query (`_watch`, each pass of every frame, a wait's too):
   the probe knows every player node (those in the tree at its first look, then each the tree's `node_added` brings)
-  and connects its `finished` signal. A start is noted (`_note`) when a player plays that didn't the pass before;
-  when its stream is an `AudioStreamWAV` without a loop, or an `AudioStreamOggVorbis` or `AudioStreamMP3` whose
-  `loop` is off, and its `get_playback_position()` fell back by more than 0.0001 s (`_restarts`); or when its
-  `finished` comes and no pass saw that sound play (`_ended`; a player that stopped without ending is no longer
-  waited for after `IDLE_PASSES`, 4, silent passes). Players playing at the first look are not noted. A start
-  holds the play time, the stream's name (`Find.resource_name`) and whether it has one, the bus, the place (a 2D or
-  3D player's) and whether it was audible: its volume at the listener times the gain of its bus and of every bus on
-  the way to Master (`_bus_gain`; 0 when one is muted) at `AUDIBLE` or more. Each query takes the starts its select
-  matches, in order (`_follow`: the stream's name, the bus, the owner while the node lives, the place within
-  `near`), and a sample holds those since the previous one: `started`, `started_audible`, `starts` (the first
-  `MAX_STARTS`, 64, as `{"t", "sound", "named"}`) and `starts_total`. `sounds` and `repeats` are the checker's
-  (`probes._heard_names`): over the samples picked, the starts by their time; no value when a sample lists fewer
-  than started or a start has no name. A play that measures audio is paced to real time (the spec's `sound`); no play is heard, since
-  the checker starts every play with `--audio-driver Dummy`, under which the engine still mixes.
+  and connects its `finished` signal. A start is noted (`_note`) when the playback a player plays
+  (`get_stream_playback()`, asked only when `has_stream_playback()`) is another object than the pass before: every
+  `play()` makes a new one, and a pause (`stream_paused`, a paused tree) keeps it; or when its `finished` comes and
+  no pass saw that sound play (`_ended`; a player that stopped without ending is no longer waited for after
+  `IDLE_PASSES`, 4, passes without a playback). Players playing at the first look are not noted; two `play()`
+  calls between two passes are one start. A start holds the play time, the stream's name (`Find.resource_name`),
+  whether that names the sound (not for a stream without a name, nor for one that picks or mixes others:
+  `_holds_others`, an `AudioStreamRandomizer`, `AudioStreamPolyphonic`, `AudioStreamPlaylist`,
+  `AudioStreamInteractive` or `AudioStreamSynchronized`), the bus, the ids of the player and of the nodes above it
+  (so an `owner` select matches a player that is freed by then), the place (a 2D or 3D player's) and whether it was
+  audible: its volume at the listener times the gain of its bus and of every bus on the way to Master (`_bus_gain`;
+  0 when one is muted) at `AUDIBLE` or more. Each query takes the starts its select matches, in order (`_follow`:
+  the stream's name, the bus, an owner among those ids, the place within `near`), and a sample holds those since
+  the previous one: `started_audible`, `starts` (the first `MAX_STARTS`, 64, as `{"t", "sound", "named"}`) and
+  `starts_total`. `sounds` and `repeats` are the checker's (`probes._heard_names`): over the samples picked, the
+  starts by their time; no value when a sample lists fewer than started or a start's name doesn't name its sound.
+  A sample holds `voices_unseen` true when a matching player was playing an `AudioStreamPolyphonic` or an
+  `AudioStreamGenerator` since the previous one (`_voiced`): the checker then adds "those starts are not seen, read
+  `level`" to a reading of `started`, `started_audible`, `sounds` or `repeats` (`probes._unseen_voices`). A select
+  whose `near` point didn't resolve at a look since the previous sample gives a null value.
+  A play that measures audio is paced to real time (the spec's `sound`); no play is heard, since the checker starts
+  every play with `--audio-driver Dummy`, under which the engine still mixes.
 - **render** (`queries/render.gd`): `RenderingServer.get_rendering_info` read every frame for the frame drawn before
   it, `RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME` and `RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME`, the highest since
   the previous sample kept (null before any frame); `RENDERING_INFO_TEXTURE_MEM_USED` at the sample, in MiB.

@@ -314,35 +314,55 @@ def check_contact(c, found):
     c.eq("no error", errors(found), [])
 
 
+def heard(found, qid, t0, t1):
+    """(started_audible, the names of the starts in order, how many players were found newly playing: `started`) of a
+    query's samples after t0 up to t1."""
+    picked = [s["value"] for s in samples(found, qid) if t0 < s["t"] <= t1 + 1e-6 and s["value"]]
+    starts = sorted((r for v in picked for r in v["starts"]), key=lambda r: r["t"])
+    return sum(v["started_audible"] for v in picked), [r["sound"] for r in starts], sum(v["started"] for v in picked)
+
+
+def sound_totals(found):
+    """What two plays of the sounds must agree on: every start, by name, and how many were audible."""
+    return heard(found, "all", 0, 99)[:2]
+
+
 def check_sounds(c, found):
-    if not ended(c, found, 7.5):
+    if not ended(c, found, 10.5):
         return
-
-    def heard(qid, t0, t1):
-        """(started, started_audible, the names in order) of a query's samples after t0 up to t1."""
-        picked = [s["value"] for s in samples(found, qid) if t0 < s["t"] <= t1 + 1e-6]
-        starts = sorted((r for v in picked for r in v["starts"]), key=lambda r: r["t"])
-        return (sum(v["started"] for v in picked), sum(v["started_audible"] for v in picked), [r["sound"] for r in starts])
-
-    c.eq("nothing starts before a key", heard("all", 0, 1.0), (0, 0, []))
-    c.eq("one-shots that start and end between two samples", heard("all", 1.0, 1.5), (3, 3, ["shot_a", "shot_a", "shot_b"]))
+    every = lambda t0, t1: heard(found, "all", t0, t1)  # noqa: E731
+    c.eq("nothing starts before a key", every(0, 1.0), (0, [], 0))
+    c.eq("one-shots that start and end between two samples", every(1.0, 1.5), (3, ["shot_a", "shot_a", "shot_b"], 3))
     c.eq("none plays at the samples around them", [s["value"]["count"] for s in samples(found, "all") if s["t"] <= 2.0],
          [0, 0, 0, 0, 0])
-    c.eq("a sound shorter than a frame", heard("all", 2.0, 2.5), (1, 1, ["tick"]))
-    c.eq("a placed sound out of earshot starts unheard", heard("all", 3.0, 3.5), (1, 0, ["far"]))
-    c.eq("one beside the camera is heard", heard("all", 3.5, 4.0), (1, 1, ["close"]))
-    c.eq("one on a muted bus is not", heard("all", 4.0, 4.5), (1, 0, ["hush"]))
-    c.eq("a sound started again while it plays", heard("all", 5.0, 5.5), (2, 2, ["long", "long"]))
+    c.eq("a sound shorter than a frame", every(2.0, 2.5)[:2], (1, ["tick"]))
+    c.eq("a placed sound out of earshot starts unheard", every(3.0, 3.5), (0, ["far"], 1))
+    c.eq("a 3D player played again while it plays: two starts, found newly playing once", every(3.5, 4.0),
+         (2, ["close", "close"], 1))
+    c.eq("one on a muted bus, one on a bus that sends to it: neither is heard", every(4.0, 4.5), (0, ["hush", "muffle"], 2))
+    c.eq("played again in the next frame, and again", every(5.0, 5.5), (3, ["long", "long", "long"], 1))
     last = [r for s in samples(found, "all") if 6.0 < s["t"] <= 6.5 for r in s["value"]["starts"]]
     c.eq("a stream without a name", [(r["sound"], r["named"]) for r in last], [("", False)])
-    c.eq("every start of the play, each once", heard("all", 0, 9), (10, 8, [
-        "shot_a", "shot_a", "shot_b", "tick", "far", "close", "hush", "long", "long", ""]))
+    takes = [r for s in samples(found, "all") if 6.5 < s["t"] <= 7.0 for r in s["value"]["starts"]]
+    c.eq("a player that picks a take, played three times while it plays: three starts, none with a name to tell it by",
+         [(r["sound"], r["named"]) for r in takes], [("takes", False)] * 3)
+    c.eq("a looping sound played again while it plays", every(7.5, 8.5), (2, ["hum", "hum"], 1))
+    c.eq("a pause and its end start nothing; the player is found newly playing after it", every(8.5, 9.0), (0, [], 1))
+    c.eq("a player of voices starts once: its voices are not seen", every(9.0, 9.5)[:2], (1, [""]))
+    c.eq("and the samples say so", [bool(s["value"].get("voices_unseen")) for s in samples(found, "all") if s["t"] > 8.9],
+         [False, True, True, True])
+    c.eq("every start of the play, each once", every(0, 99)[:2], (16, [
+        "shot_a", "shot_a", "shot_b", "tick", "far", "close", "close", "hush", "muffle", "long", "long", "long", "",
+        "takes", "takes", "takes", "hum", "hum", ""]))
     c.eq("the starts a sample lists are all of them", {s["value"]["starts_total"] - len(s["value"]["starts"])
                                                       for s in samples(found, "all")}, {0})
-    c.eq("selected by their stream's name", heard("shots", 0, 9), (3, 3, ["shot_a", "shot_a", "shot_b"]))
-    c.eq("near a point: the sounds that start there", heard("there", 0, 9), (1, 0, ["far"]))
-    c.eq("by their owner", heard("placed", 0, 9), (1, 0, ["far"]))
-    c.eq("by their bus", heard("muted", 0, 9), (1, 0, ["hush"]))
+    c.eq("selected by their stream's name", heard(found, "shots", 0, 99)[:2], (3, ["shot_a", "shot_a", "shot_b"]))
+    c.eq("near a point: the sounds that start there", heard(found, "there", 0, 99), (0, ["far"], 1))
+    c.eq("by their owner", heard(found, "placed", 0, 99), (0, ["far"], 1))
+    c.eq("by their bus", heard(found, "muted", 0, 99), (0, ["hush"], 1))
+    c.eq("by an owner above a player that frees itself, a sound shorter than a frame", heard(found, "ticks", 0, 99)[:2],
+         (1, ["tick"]))
+    c.eq("near a point that isn't there: no value", {s["value"] for s in samples(found, "nowhere")}, {None})
     c.eq("no error", errors(found), [])
 
 
@@ -426,7 +446,7 @@ PLAYS = {
     "touch": {"check": check_touch, "twice": True},
     "second": {"check": check_second, "twice": True},
     "contact": {"check": check_contact, "twice": True},
-    "sounds": {"check": check_sounds},
+    "sounds": {"check": check_sounds, "twice": True, "same": sound_totals},
     "errors": {"check": check_errors},
     "refuse": {"check": check_refuse, "spec": "wait", "format": "other-probe-play/1"},
     "idle": {"check": check_idle, "spec": "wait", "flag": False, "engine_args": ["--quit-after", "30"]},

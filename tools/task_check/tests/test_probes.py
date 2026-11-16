@@ -516,8 +516,15 @@ class MoreFairReadings(unittest.TestCase):
         self.assertEqual(probes.reduce(repeats, heard), 1, "in the order they started")
         self.assertEqual(probes.reduce(m(probe="audio", field="repeats", window=[0, 0.2]), heard), 0, "none started: 0")
         made = {"measures": {nid: sampled([{"starts": [{"t": 1.0, "sound": "", "named": False}], "starts_total": 1}])}}
-        self.assertEqual(probes.measured(names, made), (None, "a sound that started has a stream made in code (no file, "
-                                                              "no name): no name tells it apart"))
+        self.assertEqual(probes.measured(names, made)[1], "a sound that started has no name to tell it by: a stream made "
+                         "in code, or one that picks or mixes other streams (a randomizer, a polyphonic stream)")
+        voiced = {"measures": {qid: [{"t": 2.5, "value": {"started": 1, "started_audible": 0, "voices_unseen": True}}]}}
+        self.assertEqual(probes.measured(hit, voiced), (0.0, probes.VOICES), "the detail says why nothing was seen")
+        self.assertEqual(probes.measured({**hit, "field": "started"}, voiced), (1.0, probes.VOICES))
+        voiced["measures"][qid][0]["value"]["count"] = 1
+        self.assertEqual(probes.measured({**hit, "field": "count", "window": None}, voiced), (1.0, None))
+        self.assertIsNone(probes.reduce(hit, {"measures": {qid: [{"t": 2.5, "value": None}]}}),
+                          "near a point that didn't resolve: no value")
         many = {"measures": {nid: sampled([{"starts": starts, "starts_total": 70}])}}
         self.assertIsNone(probes.reduce(names, many), "more started than the probe lists")
         self.assertIsNone(probes.reduce(names, {"measures": {nid: sampled([None])}}))

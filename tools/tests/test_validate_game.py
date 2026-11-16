@@ -1270,6 +1270,11 @@ class Schema(unittest.TestCase):
             self.assertEqual(self.ok(c, 'Probe'), [], field)
             self.assertEqual(vg.probe_errors(c, {'commit': 'a'}, 'b', {}), [], field)
         self.assertNotEqual(self.ok(probe_check({'probe': 'audio', 'field': 'takes'}), 'Probe'), [])
+        for field in ('sounds', 'repeats'):   # one reading of the whole window: nothing to aggregate
+            c = probe_check({'probe': 'audio', 'field': field, 'agg': 'sum'}, 'look', {'op': '>=', 'value': 1})
+            self.assertEqual(vg.probe_errors(c, {'commit': 'a'}, 'b', {}),
+                             [f"check p: an audio measure's {field} is read from the names of the sounds that started in "
+                              'its window: it takes no `agg`'])
         banded = dict(near, near={'point': {'xyz': [0, 0, 0]}, 'radius': 3, 'y_min': 2, 'y_max': 1})
         c = probe_check({'probe': 'audio', 'select': banded, 'field': 'started'}, 'look', {'op': '>=', 'value': 1})
         self.assertEqual(vg.probe_errors(c, {'commit': 'a'}, 'b', {}), ['check p: a near band has y_min < y_max'])

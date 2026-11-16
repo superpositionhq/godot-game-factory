@@ -20,3 +20,13 @@ unit_size = 4.0
 [node name="Muted" type="AudioStreamPlayer" parent="."]
 
 [node name="Long" type="AudioStreamPlayer" parent="."]
+
+[node name="Sub" type="AudioStreamPlayer" parent="."]
+
+[node name="Rand" type="AudioStreamPlayer" parent="."]
+
+[node name="Loop" type="AudioStreamPlayer" parent="."]
+
+[node name="Voices" type="AudioStreamPlayer" parent="."]
+
+[node name="Shots" type="Node" parent="."]
