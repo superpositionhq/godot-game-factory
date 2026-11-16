@@ -124,6 +124,12 @@ def make_game(root, tamper):
         helpers.git(repo, "mv", "game/" + name, "game/" + name.replace("player", "hero"))
     rec.bash(at(22), "git mv game/player.gd game/hero.gd && git mv game/player.gd.uid game/hero.gd.uid")
     godot(repo, "--import")
+    # its import settings changed by hand in a way the recording cannot follow, then imported again; and a .import
+    # left behind without its source file
+    helpers.write(repo, "assets/red.png.import", helpers.read(repo, "assets/red.png.import").replace("mipmaps/generate=false", "mipmaps/generate=true"))
+    rec.bash(at(23), "sed -i s/generate=false/generate=true/ assets/*.import")
+    godot(repo, "--import")
+    helpers.write(repo, "assets/gone.png.import", '[remap]\n\nimporter="texture"\n')
     helpers.commit(repo, 30, "A sprite image")
     return repo
 
@@ -177,6 +183,8 @@ class Replay(unittest.TestCase):
         self.assertEqual([w["content"]["adopted_uids"] for w in r["windows"]], [0, 0, 1])
         self.assertTrue(made.get("game/hero.gd.uid", "").startswith("import:"))
         self.assertEqual(r["structure"]["by_kind"]["scenes"], {"same": 1})
+        self.assertIn("mipmaps/generate=true", helpers.read(g["root"] + "/godot-replay/tiny/tiny", "assets/red.png.import"))
+        self.assertTrue(r["structure"]["by_kind"]["imported"]["same"] >= 1)
 
     def test_package(self):
         g = self.games["pass"]

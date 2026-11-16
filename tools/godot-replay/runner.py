@@ -318,6 +318,40 @@ def apply_inputs(ctx, w):
     return len(am), len(dl)
 
 
+IMPORTER = re.compile(rb'^importer="[^"\n]*"\n', re.M)
+PARAMS = re.compile(rb"^\[params\]\n.*?(?=^\[|\Z)", re.M | re.S)
+
+
+def seed_import_settings(ctx, w):
+    """The import settings of every .import file the engine is about to write, from the commit: its importer and
+    its [params] section are the session's choices (an input), the rest ([remap], [deps], the uid) the engine
+    generates. A file not there yet gets a stub with only those; an existing one gets its [params] replaced. The
+    engine rewrites the file whole at the import. Returns how many it wrote."""
+    n = 0
+    for x in w["content"]:
+        p = x["path"]
+        if not p.endswith(".import"):
+            continue
+        want = git(ctx.proj, "show", "%s:%s" % (w["sha"], p), binary=True, check=False).replace(b"\r\n", b"\n")
+        params, importer = PARAMS.search(want), IMPORTER.search(want)
+        if not params:
+            continue
+        fp = ctx.p(p)
+        if os.path.exists(fp):
+            with open(fp, "rb") as f:
+                have = f.read()
+            new = PARAMS.sub(lambda m: params.group(0), have, count=1) if PARAMS.search(have) else have + b"\n" + params.group(0)
+        else:
+            have = None
+            new = (b"[remap]\n\n" + importer.group(0) + b"\n" if importer else b"") + params.group(0)
+        if new != have:
+            os.makedirs(os.path.dirname(fp), exist_ok=True)
+            with open(fp, "wb") as f:
+                f.write(new)
+            n += 1
+    return n
+
+
 def needs_import(ctx, w):
     """True when the window changes anything the engine reads, or the project was never imported."""
     if not os.path.isdir(ctx.p(".godot")):
@@ -554,8 +588,9 @@ def cmd_run(cfg, a):
 
         def do_inputs():
             n_am, n_d = apply_inputs(ctx, w)
-            print("   inputs: %d written, %d deleted; %d generated file(s) left to the engine and the steps"
-                  % (n_am, n_d, len(w["content"])), flush=True)
+            n_s = seed_import_settings(ctx, w)
+            print("   inputs: %d written, %d deleted; %d generated file(s) left to the engine and the steps "
+                  "(%d with the commit's import settings)" % (n_am, n_d, len(w["content"]), n_s), flush=True)
 
         def do_import(sid):
             before = scan(ctx.proj)

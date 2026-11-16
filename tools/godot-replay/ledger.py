@@ -472,6 +472,8 @@ def build(cfg):
         w["reconstruction"], written = fs.boundary(w["sha"])
         for s, p in w["changed"]:
             kind = generated_kind(p, extra_ext)
+            if kind and p.lower().endswith(".import") and blob_at(repo, w["sha"], p[:-len(".import")]) is None:
+                kind = None   # an orphan: no source file for the engine to import, so the commit's file as it is
             if kind and s != "D" and p not in written:
                 w["content"].append({"status": s, "path": p, "kind": kind})
             else:

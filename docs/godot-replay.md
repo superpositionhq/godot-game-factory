@@ -55,11 +55,13 @@ What the replay writes from the commits and what it makes itself:
   accumulate visibly instead of being reset.
 - **Inputs** are everything else: every file the recording shows the session writing (a `Write`, an `Edit`, an
   `apply_patch`, a shell edit or copy the replay can follow), whatever its kind, and every file that is not of a
-  generated kind (scripts, settings, source art, `workflow.jsonl`, docs).
+  generated kind (scripts, settings, source art, `workflow.jsonl`, docs). A `.import` whose source file the commit
+  does not have is an orphan the commit owns: an input, taken as it is.
 
 | Step | Source | What the replay does |
 |---|---|---|
 | `inputs.apply` | commit tree | writes every input the commit adds or changes; deletes what it deletes |
+| `import settings` | commit tree | a `.import` file is part input, part generated: its importer and its `[params]` section are the session's choices (loop mode, mono, compression, set by editing the file and importing again), the rest (`[remap]`, `[deps]`, the uid) is the engine's. Before the import the replay writes the commit's importer and `[params]` into each `.import` the window adds or changes (a stub when the file is not there yet); the engine then writes the file whole |
 | `engine.import` | the engine | `godot --headless --path <project> --import` when the window changes anything the engine reads, and once more after the window's steps when they wrote files: the engine writes the `.import` and `.uid` files it finds missing |
 | `editor.step` | `actions.jsonl` command lines | re-runs the step headless in the replay project, `godot --headless --path <project> --script res://<script>`, with the step's text as it stood when the builder ran it (section 2.6) |
 | `shell delete` | `actions.jsonl` | a file a recorded command deleted or moved away (`rm`, `mv`, `Remove-Item`, `Move-Item`) is removed from the replay's own files at the same point, unless the window's commit has it |
@@ -198,6 +200,8 @@ A session keeps these so its history replays (godot-game-session skill):
   `games\<slug>`.
 - **A step makes the same files from the same inputs every time**: seed every random number, no clock, no network.
   It ends itself with `quit()`, and with `quit(1)` when it failed.
+- **Import options are set in the file's `.import`**: edit its `[params]` section, run `Scripts/godot.ps1 import`
+  and commit the file. The replay gives the engine the same settings.
 - **Commit what the engine wrote with what caused it**: run `Scripts/godot.ps1 import` after adding a file or
   running a step, and commit the `.import` and `.uid` files in the same commit.
 - **No amend, no rebase**: the windows are the commits on the first-parent chain, and the recording is matched to

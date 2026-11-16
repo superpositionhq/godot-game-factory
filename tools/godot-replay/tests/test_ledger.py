@@ -117,6 +117,7 @@ class Build(unittest.TestCase):
         rec.edit(at(21), "steps/make.gd", "# v1", "# v2")
         rec.bash(at(22), "rm assets/tmp_note.txt")
         helpers.write(repo, "assets/mystery.tres", "[gd_resource type=\"Gradient\" format=3]\n")
+        helpers.write(repo, "assets/orphan.wav.import", "[remap]\n")
         cls.final = helpers.commit(repo, 30, "later")
         cls.led, cls.blobs = ledger.build({"game": "tiny", "repo": repo, "recording": cls.root + "/.recording/tiny",
                                            "final": "HEAD", "work_dir": cls.root + "/work"})
@@ -151,7 +152,7 @@ class Build(unittest.TestCase):
         self.assertEqual(w["runs"], [])
         self.assertEqual([s["paths"] for s in w["shell"]], [["assets/tmp_note.txt"]])
         self.assertEqual(self.paths(3, "content"), ["assets/mystery.tres"])
-        self.assertEqual(self.paths(3, "inputs"), ["steps/make.gd"])
+        self.assertEqual(self.paths(3, "inputs"), ["assets/orphan.wav.import", "steps/make.gd"])
 
 
 if __name__ == "__main__":
