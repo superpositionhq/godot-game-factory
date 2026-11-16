@@ -65,8 +65,8 @@ Run `measure` on every clip you keep and reject or trim what is wrong for its cu
   that plays it (`volume_db`, or in its cue bank, section 5) so that cues of one kind sit level with each other.
 - `--mono` for anything placed in the world, so it is heard from its place (an `AudioStreamPlayer3D`); stereo for UI
   and ambience (an `AudioStreamPlayer`).
-- Trim with ffmpeg (`<GGF_ROOT>\tools\ffmpeg-8.1.2\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe`) by writing a new WAV next
-  to the original; measure it again and record the change (section 3).
+- Trim with the machine's ffmpeg (the one on PATH, else `<GGF_ROOT>\tools\ffmpeg-8.1.2\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe`,
+  which `machine/get-ffmpeg.ps1` fetches when the machine has none) by writing a new WAV next to the original; measure it again and record the change (section 3).
 
 ## 5. Into the engine
 
