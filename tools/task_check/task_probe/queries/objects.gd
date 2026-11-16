@@ -4,15 +4,17 @@ extends "../query.gd"
 ## rows: {"name", "class", <fields>...}
 
 const Motion := preload("../motion.gd")
+const Stops := preload("../stops.gd")
 const PLAIN := [
 	"count", "x", "y", "z", "yaw", "pitch", "roll", "scale", "extent_x", "extent_y", "extent_z", "active", "hidden",
-	"collision", "speed", "spin", "simulating", "facing_vs_velocity", "clip",
+	"collision", "speed", "spin", "simulating", "facing_vs_velocity", "clip", "frozen", "damage_taken",
 ]
 const PREFIXES := ["prop:", "anim:", "forward:", "rel_yaw:", "world_yaw:", "world_pitch:", "world_roll:"]
 const MAX_SPIN_PARTS := 64
 
 var _select: Dictionary = {}
 var _motion := Motion.new()
+var _stops := Stops.new()
 
 
 func load_query() -> void:
@@ -21,8 +23,9 @@ func load_query() -> void:
 	Find.check(_select, "%s %s" % [kind, id])
 
 
-func frame(_dt: float) -> void:
+func frame(dt: float) -> void:
 	_motion.frame()
+	_stops.frame(dt)
 
 
 func sample(_t: float, sample: Dictionary) -> void:
@@ -30,6 +33,7 @@ func sample(_t: float, sample: Dictionary) -> void:
 	for n in Find.objects(_select):
 		rows.append(_row(n))
 	_motion.end_sample()
+	_stops.end_sample()
 	write_rows(rows, sample)
 
 
@@ -84,6 +88,10 @@ func _field(n: Node, f: String, dt: float) -> Variant:
 			return _spin(n, dt)
 		"clip":
 			return _clip(n)
+		"frozen":
+			return _stops.longest(n)
+		"damage_taken":
+			return probe.damage_taken(n)
 	var colon := f.find(":")
 	if colon <= 0:
 		return null

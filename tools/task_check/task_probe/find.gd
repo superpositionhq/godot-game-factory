@@ -2,7 +2,8 @@ extends RefCounted
 ## Selects, points and `prop:` paths (contract sections 2 and 3): which nodes a select matches, where a point is, and
 ## the small readers every kind shares. An object is a Node; its parts are itself and its descendants. Only nodes that
 ## are shown match (not hidden, nor under a hidden node) unless the select says "inactive": true. Matches come in tree
-## order (the root's children in order, depth first), so "the first match" is the same node in every play.
+## order (the root's children in order, depth first), so "the first match" is the same node in every play. A play's
+## `set` stage writes a property by the path a prop: field reads (write).
 
 const MAX_DEPTH := 3  ## a point nests this deep at most (a select inside a point inside a select)
 const MAX_STEPS := 16  ## a prop: path of more steps reads nothing
@@ -340,6 +341,10 @@ static func matches(n: Node, select: Dictionary, centre: Variant, has_centre: Va
 	var inactive := flag(select, "inactive")
 	if not inactive and not shown(n):
 		return false
+	if select.get("player") is bool and not select["player"]:  # "player": false: anything but the player
+		var who: Node = probe.player() if probe != null else null
+		if who != null and (n == who or who.is_ancestor_of(n)):
+			return false
 	var name := text(select, "name")
 	if name != "" and not String(n.name).matchn(name):
 		return false
@@ -577,6 +582,90 @@ static func own_prop(n: Node, path: String) -> Variant:
 		return null
 	var found := read(n, steps)
 	return plain(found[1]) if found[0] else null
+
+
+static func write(n: Node, path: String, value: Variant) -> bool:
+	## a `set` stage: the property a prop: path names (<Class>.<member>[.<sub>] or <member>[.<sub>], no array index)
+	## written with `value`, as the type it holds: a number or a boolean onto a number or a boolean, a string onto a
+	## string. A part of a vector or a colour (position.y) is written through the vector. False when the path names
+	## no property, or one that can't take the value.
+	if n == null or path == "" or path.find("[") >= 0:
+		return false
+	var steps := path.split(".")
+	if steps.size() > MAX_STEPS:
+		return false
+	if steps.size() > 1:
+		var holder := part_of_class(n, steps[0])
+		if holder != null and _put(holder, steps, 1, value)[0]:
+			return true
+	return _put(n, steps, 0, value)[0]
+
+
+static func _put(holder: Variant, steps: PackedStringArray, i: int, value: Variant) -> Array:
+	## [written, the holder as it is now]: step `i` of a path written on `holder`. A vector, a colour or a transform
+	## is a value, so the one written is handed back for its own holder to store
+	if holder == null or (holder is Object and not is_instance_valid(holder)):
+		return [false, holder]
+	var name := steps[i]
+	var key: Variant = name
+	var current: Variant = null
+	if holder is Object:
+		if not (name in holder):
+			return [false, holder]
+		current = holder.get(name)
+	elif holder is Dictionary:
+		if holder.has(StringName(name)) and not holder.has(name):
+			key = StringName(name)
+		elif not holder.has(name) and name.is_valid_int() and holder.has(name.to_int()):
+			key = name.to_int()
+		elif not holder.has(name):
+			return [false, holder]
+		current = holder[key]
+	elif MEMBERS.has(typeof(holder)) and name in MEMBERS[typeof(holder)]:
+		current = holder[name]
+	else:
+		return [false, holder]
+	var next: Variant = null
+	if i == steps.size() - 1:
+		var fitted := _fit(value, current)
+		if not fitted[0]:
+			return [false, holder]
+		next = fitted[1]
+	else:
+		var inner := _put(current, steps, i + 1, value)
+		if not inner[0]:
+			return [false, holder]
+		if current is Object or current is Dictionary:
+			return [true, holder]  # written in place: nothing to store back
+		next = inner[1]
+	if holder is Object:
+		holder.set(name, next)
+	elif holder is Dictionary:
+		holder[key] = next
+	else:
+		holder[name] = next
+	return [true, holder]
+
+
+static func _fit(value: Variant, current: Variant) -> Array:
+	## [fits, the value as the property's own type]: a number or a boolean for a number or a boolean, a string for a
+	## string; a property that holds nothing yet takes any of them
+	var number := value is bool or value is int or value is float
+	var as_float := (1.0 if value else 0.0) if value is bool else (float(value) if number else 0.0)
+	match typeof(current):
+		TYPE_NIL:
+			return [number or value is String, value]
+		TYPE_BOOL:
+			return [number, as_float != 0.0]
+		TYPE_INT:
+			return [number, roundi(as_float)]
+		TYPE_FLOAT:
+			return [number, as_float]
+		TYPE_STRING:
+			return [value is String, value]
+		TYPE_STRING_NAME:
+			return [value is String, StringName(value) if value is String else value]
+	return [false, value]
 
 
 # ---------------------------------------------------------------- what a node draws and does

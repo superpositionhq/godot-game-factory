@@ -245,6 +245,59 @@ def check_second(c, found):
     c.eq("and its error", errors(found), ["the scene res://scenes/None.tscn isn't in the project: no load"])
 
 
+def check_contact(c, found):
+    if not ended(c, found, 8.5):
+        return
+    probe = found["probe"]
+    foe = lambda t: row(found, "foe", t)  # noqa: E731
+    # set: a property at the start, a part of a colour on every match, a class first
+    c.eq("a property before it is set", foe(0.4).get("prop:health"), 100)
+    c.eq("set writes it on the nearest match where holds for", foe(0.7).get("prop:health"), 30)
+    c.eq("the dead one keeps its own", row(found, "corpse", 0.7).get("prop:health"), 100)
+    c.eq("a colour's part, on every match", (foe(0.7).get("prop:tint.r"), row(found, "corpse", 0.7).get("prop:tint.r")), (0.5, 0.5))
+    c.eq("a class first: the node below that is of it", row(found, "guard", 0.7).get("prop:foe.shielded"), 1)
+    # pin: ahead of the player at its own height, facing the player, its own script running on
+    c.near("the foe walks before the pin", foe(0.9).get("x"), 6.0 + 2.0 * 0.9, 0.2)
+    for t in (1.1, 2.0, 2.4):
+        c.near(f"pinned 2 m ahead of the player at {t} s", math.dist([foe(t).get(k, 99) for k in "xyz"], [0, 0.5, -2]), 0.0, 1e-3)
+    c.near("it faces the player", abs(foe(1.1).get("yaw", 0)), 180.0, 1e-3)
+    c.eq("the player's own blow lands on it", (foe(1.4).get("prop:health"), foe(1.7).get("prop:health")), (30, 20))
+    c.true("released, it walks on", foe(2.9).get("x", 0) > 0.5, foe(2.9).get("x"))
+    # damage: through take_damage, from the object named or the player; what it returned; its own short stop
+    c.eq("no stop before the hit", [s["rows"][0].get("frozen") for s in samples(found, "foe") if 2.75 <= s["t"] <= 3.0], [0, 0, 0])
+    c.eq("the first sample has no stop to read", "frozen" in foe(0.0), False)
+    c.eq("a hit from a named object", (foe(3.1).get("prop:health"), foe(3.1).get("prop:last_source"), foe(3.1).get("damage_taken")),
+         (19, "Post", 1))
+    stops = [s["rows"][0].get("frozen", 0) for s in samples(found, "foe") if 3.05 <= s["t"] <= 3.45]
+    c.near("its stop of 0.2 s is read once it ends", max(stops), 0.2, 0.04)
+    c.eq("and only then", sum(1 for v in stops if v), 1)
+    c.eq("a hit from the player", (foe(3.6).get("prop:health"), foe(3.6).get("prop:last_source"), foe(3.6).get("damage_taken")),
+         (4, "Player", 16))
+    c.eq("a hit that takes less than asked", (foe(4.7).get("prop:health"), foe(4.7).get("prop:dead"), foe(4.7).get("damage_taken")),
+         (0, 1, 20))
+    c.eq("a shielded one takes nothing, through the node below it", row(found, "guard", 4.8).get("damage_taken"), 0)
+    c.eq("an object never struck", row(found, "post", 4.8).get("damage_taken"), 0)
+    hero = row(found, "player", 5.2)
+    c.eq("the player struck, by the nearest other that can be hurt",
+         (hero.get("prop:health"), hero.get("prop:last_source"), hero.get("damage_taken")), (70, "Foe", 5))
+    # world: the lowest time scale and a pause, between samples too
+    scale = {round(s["t"], 1): s["value"]["time_scale"] for s in samples(found, "world")}
+    c.eq("the game runs at its pace", {scale.get(t) for t in (1.0, 4.9, 5.3, 8.0)}, {1})
+    c.eq("a hit slows it for three frames", min(scale.values()), 0.25)
+    c.eq("read in the sample after the hit", scale.get(5.1), 0.25)
+    paused = {round(s["t"], 1): s["value"]["paused"] for s in samples(found, "world")}
+    c.eq("a pause of six frames", [t for t in sorted(paused) if paused[t]], [5.5, 5.6, 5.7])
+    # pin at a point
+    c.near("pinned at a point and an offset", math.dist([row(found, "post", 6.4).get(k, 99) for k in "xyz"], [3, 1, 0]), 0.0, 1e-3)
+    c.eq("every node but the player", [r["name"] for r in rows(found, "others", 1.0)], ["Corpse", "Foe", "Hurtbox"])
+    c.eq("stages that didn't land", [(m["t"], m["kind"], m["target"]) for m in probe.get("inputs_missed", [])], [
+        (0.6, "set", "armour"), (0.6, "set", "health"), (0.6, "set", "health"), (6.5, "pin", '{"player":true}'),
+        (6.5, "pin", '{"name":"Post"}'), (6.5, "damage", "Post"), (6.5, "damage", '{"name":"Nobody"}')])
+    c.true("a missed stage says why", all(m.get("why") for m in probe.get("inputs_missed", [])))
+    c.eq("inputs sent", probe.get("inputs_sent"), 21)
+    c.eq("no error", errors(found), [])
+
+
 def check_errors(c, found):
     if not ended(c, found, 1.5):
         return
@@ -324,6 +377,7 @@ PLAYS = {
     "keys": {"check": check_keys},
     "touch": {"check": check_touch, "twice": True},
     "second": {"check": check_second, "twice": True},
+    "contact": {"check": check_contact, "twice": True},
     "errors": {"check": check_errors},
     "refuse": {"check": check_refuse, "spec": "wait", "format": "other-probe-play/1"},
     "idle": {"check": check_idle, "spec": "wait", "flag": False, "engine_args": ["--quit-after", "30"]},

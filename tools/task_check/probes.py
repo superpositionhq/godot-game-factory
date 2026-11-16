@@ -55,6 +55,8 @@ def needs(measure):
         return [{"kind": "spawns", "component": measure["component"]}]
     if probe == "render":
         return [{"kind": "render", "fields": [field]}]
+    if probe == "world":
+        return [{"kind": "world", "fields": [field]}]
     return []  # log
 
 
@@ -437,7 +439,7 @@ def series(measure, probe):
                                              for r in rows], measure["of"])))
         return out
     values = [(s["t"], s.get("value") if isinstance(s.get("value"), dict) else {}) for s in samples]
-    if probe_kind in ("camera", "screen", "audio", "render"):
+    if probe_kind in ("camera", "screen", "audio", "render", "world"):
         return [(t, number(v.get(field))) for t, v in values]
     if probe_kind == "spawns":  # cumulative counts since the play started -> the count in each sample's interval
         out, before = [], 0.0

@@ -45,7 +45,10 @@ Windows desktop of its own (`../desk.py`), as the checker does, so nothing shows
 
 ## The game (`project/`)
 
-One scene, `scenes/Main.tscn`, with something for every measure and input, and `scenes/Second.tscn`, a 2D scene.
+One scene, `scenes/Main.tscn`, with something for every measure and input, `scenes/Second.tscn`, a 2D scene, and
+`scenes/Duel.tscn`, a fight to stage: a `Player` whose `take_damage` slows the game for three frames, a `Foe`
+(`game/foe.gd`) that walks to and fro and stops for 0.2 s when hit, a dead `Corpse`, a `Guard` whose `take_damage` is
+on a node below it, and a `Post` that takes no damage; `game/duel.gd` gives the player a blow (J) and a pause (P).
 
 | Node | What it is for |
 |---|---|
@@ -76,6 +79,7 @@ with an id of its own.
 | `keys` | keys through an input action, the wheel, a widget click, the cursor and the left button, a gamepad button, a teleport with a hold, `teleport_to`, a view turn; every kind's fields on the scene above: object selects (group, name, class, `near`, `has`, `where`, `inactive`), `prop:` paths, parts, speed and spin, extents, 200 rows of 250 with `total` and `full`, components (class, `effect`, `mesh`, lights), spawns, the camera, widgets, ui, audio (count, volume at the listener, level, `started`, selects by name, bus and owner), render's keys; the saved data cleared; an unknown key and a click that finds nothing |
 | `touch` | a tap on a named Control, a drag that holds the stick over, a second finger's tap meanwhile, `<Keyboard>/escape` as the phone's back button (the spec says `touch`), a Control by its class, and the misses: a widget that isn't there, a finger still down |
 | `second` | the spec's `scene` opened, a 2D player and a 2D camera, a `scene` input, a scene the project lacks |
+| `contact` | a contact staged and read: `set` (a property on the nearest match a `where` picks, a colour's part on every match, a class first), `pin` (`front` of the player at its own height and facing it, held while the player's own blow lands; `at` a point), `damage` (from a named object, from the player, onto the player, through a node below), `damage_taken`, `frozen` (none before the hit, 0.2 s after it), `world` (the game slowed for three frames, a pause of six), `"player": false`, and every stage's miss |
 | `errors` | every `query_errors` line a bad query gives, the task's `player` select, a row that is no input |
 | `refuse` | a spec of another format: exit code 2, nothing written |
 | `idle` | without `-taskProbe` the addon does nothing |

@@ -179,7 +179,9 @@ units, y down, as `x` and `y` with `z` 0, and its rotation as `roll`.
       yaw in degrees (pitch -89 to 89, a negative one looks down), once: a camera rig that sets its own rotation
       every frame turns it back, so place the player with `teleport_to` and `face` where that matters;
     - a touch: `{"t": 1.0, "tap": [0.5, 0.6]}` or `{"t": 2.0, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "over":
-      0.3, "hold": 2.0}`, a finger on the screen (section 1.3).
+      0.3, "hold": 2.0}`, a finger on the screen (section 1.3);
+    - a stage of a contact: `pin` (an object held ahead of the player or at a point), `damage` (a hit through the
+      game's `take_damage`), `set` (a property written), section 1.4.
 
   With these, one launch tours several places and scenes and pictures each: scene, teleport (or `teleport_to` what
   the build placed), turn, shot. **The grader's tour lives in the task**, which the agent never sees, so a build can't
@@ -291,6 +293,69 @@ signal and `NOTIFICATION_WM_GO_BACK_REQUEST`, then the key `KEY_BACK`; a game th
 desktop game takes touches too when it reads them, so they are allowed in any task; a mobile game is played by touch,
 so its tasks' plays drive it with touches and the back button, never with another key, the mouse or a gamepad.
 
+### 1.4 Staging a contact, and reading it
+
+An ask that only shows after a blow, a shot, a hit taken or a foe falling is checked by making the contact happen at a
+time the play knows, then reading what changed. Names come from the task's start commit, never from the instruction.
+
+**Stage it** (each a miss in `inputs_missed` when nothing takes it: the check fails, or it is a task error when the
+fix misses too):
+
+- `{"t": 2.0, "pin": <object select>, "hold": 3, "front": 1.5, "offset": [x, y, z]}` or, in place of `front`,
+  `"at": <Point>`: the match nearest the player (never the player or a node below it; of two as near, the first in
+  tree order) is held at its place for `hold` seconds (up to 120) while its own scripts, animation and attacks run
+  on: it is put back and its velocity stilled before the game's scripts of every frame and again after them, as a
+  held player is (section 1.1), and it still turns, swings and blocks. First it is set `front` m (0 to 1000) ahead
+  of the player along the way the player faces (its -Z on the level; a 2D player's +X), at its own height (its y is
+  kept: use `at` with the player's point where the ground differs), or `at` a point (section 2.13), plus `offset`,
+  and turned to face the player (a 2D node isn't turned). Without `front` and `at` it is held where it is. The
+  player's own blow or shot, by the task's keys or touches, then lands on it. One of `front` and `at`, not both; a
+  pin lasts through a `wait`. A target the build invents has no name the start knows: `{"player": false,
+  "component": "CollisionObject3D", "has": {"visible": true}, "near": {"point": {"player": true}, "radius": 6}}`
+  is the nearest body that draws near the player; a floor or a wall is one too, so where the nearest is not surely
+  the target, the ask is not testable.
+- `{"t": 3.0, "damage": 20, "to": <object select>, "from": <object select>}`: a hit through the game's own damage
+  method, `take_damage(amount: float, source: Node) -> float`, which every game under the combat rule has on what
+  can be hurt ([game-format.md](game-format.md)). `to` takes the match nearest the player (`{"player": true}`: the
+  player), and the method is the node's own, else that of the first node below it that has one. `source` is the
+  match of `from` nearest the one struck; without `from` it is the player, or, when the player is the one struck,
+  the nearest other node that has a `take_damage` (nothing when there is none). What the method returns is read
+  back as `damage_taken` (below). No match, or a match without the method: a miss.
+- `{"t": 1.0, "set": "<property path>", "on": <object select>, "value": v, "all": true}`: a property the start
+  names, written to set a fight up (a foe's health at 1, so one blow fells it through the game's own death; the
+  player's own high, so a staged fight can't end the play), never to decide what the check reads. The path is the
+  one a `prop:` field reads (section 2.4), without an array index: `health`, `Health.current`, `position.y`. `on`
+  takes the match nearest the player, or every match with `"all": true`. A number or a boolean goes onto a number
+  or a boolean, a string onto a string; an enum takes its number. The property's setter runs, as when the game
+  writes it. No match, or no matched object with such a property that takes the value: a miss.
+- `where` in any object select (section 2.4) keeps the ones a property picks (only foes not dead, a bay's own
+  group), and `"player": false` anything but the player. `set` and `where` name only members the task does not ask
+  to change.
+
+Without a player in the play, "nearest the player" is the first match in tree order, and a pin `front` is a miss.
+The play's `probe.log` says what each stage did: `pinned Foe at (x, y, z) yaw <degrees> for 3.0 s`, `damage 20.0 to
+Foe (take_damage of Foe) from Player: it returned 20.0`, `set health to 1.0 on 3 of 3 object(s)`: check it in the
+fix's play.
+
+**Read it deterministically**, in a probe one sentence explains:
+
+- a thing gone or there (an `objects` `count`, `hidden`), a state or property the start names (`prop:`);
+- a sound that started (`audio` `started` over a window right after the contact, section 2.16);
+- **a hit stop** (0.05 to 0.1 s: no screenshot shows it): `world` `time_scale` (section 2.21) where the stop slows
+  the game, `objects` `frozen` (section 2.4) where it is the object's own, in a tight window right after the
+  contact with `"agg": "max"`, never on an object a pin or a teleport holds, paired with `world` `paused` == 0;
+  the start's play must read no stop;
+- **a stagger, a knock-back or an interrupted action** (behaviour, not looks): the animation that plays in a short
+  window after the hit and not before it (`clip` with `match`, an `anim:` parameter); the object unable to act (the
+  move key held through the window: its `speed`, or the player's `moved`, near 0, then moving again after it); a
+  staggered state the start names; a knock-back as its place moving away from the attacker (`dist` rising);
+- `objects` `damage_taken`: what a staged hit did, as the game's `take_damage` returned it (a guard or a shield
+  that takes nothing reads 0).
+
+**What it looks like** (sparks, colours, glow, readability) goes to the required `looks_as_asked` judge, with its own
+play staged the same way and named `shot` frames a few hundredths of a second apart across the contact. A pose may be
+an extra rubric item, never the only check of a behaviour.
+
 ## 2. Measures
 
 Which measure answers which question (each section has its fields, defaults and limits):
@@ -308,8 +373,11 @@ Which measure answers which question (each section has its fields, defaults and 
 | what plays, how loud at the listener, a sound that starts | `audio` (2.16) |
 | what the HUD or a menu shows: text, a number, a clock, whether it updates | `ui` (2.18) |
 | what the renderer drew, against a budget: draw calls, triangles, texture memory | `render` (2.20) |
+| the game as a whole: how slow its time ran, whether it was paused | `world` (2.21) |
+| what a blow, a shot or a hit taken did: a short stop, the damage a staged hit did | `objects` `frozen`, `damage_taken` (2.4), with the contact staged (1.4) |
 
-How a play gets there (keys, clicks, teleports, waits): section 1.1; touches: section 1.3. Literal or calibrated:
+How a play gets there (keys, clicks, teleports, waits): section 1.1; touches: section 1.3; a contact made to happen
+(`pin`, `damage`, `set`): section 1.4. Literal or calibrated:
 section 1.2. Points and `near`: section 2.13. Why a probe has no value: section 3.
 
 ### 2.1 Common fields
@@ -402,7 +470,8 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     spawner. To pick the things themselves, select them by their own class (`"component": "Coin"`), their group or
     their full name: a node added at run time beside others of its name is named by the engine (`Coin2`,
     `@Node3D@12`), so a name the code doesn't set itself is no name to select by.
-  - `near`: its position (its origin) within `radius` m of a point. `{"player": true}`: the player.
+  - `near`: its position (its origin) within `radius` m of a point. `{"player": true}`: the player;
+    `"player": false`: anything but the player and the nodes below it (the foes among every `CharacterBody3D`).
   - `where`: `[{"prop": "<path>", "op": "==", "value": v}, ...]` (1 to 4): a property of the node, the path a `prop:`
     field reads, compared with a number, a boolean or a string (a string takes `==` and `!=`); every condition must
     hold, and a node whose property doesn't resolve doesn't match. Only foes not dead, a bay's own crates:
@@ -467,7 +536,20 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     `clip`: the name of the animation that plays, through `match`: the current animation of the first
     `AnimationPlayer` in the object that is playing, else of a playing `AnimatedSprite2D` or `AnimatedSprite3D`, else
     the current state of an `AnimationTree` whose root is a state machine. Read an AI's state with `anim:`, `clip`
-    or a `prop:` of the node that holds it.
+    or a `prop:` of the node that holds it;
+  - `frozen` (seconds): the object's own short stop, a hit stop too short for a screenshot: the longest stop that
+    ended since the previous sample, 0 when none did. The probe follows the object frame by frame from the first
+    sample that reads it (which has no value). A frame is one of motion when the object, a node below it (64 at
+    most) or a bone of a `Skeleton3D` in it moved 1 mm (a 2D node 0.01 units) or turned 0.1 degrees; a stop is a
+    run of frames without motion between two frames of motion, 0.5 s at most (longer is standing still). So it
+    reads an object that moves or animates before and after the stop; an `AnimatedSprite`'s frames are no motion.
+    Read it with `"agg": "max"` over a tight window after the contact, in a play sampled every 0.1 s; never on an
+    object a pin or a teleport holds (it is put back every frame), and with the game's own time at its pace
+    (`world`, section 2.21: a slowed game moves less than a frame's threshold);
+  - `damage_taken`: what the object's `take_damage`, or that of a node below it, returned for the play's `damage`
+    stages so far (section 1.4), summed: 0 before any struck it, no value when a call returned no number. In a
+    game under the combat rule `take_damage` returns the damage actually applied, so this is what a staged hit
+    did. A hit the game itself deals (the player's own blow) is not counted: read the state it changes.
 
 A row (in `probe.json`, for the logs) holds the node's `name` and a `class`: its script's `class_name`, else its
 script's file name, else its engine class.
@@ -748,6 +830,14 @@ budget is a number of its own: `{"op": "<=", "value": 700}`.
   play's inputs (teleports, a scenario's `args`): give a budget check a play that goes where the game is heaviest,
   and read `"agg": "max"`.
 
+### 2.21 `world`: the game as a whole
+
+`{"probe": "world", "field": "time_scale" | "paused"}`: `time_scale` is the lowest `Engine.time_scale` over the
+frames since the previous sample (a hit stop that slows the game shows even between samples; 1 when it ran at its
+pace); `paused` is 1 when the game was paused (`get_tree().paused`) in any of them ("Escape pauses the game"). Both
+take a literal. The play's clock counts on through either (section 1.1), so a window right after the contact holds
+the stop.
+
 ## 3. What gates, and how a probe fails
 
 - **At least one required probe.** Every task has at least one `probe` check with `"required": true` (the default);
@@ -768,8 +858,8 @@ budget is a number of its own: `{"op": "<=", "value": 700}`.
   `query_errors`). The usual reasons a select matched nothing, and where to look: [task-check.md](task-check.md),
   "Common reasons and fixes", under "no value in the window".
 - **An input that didn't land is listed.** A play's `probe.json` names every input that reached nothing in
-  `inputs_missed` (a touch whose widget isn't on screen, a click no control took, a scene the project lacks): read
-  it in the fix's play before trusting what the play measured.
+  `inputs_missed` (a touch whose widget isn't on screen, a click no control took, a scene the project lacks, a
+  stage of a contact nothing took: section 1.4): read it in the fix's play before trusting what the play measured.
 - **`needs`** names only earlier checks; check names are unique in the task.
 
 ### 3.1 A start that doesn't load: `fails_at_start`
@@ -909,5 +999,9 @@ task is void.
 - **A sound made in code has no name.** A stream a script builds, or a copy of a stream, has no file behind it, so
   no `sound` select finds it: read `level` (calibrated or relative to the start) in a play that hears it, select
   its player by `owner`, or count it with `started`.
+- **A contact is staged, never waited for.** No fixed play is sure to bring a foe within reach: `pin` it ahead of
+  the player and press the task's own attack key, or `damage` the one struck at a time the play knows, then read
+  the window right after it (section 1.4). Check the fix's `probe.log` and `inputs_missed` for what each stage
+  reached.
 - **A budget is read where the game is heaviest.** A `render` reading is of the frames a play drew: teleport to the
   view the budget is about and read `max` over a window there, in a play of its own.

@@ -69,13 +69,18 @@ Plays and inputs:
   `{"widget": "<name>"}` (the same pattern); `teleport_to`'s `distance` defaults to 2 m.
 - Touches (`tap`, `drag`): one finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and
   every touch is over by the play's end (the validator's `TOUCH_GAP`).
+- The stages of a contact: `pin` (an object select, `hold` above 0 up to 120 s, `front` 0 to 1000 m or `at` a point,
+  `offset`), `damage` (above 0, `to` and optionally `from`, object selects), `set` (a path of up to 6 members without
+  an index, `on` an object select, `value` a boolean, a number or a string of at most 120 characters, `all`). The
+  validator refuses a pin whose select says `"player": true` and one with both `front` and `at`.
 
 Selects and points:
 
 - `component` in every select (object select, `has`, components, widgets) and in `spawns`: a class name,
   `^[A-Za-z_][A-Za-z0-9_]{0,120}$` (what it matches: section 1).
 - Object select (`Select`): `component` (the node's own class), `tag`, `name` (a wildcard on the node's whole name,
-  any case), `near`, `has`, `where`, `player` (true), `inactive` (true lets nodes that aren't shown match). `has`:
+  any case), `near`, `has`, `where`, `player` (true: the player alone; false: every node but the player and the
+  nodes below it), `inactive` (true lets nodes that aren't shown match). `has`:
   `component`, `visible`, `near`, `simulating` (at least one key; `visible`, `simulating` only `true`). `where`: 1 to
   4 conditions `{"prop": <path>, "op": "==|!=|>|>=|<|<=", "value": <number, boolean or string>}`, every one must hold.
 - Component select: `component` or `effect` or both, `name`, `owner` (an object select), `near`, `mesh`, `visible`,
@@ -91,7 +96,7 @@ Selects and points:
 Measures:
 
 - Probe kinds: `player`, `camera`, `objects`, `components`, `widgets`, `ui`, `screen`, `spawns`, `log`, `audio`,
-  `render`. A check's `play` is `look`, `drive` or a task play.
+  `render`, `world`. A check's `play` is `look`, `drive` or a task play.
 - `objects` fields: the schema's pattern lists them. A Part name (`rel_yaw:`, `world_yaw:`, `world_pitch:`,
   `world_roll:`, `forward:`) is a node's name, `[A-Za-z0-9_][A-Za-z0-9_ ()-]{0,63}`; an `anim:` parameter may hold
   dots and slashes (`anim:conditions/jump`, `anim:Blend2/blend_amount`).
@@ -99,6 +104,7 @@ Measures:
 - `spawns`: `{"probe": "spawns", "component": "<class>", "field": "spawned|destroyed"}`.
 - `audio` fields: `count`, `audible`, `volume`, `max_volume`, `level`, `started`.
 - `render`: `{"probe": "render", "field": "draw_calls|triangles|texture_mb"}`.
+- `world`: `{"probe": "world", "field": "time_scale|paused"}`.
 
 The validator's rules beyond the schema include:
 
@@ -108,8 +114,11 @@ The validator's rules beyond the schema include:
   task check;
 - the task's `player` select names no `player` and no point on the player (it says which node the player is);
 - a project path (the task's `play_scene`, a task play's `scene`) has no `.` or `..` part and no empty one;
-- a warning, never an error, when a `teleport_to`, an object point or an `"of": "first"` measure takes its one object
-  by a wildcard name and nothing else: a spawner, a pool or a parent named like the things fits too.
+- a warning, never an error, when a `teleport_to`, a `pin`, a `damage`'s `to`, a `set`'s `on` without `all`, an
+  object point or an `"of": "first"` measure takes its one object by a wildcard name and nothing else: a spawner, a
+  pool or a parent named like the things fits too;
+- a required probe's play names nothing only the reference has in a `teleport_to` or a stage's select (`pin`, `to`,
+  `from`, `on`), as in its measure (`probe_names`).
 
 Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's
 `NEVER_LITERAL`): objects `spin`; components `intensity`, `extent_*`, `spin`; `screen` (all); audio `volume`,
@@ -195,7 +204,18 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   - `anim:<Parameter>` and `clip`: `anim:` reads `parameters/<Parameter>` of the first `AnimationTree` in the object
     (a number or a boolean; anything else no value); `clip` is the current animation of the first `AnimationPlayer` in
     it that is playing, else of the first playing `AnimatedSprite2D` or `AnimatedSprite3D`, else the current state
-    of an active `AnimationTree` whose root is a state machine (`parameters/playback`).
+    of an active `AnimationTree` whose root is a state machine (`parameters/playback`);
+  - `frozen` (`stops.gd`): each node a sample read is followed frame by frame from then on, through later samples
+    (a stop under way when a sample falls goes on). Its pose is the global transform of itself and of the placed
+    nodes below it (`Node3D`, `Node2D`; a `Control`'s global position; `MAX_PARTS` 64) and the place of every bone
+    of a `Skeleton3D` among them (`get_bone_global_pose`, `MAX_BONES` 256). A frame is one of motion when a place
+    moved more than `MOVED_3D` (0.001 m; `MOVED_2D` 0.01 units) or an axis of a transform's basis more than `TURNED`
+    (0.00175: a turn of 0.1 degrees), or the pose has another number of entries. A run of frames without motion
+    after a frame of motion, ended by one, of `LONGEST` (0.5 s) at most, is a stop; the sample has the longest that
+    ended since the previous sample, 0 when none, and no value the first time the node is read. The pose is
+    compared before the game's scripts of a frame, so a frame's motion counts in the next;
+  - `damage_taken` (`inputs.gd` `damage_taken`): the sum of what `take_damage` returned for the play's `damage`
+    stages on the node or on a node below it; 0 when none struck it; no value when a call returned no number.
 - **components** (`queries/components.gd`): the nodes of the class, or with `effect` alone every particle node
   (`GPUParticles3D`, `CPUParticles3D`, `GPUParticles2D`, `CPUParticles2D`); `effect: true` keeps those that are
   emitting and shown. `mesh` reads a `MeshInstance3D`'s, a `MeshInstance2D`'s or a `MultiMeshInstance3D`'s mesh by
@@ -248,6 +268,10 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   passes' and the 2D canvas's summed, so the UI counts (a box 12 primitives and 1 draw call; a label of 13 glyphs and
   a rectangle 28 primitives and 2 draw calls); the texture memory holds the engine's own render targets and default
   textures, 10 to 19 MiB before a game adds anything; a `--headless` play reads 0.
+- **world** (`queries/world.gd`): `Engine.time_scale` and `SceneTree.paused` read every frame before the game's
+  scripts and once more at the sample, after them; the value is `time_scale`, the lowest read since the previous
+  sample, and `paused`, 1 when a read found the tree paused. A value its scripts set in the sample's own frame is
+  in that sample and, while it lasts, in the next.
 - **log**: the lines of the play's log (`--log-file`, kept as `play.log`) that match, read by the checker.
 
 ## 4. Plays and inputs
@@ -298,18 +322,18 @@ is exactly `TaskProbe.` and 12 hex digits and the folder is that name's; the eng
 folder with the copy (section 5).
 
 A frame has two passes, each raising the probe's `stamp`: before the game's scripts (the autoload, process priority
--2^30: a held player put back, the inputs) and after them (its child `Late`, priority 2^30: a held player put back
-again, the samples, the screenshots, the end). Physics ticks of a frame run before both. What is looked up once a
-pass (the player, the camera, the list of nodes) is kept by the stamp. The frame as drawn (a screenshot, a `screen`
+-2^30: a held player and the pinned objects put back, the inputs) and after them (its child `Late`, priority 2^30:
+a held player and the pinned objects put back again, the samples, the screenshots, the end). Physics ticks of a
+frame run before both. What is looked up once a pass (the player, the camera, the list of nodes) is kept by the stamp. The frame as drawn (a screenshot, a `screen`
 sample) is read at `RenderingServer.frame_post_draw` of the same frame.
 
 Inputs (`inputs.gd`) reach the game as the engine's own input events through `Input.parse_input_event`, and the
 probe flushes them at once (`Input.flush_buffered_events`), so the game's `_input`, its Controls and its input
 actions take an input in the frame of its time, before its scripts' `_process` of that frame (its `_physics_process`
 of that frame has run). Rows of one time go in the order the task wrote them. A row is tried as a widget click
-(`click` true and a `widget`), a `tap`, a `drag`, a cursor move, a teleport_to, a teleport, a shot, a scene load, a
-view turn, a wait, then a key or axis, in that order; a row that is none of them is left out and not counted in
-`inputs_sent`, and a row without `t` is sent at 0. An unknown control is a `query_errors` line (`inputs: the keyboard
+(`click` true and a `widget`), a `tap`, a `drag`, a cursor move, a teleport_to, a teleport, a pin, a damage, a set, a
+shot, a scene load, a view turn, a wait, then a key or axis, in that order; a row that is none of them is left out
+and not counted in `inputs_sent`, and a row without `t` is sent at 0. An unknown control is a `query_errors` line (`inputs: the keyboard
 has no key <x>`, `inputs: the mouse has no control <x>`, `inputs: the gamepad has no control <x>`, `inputs: no
 control <path>`, `inputs: no device for <path>`), never a stop. An input that didn't land is a row of `inputs_missed`
 (section 5).
@@ -367,6 +391,34 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   back at the spot and stilled before the game's scripts and again after them, through waits.
   `probe.log` says where each went (`teleported next to <name>: asked (...) yaw ..., now at (...)`, `teleport_to
   skipped (no object matches)`).
+- pin: `{"t", "pin": <object select>, "hold": s, "offset": [x, y, z], "front": m | "at": <Point>}` (the checker
+  writes `offset`, 0 when unset; `front` and `at` only when set; `_pin`). The target is the match nearest the player
+  that has a place, the player and the nodes below it left out (`_nearest`: of two as near, the first in tree order;
+  without a player, the first match). With `front`: the player's place plus `front` m along the player's forward
+  (`Find.forward`: its -Z, flattened to the level; a 2D node's +X) plus `offset`, at the target's own y plus the
+  offset's y (a 2D target: the whole point); with `at`: the point plus `offset`; with neither: where it is. Set
+  there, a 3D target is turned to face the player (its yaw alone; kept when the player is within a centimetre on
+  the level). It is placed and stilled as a teleport places the player (`_place`, `_still`) and, for `hold` seconds
+  of play time, put back and stilled before the game's scripts and again after them, through waits (`hold`, with
+  the held player); its rotation stays free. A second pin of the same node takes the first one's place. Misses: no
+  object with a place matches, `front` without a player, an `at` that doesn't resolve.
+- damage: `{"t", "damage": points, "to": <object select>, "from": <object select>}` (`from` only when set;
+  `_strike`). The target is the match of `to` nearest the player; the method is `take_damage` of the target, else
+  of the first node below it that has one (`_hurt`), and must take two arguments
+  (`Object.get_method_argument_count`). The source is the match of `from` nearest the target (the target and the
+  nodes below it left out); without `from`, the player, or, when the target is the player, a node above or below
+  it, or the play has no player, the node with a `take_damage` nearest the target that is neither the target nor
+  the player (`_other_hurt`; `null` when there is none). The call is `take_damage(amount, source)`, made with the
+  inputs, before the game's scripts of the frame; what it returns is summed by the node whose method it is
+  (`damage_taken`). Misses: no match of `to`, no method, a method of another shape, no match of `from`.
+- set: `{"t", "set": "<path>", "on": <object select>, "value": v, "all": bool}` (`_write`, `Find.write`): on the
+  match nearest the player, or on every match with `all`. The path is resolved as a `prop:` path is (a class first:
+  the node itself when it is of it, else the first node below it that is; else on the node itself), without an
+  index. The last member is written with `Object.set` (its setter runs), a dictionary's entry by its key, or a
+  vector's, a colour's or a transform's part, which is written back through the property that holds it. The value
+  takes the type the property holds (`Find._fit`): a number or a boolean onto a boolean, an integer (rounded) or a
+  float, a string onto a string or a StringName; a property that holds `null` takes any of them; anything else
+  takes nothing. Misses: no match, or no matched object the write lands on.
 - shot: `{"t", "shot": "<name>"}`: `shot_<name>.png` of that frame. scene: `{"t", "scene": "res://..."}`:
   `change_scene_to_file`; a scene the project lacks is a `query_errors` line and a miss. view: `{"t", "view": [pitch,
   yaw]}`: a 3D player's yaw and the `Camera3D`'s rotation set once (pitch clamped to +-89).
@@ -408,7 +460,8 @@ so the engine imports nothing there), each made fresh before its job.
   `sound`, `player` (its own `player` key ignored), `inputs` and `queries.queries`; the queries' `every` rides along
   unread. A play without queries has an empty list.
 - A query holds `id`, `kind`, its kind's keys and `fields`: `objects`, `components`, `widgets`, `ui` take `select` and
-  `fields`; `camera` and `render` `fields`; `spawns` `component`; `screen` `rect`; `audio` `select` (`probes.needs`).
+  `fields`; `camera`, `render` and `world` `fields`; `spawns` `component`; `screen` `rect`; `audio` `select`
+  (`probes.needs`).
   `fields` is the sorted union of what the play's probes read of it (`[]` for a count). Its id is `"q"` and the first
   10 hex digits of the sha256 of `json.dumps(<the query without its id and fields>, sort_keys=True)`
   (`probes.query_id`), so probes reading other fields of one selection share it; the queries are merged per play and
@@ -441,7 +494,8 @@ so the engine imports nothing there), each made fresh before its job.
 - `inputs_sent`: how many input rows were sent. `inputs_missed` (always there): a row `{"t", "kind", "target", "why"}`
   for each input that didn't land: `tap` and `drag` (a spot whose widget isn't on screen, a finger still down, a bad
   finger or path), `click` (no visible control that takes a click matches, or a button that didn't press), `shot` (a
-  bad name), `scene` (a scene the project lacks).
+  bad name), `scene` (a scene the project lacks), `pin`, `damage` and `set` (a stage nothing took; `target` is the
+  select as JSON, the node's name once one matched, or a set's path).
 - Samples fall on frames: the first at 1/30 s (the clock's first frame), then every `every` s, on the frame that
   reaches it. Every sample adds a `track` row, `[t, x, y, z]` (the player's place) or `[t]` while there is no player
   (no value there for the checker), and a `camera` row `[t, x, y, z, pitch, yaw, fov]` when there is a player camera
@@ -470,7 +524,7 @@ so the engine imports nothing there), each made fresh before its job.
   reads for that reason; such a line in `play.log` is the probe's bug, never the game's.
 
 **probe.log** (beside it in `out`): the probe's own lines, each with the play time and the real time since the game
-started: the start, the clock's start, waits, teleports, holds, clicks, cursor moves, touches going down and lifting (where, in the window's own units),
+started: the start, the clock's start, waits, teleports, holds, pins, staged hits and what each returned, sets, clicks, cursor moves, touches going down and lifting (where, in the window's own units),
 misses (`missed: ...`), errors (`error: ...`), saved data kept, and the end. The game's own log is `play.log`. One of
 the probe tests' plays:
 
@@ -556,10 +610,11 @@ stops its processing.
 |---|---|
 | `task_probe.gd` | the autoload: the spec, the frame, the play loop's first half (before the game's scripts), the samples, the screenshots, the end |
 | `probe_late.gd` | the loop's late half, a child node that runs after the game's scripts |
-| `inputs.gd` | the scripted inputs |
+| `inputs.gd` | the scripted inputs, the stages of a contact among them |
 | `find.gd` | selects, points, classes, `prop:` paths and the readers several kinds share |
 | `ui_scan.gd` | the UI as widgets, ui, a widget click and a touch read it |
 | `motion.gd` | speed and spin between samples |
+| `stops.gd` | an object's short stops between samples (`frozen`) |
 | `query.gd` | a query's base and the rows of a sample |
 | `queries/objects.gd` | `objects` |
 | `queries/components.gd` | `components` |
@@ -570,6 +625,7 @@ stops its processing.
 | `queries/spawns.gd` | `spawns` |
 | `queries/audio.gd` | `audio` |
 | `queries/render.gd` | `render` |
+| `queries/world.gd` | `world` |
 
 - Each query kind is one script, `queries/<kind>.gd`, extending `query.gd` and loaded by its kind's name when a play
   starts, so a new kind touches no other file.

@@ -509,6 +509,52 @@ class MoreFairReadings(unittest.TestCase):
             task_with(probe(play={**play, "inputs": [{"t": 1, "teleport_to": {"tag": "Ore"}, "yaw": 90}]},
                             measure={"probe": "player", "field": "y"}))
 
+    def test_a_task_play_stages_a_contact(self):
+        live = {"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": False}]}
+        play = {"name": "duel", "seconds": 12, "inputs": [
+            {"t": 1, "set": "health", "on": {"tag": "foe"}, "value": 1, "all": True},
+            {"t": 2, "pin": live, "hold": 3, "front": 1.5},
+            {"t": 2, "pin": {"component": "MaintBot"}, "hold": 1, "at": {"object": {"component": "Flare"}}},
+            {"t": 2.3, "key": "<Keyboard>/j", "press": True},
+            {"t": 3, "damage": 20, "to": {"player": True}},
+            {"t": 4, "damage": 5, "to": live, "from": {"name": "Turret"}},
+            {"t": 5, "set": "Health.current", "on": {"player": True}, "value": 500}]}
+        rows = first_check(task_with(probe(play=play, measure={"probe": "player", "field": "y"})))["play"]["inputs"]
+        self.assertEqual(rows[1], {"t": 2.0, "pin": live, "hold": 3.0, "offset": [0.0, 0.0, 0.0], "front": 1.5})
+        self.assertEqual(rows[2]["at"], {"object": {"component": "Flare"}, "offset": [0.0, 0.0, 0.0]})
+        self.assertNotIn("front", rows[2])
+        self.assertEqual(rows[4], {"t": 3.0, "damage": 20.0, "to": {"player": True}})
+        self.assertEqual(rows[5]["from"], {"name": "Turret"})
+        self.assertEqual(rows[0], {"t": 1.0, "set": "health", "on": {"tag": "foe"}, "value": 1, "all": True})
+        self.assertEqual(rows[6]["all"], False)
+        for bad in ({"t": 1, "pin": {"player": True}, "hold": 3},
+                    {"t": 1, "pin": {"tag": "A"}, "hold": 3, "front": 1, "at": {"player": True}}):
+            with self.assertRaises(ValueError):
+                task_with(probe(play={**play, "inputs": [bad]}, measure={"probe": "player", "field": "y"}))
+
+    def test_the_world_and_an_object_read_what_a_contact_leaves(self):
+        slowed = m(probe="world", field="time_scale", window=[2, 4], agg="min")
+        (query,) = probes.needs(slowed)
+        self.assertEqual(query, {"kind": "world", "fields": ["time_scale"]})
+        qid = probes.query_id(query)
+        values = [{"time_scale": 1.0, "paused": 0}] * 5 + [{"time_scale": 0.05, "paused": 0}]
+        self.assertEqual(probes.reduce(slowed, {"measures": {qid: sampled(values)}}), 0.05)
+        paused = m(probe="world", field="paused", agg="max")
+        self.assertEqual(probes.query_id(probes.needs(paused)[0]), qid, "one world query a play")
+        self.assertEqual(probes.reduce(paused, {"measures": {qid: sampled(values)}}), 0)
+        task = task_with(probe("a", measure={"probe": "world", "field": "time_scale", "agg": "min"}),
+                         probe("b", measure={"probe": "world", "field": "paused", "agg": "max"}))
+        self.assertEqual(probes.plan(task)["look"], [{"id": qid, "kind": "world", "fields": ["paused", "time_scale"]}])
+        frozen = m(probe="objects", select={"tag": "foe"}, field="frozen", of="max", agg="max")
+        self.assertEqual(probes.needs(frozen)[0]["fields"], ["frozen"])
+        stops = [[{"name": "Foe"}], [{"name": "Foe", "frozen": 0.0}], [{"name": "Foe", "frozen": 0.1}]]
+        self.assertAlmostEqual(probes.reduce(frozen, objects_play(frozen, stops)), 0.1)
+        hurt = m(probe="objects", select={"player": True}, field="damage_taken", of="first", at="end")
+        self.assertEqual(probes.reduce(hurt, objects_play(hurt, [[{"damage_taken": 0.0}], [{"damage_taken": 20.0}]])), 20)
+        others = m(probe="objects", select={"component": "CharacterBody3D", "player": False, "where": [
+            {"prop": "dead", "op": "==", "value": False}]}, field="count")
+        self.assertEqual(probes.needs(others)[0]["select"]["player"], False)
+
     def test_only_a_play_that_measures_audio_says_so_in_its_spec(self):
         heard = task_with(probe(measure={"probe": "audio", "select": {"sound": "Rain*"}, "field": "count"}),
                           probe("quiet", play={"name": "quiet", "seconds": 10},

@@ -3,8 +3,9 @@ extends RefCounted
 ## Input.parse_input_event, so the game's _input, its controls and its input actions take them as a player's: keys,
 ## mouse buttons, mouse movement and the wheel, a gamepad's buttons and axes, widget clicks, touches (a tap, a long
 ## press, a drag, several fingers at once) and the phone's back button; and the grader's own stages: cursor moves,
-## teleports of the player (held there for a while when asked), waits in real time, named screenshots, scene loads and
-## view turns.
+## teleports of the player (held there for a while when asked), waits in real time, named screenshots, scene loads,
+## view turns, and the stages of a contact: an object pinned at a place, a hit through the game's take_damage, a
+## property set.
 
 const Find := preload("find.gd")
 const UiScan := preload("ui_scan.gd")
@@ -57,6 +58,8 @@ var _touching: Array[Dictionary] = []  # fingers on the screen
 var _clicks: Array[Dictionary] = []  # widget clicks under way
 var _hold_at := Vector3.ZERO
 var _hold_until := -1.0
+var _pins: Array[Dictionary] = []  # objects held at a place: {ref, at, until}
+var _hits: Dictionary = {}  # the node whose take_damage a damage stage called, by instance id: {ref, sum, numbers}
 var _wait_for := 0.0
 var _wait_frames := 0
 var _wait_start := 0
@@ -97,6 +100,12 @@ static func _kind(row: Dictionary) -> String:
 		return "teleport_to"
 	if Find.numbers(row.get("teleport"), 3).size() == 3:
 		return "teleport"
+	if row.get("pin") is Dictionary:
+		return "pin"
+	if Find.has_num(row, "damage") and row.get("to") is Dictionary:
+		return "damage"
+	if row.get("set") is String and row.get("on") is Dictionary and row.has("value"):
+		return "set"
 	if row.get("shot") is String:
 		return "shot"
 	if row.get("scene") is String:
@@ -137,17 +146,29 @@ func wait_tick() -> void:
 
 
 func hold(elapsed: float) -> void:
-	## a held player goes back to its spot, still
-	if elapsed >= _hold_until:
+	## a held player and every pinned object go back to their spots, still
+	if elapsed < _hold_until:
+		_keep(probe.player(), _hold_at)
+	if _pins.is_empty():
 		return
-	var player: Node = probe.player()
-	var at: Variant = Find.place(player) if player != null else null
+	var held: Array[Dictionary] = []
+	for pin in _pins:
+		var n: Node = pin["ref"].get_ref()
+		if n == null or not n.is_inside_tree() or elapsed >= pin["until"]:
+			continue
+		held.append(pin)
+		_keep(n, pin["at"])
+	_pins = held
+
+
+static func _keep(n: Node, spot: Vector3) -> void:
+	var at: Variant = Find.place(n) if n != null else null
 	if at == null:
 		return
-	if (at as Vector3).distance_squared_to(_hold_at) > 1e-6:
-		_place(player, _hold_at, null)
+	if (at as Vector3).distance_squared_to(spot) > 1e-6:
+		_place(n, spot, null)
 	else:
-		_still(player)
+		_still(n)
 
 
 func finish() -> void:
@@ -196,6 +217,12 @@ func _send_one(row: Dictionary, elapsed: float) -> void:
 			else:
 				_place(player, Find.vec3(row.get("teleport")), Find.num(row, "yaw") if Find.has_num(row, "yaw") else null)
 				_start_hold(row, player, elapsed)
+		"pin":
+			_pin(row, elapsed)
+		"damage":
+			_strike(row)
+		"set":
+			_write(row)
 		"shot":
 			if not probe.shot(Find.text(row, "shot")):
 				_miss(row, "shot", Find.text(row, "shot"), "its name isn't a letter or _ first, then letters, digits, _")
@@ -535,6 +562,192 @@ func _teleport_to(row: Dictionary, elapsed: float) -> void:
 	probe.note("teleported next to %s: asked (%.2f, %.2f, %.2f) yaw %s, now at (%.2f, %.2f, %.2f)" % [
 		target.name, spot.x, spot.y, spot.z, "%.1f" % yaw if yaw != null else "kept", now.x, now.y, now.z])
 	_start_hold(row, player, elapsed)
+
+
+# ---------------------------------------------------------------- the stages of a contact
+
+
+func _nearest(select: Dictionary, about: String, around: Node, skip: Node, placed: bool = false) -> Node:
+	## the match of an object select nearest to `around` (of two as near, the first in tree order; the first match
+	## when `around` has no place), `skip` and the nodes below it left out; with `placed`, only a node with a place
+	Find.check(select, about)
+	var here: Variant = Find.place(around) if around != null else null
+	var found: Node = null
+	var best := INF
+	for n in Find.objects(select):
+		if skip != null and (n == skip or skip.is_ancestor_of(n)):
+			continue
+		var at: Variant = Find.place(n)
+		if placed and at == null:
+			continue
+		var d := (at as Vector3).distance_squared_to(here) if at != null and here != null else 1e30
+		if found == null or d < best:
+			best = d
+			found = n
+	return found
+
+
+static func _said(select: Dictionary) -> String:
+	## a select as a miss names it
+	return JSON.stringify(select)
+
+
+func _pin(row: Dictionary, elapsed: float) -> void:
+	## an object held at a place while its own scripts run on: first set ahead of the player or at a point, when
+	## asked, facing the player
+	var select := Find.obj(row, "pin")
+	var player: Node = probe.player()
+	var target := _nearest(select, "inputs: pin", player, player, true)
+	if target == null:
+		_miss(row, "pin", _said(select), "no object with a place matches (the player is never pinned)")
+		return
+	var spot: Vector3 = Find.place(target)
+	var here: Variant = Find.place(player) if player != null else null
+	var flat := target is Node2D or target is Control
+	var offset := Find.vec3(row.get("offset"))
+	var moved := false
+	if Find.has_num(row, "front"):
+		if here == null:
+			_miss(row, "pin", _said(select), "the play has no player to set it in front of")
+			return
+		var ahead: Variant = Find.forward(player)
+		if ahead == null:
+			ahead = Vector3.RIGHT if flat else Vector3.FORWARD
+		var along: Vector3 = ahead
+		if not flat:
+			along.y = 0.0
+		along = (Vector3.RIGHT if flat else Vector3.FORWARD) if along.length_squared() < 1e-6 else along.normalized()
+		var to: Vector3 = (here as Vector3) + along * clampf(Find.num(row, "front"), 0.0, 1000.0) + offset
+		if not flat:
+			to.y = spot.y + offset.y  # at its own height
+		spot = to
+		moved = true
+	elif row.get("at") is Dictionary:
+		var point: Variant = Find.point(row["at"])
+		if point == null:
+			_miss(row, "pin", _said(select), "its `at` point doesn't resolve")
+			return
+		spot = (point as Vector3) + offset
+		moved = true
+	var yaw: Variant = null
+	if moved and here != null and not flat:
+		var look: Vector3 = (here as Vector3) - spot
+		if look.x * look.x + look.z * look.z > 1e-4:
+			yaw = rad_to_deg(atan2(-look.x, -look.z))
+	_place(target, spot, yaw)
+	var seconds := clampf(Find.num(row, "hold"), 0.0, 600.0)
+	var held: Array[Dictionary] = []
+	for pin in _pins:
+		if pin["ref"].get_ref() != target:
+			held.append(pin)
+	held.append({"ref": weakref(target), "at": spot, "until": elapsed + seconds})
+	_pins = held
+	probe.note("pinned %s at (%.2f, %.2f, %.2f)%s for %.1f s" % [
+		target.name, spot.x, spot.y, spot.z, " yaw %.1f" % yaw if yaw != null else "", seconds])
+
+
+static func _hurt(n: Node) -> Node:
+	## the node whose take_damage a hit on `n` calls: itself, else the first node below it that has the method
+	if n.has_method("take_damage"):
+		return n
+	for c: Node in n.find_children("*", "", true, false):
+		if c.has_method("take_damage"):
+			return c
+	return null
+
+
+func _strike(row: Dictionary) -> void:
+	## a hit through the game's own damage method, take_damage(amount, source); what it returns is the node's
+	## damage_taken
+	var select := Find.obj(row, "to")
+	var player: Node = probe.player()
+	var target := _nearest(select, "inputs: damage", player, null)
+	if target == null:
+		_miss(row, "damage", _said(select), "no object matches")
+		return
+	var hurt := _hurt(target)
+	if hurt == null:
+		_miss(row, "damage", String(target.name), "neither it nor a node below it has a take_damage method")
+		return
+	if hurt.get_method_argument_count("take_damage") != 2:
+		_miss(row, "damage", String(target.name), "its take_damage doesn't take (amount, source)")
+		return
+	var source: Node = player
+	if row.get("from") is Dictionary:
+		source = _nearest(row["from"], "inputs: damage", target, target)
+		if source == null:
+			_miss(row, "damage", _said(row["from"]), "no object matches its `from`")
+			return
+	elif player == null or target == player or player.is_ancestor_of(target) or target.is_ancestor_of(player):
+		source = _other_hurt(target, player)  # the player is the one struck: by the nearest other thing that can be hurt
+	var amount := Find.num(row, "damage")
+	var got: Variant = hurt.call("take_damage", amount, source)
+	var id := hurt.get_instance_id()
+	if not _hits.has(id):
+		_hits[id] = {"ref": weakref(hurt), "sum": 0.0, "numbers": true}
+	if (got is float or got is int) and not is_nan(got):
+		_hits[id]["sum"] += float(got)
+	else:
+		_hits[id]["numbers"] = false
+	probe.note("damage %s to %s (take_damage of %s) from %s: it returned %s" % [
+		amount, target.name, hurt.name, source.name if source != null else "nothing", got])
+
+
+func _other_hurt(target: Node, player: Node) -> Node:
+	## the node with a take_damage method nearest to `target` that is neither it nor the player (nor below either)
+	var here: Variant = Find.place(target)
+	var found: Node = null
+	var best := INF
+	for n in Find.all_nodes():
+		if not n.has_method("take_damage") or n == target or target.is_ancestor_of(n) or n.is_ancestor_of(target):
+			continue
+		if player != null and (n == player or player.is_ancestor_of(n) or n.is_ancestor_of(player)):
+			continue
+		var at: Variant = Find.place(n)
+		var d := (at as Vector3).distance_squared_to(here) if at != null and here != null else 1e30
+		if found == null or d < best:
+			best = d
+			found = n
+	return found
+
+
+func damage_taken(n: Node) -> Variant:
+	## what the take_damage of `n`, or of a node below it, returned for the play's damage stages so far, summed: 0 when
+	## none struck it, null when a call returned no number
+	var sum := 0.0
+	for id: int in _hits:
+		var hurt: Node = _hits[id]["ref"].get_ref()
+		if hurt == null or not (hurt == n or n.is_ancestor_of(hurt)):
+			continue
+		if not _hits[id]["numbers"]:
+			return null
+		sum += _hits[id]["sum"]
+	return sum
+
+
+func _write(row: Dictionary) -> void:
+	## a property written on the nearest match, or on every match with `all`
+	var select := Find.obj(row, "on")
+	var path := Find.text(row, "set")
+	var targets: Array[Node] = []
+	if Find.flag(row, "all"):
+		Find.check(select, "inputs: set")
+		targets = Find.objects(select)
+	else:
+		var one := _nearest(select, "inputs: set", probe.player(), null)
+		if one != null:
+			targets.append(one)
+	if targets.is_empty():
+		_miss(row, "set", path, "no object matches %s" % _said(select))
+		return
+	var took := 0
+	for n in targets:
+		if Find.write(n, path, row.get("value")):
+			took += 1
+	if took == 0:
+		_miss(row, "set", path, "no matched object has a property %s that takes %s" % [path, JSON.stringify(row.get("value"))])
+		return
+	probe.note("set %s to %s on %d of %d object(s)" % [path, JSON.stringify(row.get("value")), took, targets.size()])
 
 
 func _view(row: Dictionary) -> void:

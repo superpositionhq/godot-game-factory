@@ -15,7 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(HERE)
 REFS = ("tasks", "origin/tasks")  # where a game's tasks live (validate-game.py TASKS_REFS)
 STILL_WORKS = "still_works"  # the milestone of what a task must leave working (godot-write-tasks section 5)
-SAMPLED = ("player", "camera", "objects", "widgets", "components", "screen", "spawns", "audio", "ui", "render")
+SAMPLED = ("player", "camera", "objects", "widgets", "components", "screen", "spawns", "audio", "ui", "render",
+           "world")
 AUDIO_STARTED = ("started",)  # counted per sample's interval, summed by default (as spawns)
 WHOLE_SCREEN = [0.0, 0.0, 1.0, 1.0]
 ANGLES = ("yaw", "pitch", "roll", "world_yaw", "world_pitch")  # world_yaw, world_pitch: components fields
@@ -165,8 +166,10 @@ def spot(value):
 def inputs(rows):
     """A task play's inputs as the probe reads them: keys, axes, clicks, cursor moves, teleports (`yaw` 0 when unset:
     a teleport always turns the player), teleports next to an object (`distance` 2 m and `offset` 0 when unset, `face`
-    only when set), either with `hold` only when set, waits in real time, named shots, scene loads, view turns, and
-    touches (`tap`, `drag`: `finger` 0 unless said, `hold` and `over` only when set)."""
+    only when set), either with `hold` only when set, waits in real time, named shots, scene loads, view turns,
+    touches (`tap`, `drag`: `finger` 0 unless said, `hold` and `over` only when set), and the stages of a contact
+    (docs/task-probes.md, section 1.4): an object pinned (`offset` 0 when unset, `front` and `at` only when set), a hit
+    through the game's damage method (`from` only when set), a property set (`all` false unless said)."""
     out = []
     for r in rows or []:
         row = {"t": float(r["t"])}
@@ -194,6 +197,18 @@ def inputs(rows):
             for k in ("over", "hold"):
                 if r.get(k) is not None:
                     row[k] = float(r[k])
+        elif "pin" in r:
+            row.update(pin=select(r["pin"]), hold=float(r["hold"]), offset=_floats(r.get("offset") or ZERO))
+            if r.get("front") is not None:
+                row["front"] = float(r["front"])
+            if r.get("at") is not None:
+                row["at"] = point(r["at"])
+        elif "damage" in r:
+            row.update(damage=float(r["damage"]), to=select(r["to"]))
+            if r.get("from") is not None:
+                row["from"] = select(r["from"])
+        elif "set" in r:
+            row.update(set=r["set"], on=select(r["on"]), value=r["value"], all=bool(r.get("all", False)))
         elif "cursor" in r:
             row.update(cursor=_floats(r["cursor"]))
         elif "widget" in r:

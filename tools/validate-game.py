@@ -840,9 +840,10 @@ def named_shots(play):
 def task_play_errors(n, play, plays):
     """A task play's rules beyond the schema, for check `n` (a probe's `play`, a judge's `plays`): not named
     look/drive, no input at or after its end, no touch that ends after it or begins less than TOUCH_GAP after its
-    finger lifts, no flag of the checker's own, a scene path without dotted segments, waits of at most 300 s in all,
-    its named shots each named once (20 at most), a view's pitch within -89 to 89, scene loads without dotted
-    segments, and identical to every other task play of its name in the task (`plays`: those seen so far, by name)."""
+    finger lifts, no pin on the player or both `front` of it and `at` a point, no flag of the checker's own, a scene
+    path without dotted segments, waits of at most 300 s in all, its named shots each named once (20 at most), a
+    view's pitch within -89 to 89, scene loads without dotted segments, and identical to every other task play of its
+    name in the task (`plays`: those seen so far, by name)."""
     errs, pname = [], play.get('name')
     if pname in ('look', 'drive'):
         errs.append(f"check {n}: a task play can't be named {pname}")
@@ -870,6 +871,11 @@ def task_play_errors(n, play, plays):
                 -89 <= view[0] <= 89 and -360 <= view[1] <= 360):
             errs.append(f'check {n}: play {pname} has a view {view}: [pitch, yaw], pitch -89 to 89, yaw -360 to 360')
         errs += [f'check {n}: play {pname}: {e}' for e in dotted(i.get('scene'))]
+        if isinstance(i.get('pin'), dict) and i['pin'].get('player') is True:
+            errs.append(f'check {n}: play {pname} pins the player: a pin holds another object (a teleport holds the '
+                        'player)')
+        if 'pin' in i and i.get('front') is not None and i.get('at') is not None:
+            errs.append(f'check {n}: play {pname} pins an object `front` of the player or `at` a point, not both')
     down = {}   # finger -> when its last touch lifts
     touches = [i for i in play.get('inputs') or [] if isinstance(i, dict) and ('tap' in i or 'drag' in i)
                and isinstance(i.get('t'), (int, float))]
@@ -1047,11 +1053,16 @@ def object_points(o):
             yield from object_points(v)
 
 
+# a contact stage's select and what the stage does to the match nearest the player (docs/task-probes.md, section 1.4)
+STAGED_NEAREST = (('pin', 'pin', 'holds the nearest'), ('to', 'damage to', 'strikes the nearest'),
+                  ('on', 'set on', 'is written on the nearest'))
+
+
 def task_warnings(t):
     """Selects that take one object by a wildcard name alone (a warning, never an error): a teleport_to goes to the
-    nearest match, an object point stands at the first match in tree order, and "of": "first" reads the first row, in
-    the same order. A spawner, a pool or a parent whose name fits is matched too: a teleport_to {"name": "Coin*"}
-    takes CoinSpawner."""
+    nearest match (a pin holds it, a damage strikes it, a set without `all` writes on it), an object point stands at
+    the first match in tree order, and "of": "first" reads the first row, in the same order. A spawner, a pool or a
+    parent whose name fits is matched too: a teleport_to {"name": "Coin*"} takes CoinSpawner."""
     out = []
     for m in t.get('milestones') or []:
         for c in (m.get('checks') or []) if isinstance(m, dict) else []:
@@ -1064,6 +1075,9 @@ def task_warnings(t):
                 inputs = play.get('inputs') or []
                 found += [(f'play {play.get("name")}', 'teleport_to', i['teleport_to'], 'goes to the nearest')
                           for i in inputs if isinstance(i, dict) and wild(i.get('teleport_to'))]
+                found += [(f'play {play.get("name")}', what, i[key], how) for key, what, how in STAGED_NEAREST
+                          for i in inputs if isinstance(i, dict) and wild(i.get(key))
+                          and not (key == 'on' and i.get('all') is True)]
                 found += [(f'play {play.get("name")}', 'the point', {'object': p['object']}, 'stands at ' + first)
                           for p in object_points(inputs) if wild(p['object'])]
             found += [(check, 'the point', {'object': p['object']}, 'stands at ' + first)
@@ -1381,7 +1395,8 @@ def probe_names(c):
         walk({'scene': play.get('scene')})
         for i in play.get('inputs') or []:
             if isinstance(i, dict):
-                walk(i.get('teleport_to'))
+                for key in ('teleport_to', 'pin', 'to', 'from', 'on'):
+                    walk(i.get(key))
     return names, paths
 
 

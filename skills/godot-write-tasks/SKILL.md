@@ -376,7 +376,8 @@ looks up and a positive yaw turns left.
   `<Gamepad>/buttonSouth`; on a mobile game `<Keyboard>/escape` is the phone's back button), mouse movement, the wheel, the cursor, a click
   on a control by its node name, a touch (`tap`, `drag`: below, and docs/task-probes.md section 1.3), a teleport of the player (to a point, or
   `teleport_to` the node a select matches), a wait in real time, a named screenshot (`shot`), a scene load, a view
-  turn. docs/task-probes.md has each one's form.
+  turn, and the stages of a contact (`pin`, `damage`, `set`: "A contact ask is staged" below, and
+  docs/task-probes.md section 1.4). docs/task-probes.md has each one's form.
 - **Touches.** `{"t": 2.0, "tap": <spot>, "hold": s, "finger": n}` puts a finger down at the spot and lifts it (after
   `hold` seconds: a long press, a button kept down); `{"t": 2.0, "drag": [<spot>, <spot>, ...], "over": s, "hold": s,
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
@@ -393,7 +394,8 @@ looks up and a positive yaw turns left.
   - `objects`: nodes, selected by `name` (a wildcard), `tag` (a group), `component` (an engine class, a script's
     `class_name` or its file name), `near` a point, `where` (a property's value) or `has` (what it carries): how
     many, where, shown or hidden, and a variable of the node's own by `prop:` (`prop:health`, `prop:position.y`;
-    `prop:<Class>.<member>` reads it on a node of that class below the matched one);
+    `prop:<Class>.<member>` reads it on a node of that class below the matched one); after a staged contact, its
+    own short stop (`frozen`) and what a staged hit did (`damage_taken`);
   - `components`: the nodes of a class wherever they sit (lights, particle effects, mesh instances, audio players),
     by what they are rather than by a name;
   - `widgets`: a `Control`'s own state (visible, text, a bar's percent, a slider's value);
@@ -407,7 +409,9 @@ looks up and a positive yaw turns left.
     `triangles`, the highest over the frames since the previous sample, and `texture_mb` at the sample;
     docs/task-probes.md section 2.20). A literal threshold is allowed, since a budget is a
     number of its own (`{"op": "<=", "value": 700}`). Give a budget check a task play of its own that goes to the
-    view and reads nothing else.
+    view and reads nothing else;
+  - `world`: the game as a whole: the lowest `Engine.time_scale` since the previous sample (`time_scale`: a hit
+    stop that slows the game) and whether it was paused (`paused`), docs/task-probes.md section 2.21.
   Each kind's fields, defaults and limits are in docs/task-probes.md.
 - `expect`: a literal (`{"op": ">=", "value": 1}`) for facts (counts, booleans), or
   `{"op": ">=", "calibrate": 0.5}` for continuous quantities: the grader measures the start and the reference in the
@@ -480,14 +484,20 @@ no check at all, naming the task and the sentence. Fix what you find in the task
 - **A keep that names a thing** ("the boss bar still starts full") has a required `still_works` check reading that
   thing; a bare "everything else keeps working" is covered by any required `still_works` check.
 - **Never cover an ask with an optional probe, a `build` or `boot` check, or a `"required": false` quality check alone.**
-- **An ask that shows only after a contact** (a blow landing, getting hit, a stun, the last foe of a group falling):
-  make the contact happen with what plays have today (a scenario start option the game has, `teleport_to` the foe,
-  the task's own keys or touches) and read it where the start keeps it (a `prop:` of the node holding health, state
-  or phase). Read a stagger, a knock-back or an interrupted action as behaviour (the node's state after the hit, the
-  player unable to move with the move key held, then moving again, its distance from the attacker), never by the
-  visual judge alone; the judge keeps sparks, colours, glow and readability. An ask that needs a hit at a known
-  moment the plays cannot stage stays in the instruction, and the task's notes say that it is waiting for a staging
-  input.
+- **A contact ask is staged, never left out.** An ask that shows only after a contact (a blow landing, getting hit,
+  a stun, the last foe of a group falling) is never dropped because "no fixed play guarantees the contact": `pin`
+  the foe or the target ahead of the player and press the task's own attack key or touch; `set` a health the start
+  names, only to set the fight up; `damage` for a hit taken at a known moment, through the game's own
+  `take_damage`; `where` to pick the live ones (docs/task-probes.md, section 1.4). Read the result
+  deterministically: a state change in a probe one sentence explains (a `prop:` of the node holding health, state
+  or phase, `damage_taken`); a hit stop by `world` `time_scale` or `frozen`, never a judge (no screenshot shows
+  it); a stagger, a knock-back or an interrupted action by the animation that plays (`clip`, `anim:`), the node
+  unable to move with the move key held, then moving again, or its distance from the attacker, never a judge. What
+  it looks like (sparks, colours, glow, readability) goes to the required visual judge on named frames across the
+  contact. Names come from the start commit; `set` and `where` only on members the task does not ask to change. A
+  target the build invents is pinned as the nearest body that draws near the player; where that is not surely the
+  target, list the ask as not testable. Read the fix's `inputs_missed` and `probe.log`: a stage that took nothing
+  staged nothing.
 - **Hints, never answers.** An instruction may hint, in the ticket's own words, at what a player
   must see, hear or meet, or what must exist in the world, and may say that hits go through the game's damage
   method. It never says how the build names or stores it: no class, variable, function, group, node, asset or file
@@ -553,6 +563,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | pitfall | rule |
 |---|---|
 | checks or log patterns shown in the brief | the agent gets the brief only |
+| an ask that shows only after a blow or a hit left without a check, since no fixed play is sure to reach the foe | stage the contact (`pin`, `damage`, `set`) and read the window right after it (section 5, "A contact ask is staged") |
 | an ask in the brief that no check reads, so Lab sends the game back | read each task against its checks before packing (section 5, "Every ask has a check") |
 | a model judge misread screenshots and failed a correct fix (or passed a wrong one) | required probes for what can be measured; only the brief's own looks in a required judge (`looks_as_asked`, still-looks in `still_works`), each item concrete and decidable from the screenshots; every other judge `"required": false` |
 | a judge was shown only the title screen, or never the state a task's own key opens | the `judge` check names its own `plays` that reach it (section 5) |

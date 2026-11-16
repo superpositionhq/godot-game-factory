@@ -558,6 +558,9 @@ class TaskRules(Base):
         ms = task(self.start, self.ref)['milestones']                   # a scene only the reference has
         ms[2]['checks'][1]['play']['scene'] = 'res://scenes/Hero.tscn'
         self.assertEqual(len([e for e in self.tasks(milestones=ms) if 'names res://scenes/Hero.tscn, which only' in e]), 1)
+        ms = task(self.start, self.ref)['milestones']                   # a contact stage's select
+        ms[2]['checks'][1]['play']['inputs'].append({'t': 3, 'pin': {'component': 'Enemy'}, 'hold': 1})
+        self.assertEqual(len([e for e in self.tasks(milestones=ms) if 'names Enemy, which only the reference' in e]), 1)
 
     def test_never_literal(self):
         ms = self.probe(2, probe='objects', select={'component': 'Kiln'}, field='spin', of='max')
@@ -1126,6 +1129,17 @@ class Units(unittest.TestCase):
             return [m for s, a, m in rep.items if s == 'warning']
         ws = report({'name': 'Coin*'}, {'name': 'Lamp*'}, {'name': 'Coin?'})
         self.assertEqual(len(ws), 3, ws)
+        staged = [{'t': 3, 'pin': {'name': 'Foe*'}, 'hold': 1}, {'t': 4, 'damage': 5, 'to': {'name': 'Foe*'}},
+                  {'t': 5, 'set': 'health', 'on': {'name': 'Foe*'}, 'value': 1},
+                  {'t': 6, 'set': 'health', 'on': {'name': 'Crate*'}, 'value': 1, 'all': True}]
+        t = task('a' * 40, 'b' * 40)
+        t['milestones'][2]['checks'][1]['play']['inputs'].extend(staged)
+        self.assertEqual(vg.task_semantic_errors(t), [])
+        said = ' | '.join(vg.task_warnings(t))
+        for what in ('pin {"name": "Foe*"} holds the nearest', 'damage to {"name": "Foe*"} strikes the nearest',
+                     'set on {"name": "Foe*"} is written on the nearest'):
+            self.assertIn('play collect: ' + what + ' object whose name fits', said)
+        self.assertNotIn('Crate*', said)   # every match is written: none is picked
         for start in ('x: play collect: teleport_to {"name": "Coin*"} goes to the nearest object whose name fits',
                       'x: check hero_on_ground: the point {"object": {"name": "Lamp*"}} stands at the first',
                       'x: check enemies_move: the select {"name": "Coin?"} reads the first'):
@@ -1183,7 +1197,7 @@ def probe_check(measure, play='look', expect=None):
 class Schema(unittest.TestCase):
     S = vg.SCHEMAS['game-task']
     KINDS = ('player', 'camera', 'objects', 'components', 'widgets', 'ui', 'screen', 'spawns', 'log', 'audio',
-             'render')   # the probe kinds
+             'render', 'world')   # the probe kinds
     MEASURE = {kind: ref.split('/')[-1]
                for kind, ref in S['$defs']['Probe']['properties']['measure']['discriminator']['mapping'].items()}
     SHAPE = {kind: ref.split('/')[-1]   # the check kinds' definitions
@@ -1211,7 +1225,7 @@ class Schema(unittest.TestCase):
                  'log': {'pattern': 'Error'}}
         fields = {'player': 'y', 'camera': 'yaw', 'objects': 'count', 'components': 'count', 'widgets': 'count',
                   'ui': 'count', 'screen': 'luminance', 'spawns': 'spawned', 'log': 'count', 'audio': 'count',
-                  'render': 'draw_calls'}
+                  'render': 'draw_calls', 'world': 'time_scale'}
         for probe in self.KINDS:
             measure = dict({'probe': probe, 'field': fields[probe]}, **extra.get(probe, {}))
             self.assertEqual(self.ok(probe_check(measure, 'look', {'op': '>=', 'value': 1}), 'Probe'), [], probe)
@@ -1234,6 +1248,45 @@ class Schema(unittest.TestCase):
                     {'t': 1, 'drag': [[0.5, 0.5]]}, {'t': 1, 'tap': {'widget': 'Hud/Jump'}},
                     {'t': 1, 'tap': [0.5, 0.5], 'hold': 0}, {'t': 9, 'key': 'Android_Back', 'press': True}):
             self.assertNotEqual(self.ok(dict(play, inputs=[bad]), 'TaskPlay'), [], bad)
+
+    def test_contact_stages(self):
+        live = {'tag': 'foe', 'where': [{'prop': 'dead', 'op': '==', 'value': False}]}
+        play = {'name': 'duel', 'seconds': 12, 'inputs': [
+            {'t': 1, 'set': 'health', 'on': {'tag': 'foe'}, 'value': 1, 'all': True},
+            {'t': 1, 'set': 'Health.current', 'on': {'player': True}, 'value': 500},
+            {'t': 2, 'pin': live, 'hold': 3, 'front': 1.5},
+            {'t': 2, 'pin': {'player': False, 'component': 'CollisionObject3D', 'has': {'visible': True},
+                             'near': {'point': {'player': True}, 'radius': 6}}, 'hold': 1,
+             'at': {'object': {'component': 'Flare'}}, 'offset': [0, 0.5, 0]},
+            {'t': 2.3, 'key': '<Keyboard>/j', 'press': True},
+            {'t': 3, 'damage': 20, 'to': {'player': True}},
+            {'t': 4, 'damage': 5, 'to': live, 'from': {'name': 'Turret'}}]}
+        self.assertEqual(self.ok(play, 'TaskPlay'), [])
+        for bad in ({'t': 1, 'pin': live}, {'t': 1, 'pin': live, 'hold': 0}, {'t': 1, 'pin': live, 'hold': 1, 'front': -1},
+                    {'t': 1, 'damage': 0, 'to': live}, {'t': 1, 'damage': 5}, {'t': 1, 'set': 'items[0]', 'on': live, 'value': 1},
+                    {'t': 1, 'set': 'health', 'on': live}, {'t': 1, 'set': 'health', 'on': live, 'value': [1]}):
+            self.assertNotEqual(self.ok(dict(play, inputs=[bad]), 'TaskPlay'), [], bad)
+        for field in ('frozen', 'damage_taken'):
+            c = probe_check({'probe': 'objects', 'select': live, 'field': field, 'of': 'max', 'agg': 'max'}, play,
+                            {'op': '>=', 'value': 0.05})
+            self.assertEqual(self.ok(c, 'Probe'), [], field)
+        self.assertNotEqual(self.ok(probe_check({'probe': 'objects', 'select': live, 'field': 'focus_player'}), 'Probe'), [])
+        for field in ('time_scale', 'paused'):
+            c = probe_check({'probe': 'world', 'field': field, 'window': [2, 3], 'agg': 'min'}, play, {'op': '<', 'value': 1})
+            self.assertEqual(self.ok(c, 'Probe'), [], field)
+            self.assertEqual(vg.probe_errors(c, {'commit': 'a'}, 'b', {}), [], field)
+        self.assertNotEqual(self.ok(probe_check({'probe': 'world', 'field': 'time_dilation'}), 'Probe'), [])
+
+        def errs(*inputs):
+            c = probe_check({'probe': 'player', 'field': 'x'}, {'name': 'duel', 'seconds': 12, 'inputs': list(inputs)},
+                            {'op': '>=', 'value': 1})
+            self.assertEqual(self.ok(c, 'Probe'), [], inputs)
+            return vg.probe_errors(c, {'commit': 'a'}, 'b', {})
+        self.assertEqual(errs(*play['inputs']), [])
+        self.assertEqual(errs({'t': 1, 'pin': {'player': True}, 'hold': 2}),
+                         ['check p: play duel pins the player: a pin holds another object (a teleport holds the player)'])
+        self.assertEqual(errs({'t': 1, 'pin': live, 'hold': 2, 'front': 1, 'at': {'player': True}}),
+                         ['check p: play duel pins an object `front` of the player or `at` a point, not both'])
 
     def test_task_level(self):
         S = self.S

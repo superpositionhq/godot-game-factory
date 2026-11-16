@@ -350,6 +350,11 @@ func view() -> Node:
 	return _view if is_instance_valid(_view) else null
 
 
+func damage_taken(n: Node) -> Variant:
+	## What the play's `damage` stages did to a node, as its take_damage returned it (inputs.gd).
+	return _inputs.damage_taken(n) if _inputs != null else null
+
+
 func error(message: String) -> void:
 	## Something the probe couldn't read; goes to probe.json "query_errors" (once each, at most 50).
 	if _errors_seen.has(message):

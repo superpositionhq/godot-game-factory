@@ -1,0 +1,38 @@
+{
+  "seconds": 8,
+  "shots": 0,
+  "every": 0.1,
+  "scene": "res://scenes/Duel.tscn",
+  "inputs": [
+    {"t": 0.5, "set": "health", "on": {"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": false}]}, "value": 30},
+    {"t": 0.5, "set": "tint.r", "on": {"tag": "foe"}, "value": 0.5, "all": true},
+    {"t": 0.5, "set": "foe.shielded", "on": {"name": "Guard"}, "value": true},
+    {"t": 0.6, "set": "armour", "on": {"name": "Foe"}, "value": 1},
+    {"t": 0.6, "set": "health", "on": {"name": "Foe"}, "value": "full"},
+    {"t": 0.6, "set": "health", "on": {"name": "Nobody"}, "value": 1},
+    {"t": 1.0, "pin": {"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": false}]}, "hold": 1.5, "front": 2.0, "offset": [0.0, 0.0, 0.0]},
+    {"t": 1.5, "key": "<Keyboard>/j", "press": true},
+    {"t": 1.6, "key": "<Keyboard>/j", "press": false},
+    {"t": 3.0, "damage": 1, "to": {"name": "Foe"}, "from": {"name": "Post"}},
+    {"t": 3.5, "damage": 15, "to": {"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": false}]}},
+    {"t": 4.5, "damage": 20, "to": {"name": "Foe"}},
+    {"t": 4.6, "damage": 7, "to": {"name": "Guard"}},
+    {"t": 5.0, "damage": 5, "to": {"player": true}},
+    {"t": 5.5, "key": "<Keyboard>/p", "press": true},
+    {"t": 5.6, "key": "<Keyboard>/p", "press": false},
+    {"t": 6.0, "pin": {"name": "Post"}, "hold": 1.0, "at": {"player": true, "offset": [0.0, 0.0, 0.0]}, "offset": [3.0, 0.0, 0.0]},
+    {"t": 6.5, "pin": {"player": true}, "hold": 1.0, "offset": [0.0, 0.0, 0.0]},
+    {"t": 6.5, "pin": {"name": "Post"}, "hold": 1.0, "at": {"object": {"name": "Nobody"}, "offset": [0.0, 0.0, 0.0]}, "offset": [0.0, 0.0, 0.0]},
+    {"t": 6.5, "damage": 3, "to": {"name": "Post"}},
+    {"t": 6.5, "damage": 3, "to": {"name": "Foe"}, "from": {"name": "Nobody"}}
+  ],
+  "queries": [
+    {"id": "foe", "kind": "objects", "select": {"name": "Foe"}, "fields": ["damage_taken", "frozen", "prop:dead", "prop:health", "prop:last_source", "prop:tint.r", "x", "y", "yaw", "z"]},
+    {"id": "others", "kind": "objects", "select": {"component": "CharacterBody3D", "player": false}, "fields": []},
+    {"id": "guard", "kind": "objects", "select": {"name": "Guard"}, "fields": ["damage_taken", "prop:foe.shielded"]},
+    {"id": "corpse", "kind": "objects", "select": {"name": "Corpse"}, "fields": ["prop:health", "prop:tint.r"]},
+    {"id": "post", "kind": "objects", "select": {"name": "Post"}, "fields": ["damage_taken", "x", "y", "z"]},
+    {"id": "player", "kind": "objects", "select": {"player": true}, "fields": ["damage_taken", "prop:health", "prop:last_source"]},
+    {"id": "world", "kind": "world", "fields": ["paused", "time_scale"]}
+  ]
+}
