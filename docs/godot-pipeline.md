@@ -417,7 +417,140 @@ game's settings are its `ReplayConfig.json`. Everything else is in [godot-replay
 
 ## Dataset packager
 
-`python tools/package-dataset.py <slug>` builds a game's dataset from its repo, the pipeline's release build, its recordings and its creation replay.
+`python tools/package-dataset.py <slug>` builds a game's dataset in layout `godot-dataset-layout/v1`
+([game-format.md](game-format.md), [dataset-layout-v1.json](dataset-layout-v1.json), manifest
+[schemas/dataset-manifest.schema.json](schemas/dataset-manifest.schema.json)). It writes `<repo>\Dataset.zip` (status
+`complete`) when the release has a gameplay video, its creation replay and its player; `<repo>\Dataset.pending.zip`,
+with the missing entry listed in `pending`, while the replay is missing (`ReplayScripts`) or a mobile game's build has
+no APK (`Build`). A game without a gameplay video is rejected at upload: with no valid recording of the release commit
+the packager refuses and says to record a scenario of the release commit, then package again. Nobody assembles a
+dataset or `Dataset.zip` by hand, and before the packager's first run on a game its `Dataset/` stays as the template
+made it and `tools/validate-game.py`'s "not packaged yet" warning is expected.
+
+It reads the game repo `<root>\games\<slug>` at the release commit (`--repo` names a repo elsewhere, `--commit` another
+commit than `HEAD`, `--commit milestone` the newest `milestone/autoplay-<n>` tag's), the game's recording
+`<root>\.recording\<slug>\` (`--recording`) and three products of the release.
+
+**The platform.** The release commit's `Platform.json` says what the game is, and `tools/validate-game.py`
+`read_platform` is the one reader of it: a game without the file is a desktop game, a mobile game is held `landscape`
+or `portrait`, and a file that says anything else refuses the package. `manifest.json` carries it as `platform`
+(`desktop` or `mobile`) and `orientation` (`landscape`, `portrait`, null for a desktop game). The platform decides what
+`Build/` holds and the size of the videos: 1920x1080 for a desktop game and a mobile game held landscape, 1080x1920
+for one held portrait. A build or a recording that says it was made as another platform (`platform` and `orientation`
+in `build_info.json` and in a bundle's `metadata.json`) is not taken: such a build refuses the package, such a
+recording is listed with the reason.
+
+- **The player.** The pipeline's release build ([Build](#build)): `builds\<slug>\<sha8>\` with its `build_info.json`
+  (status `ok`, config `release`), the release commit's own or, without one, the nearest earlier commit's (a warning
+  names it). A build whose leak scan found anything (`build_info.json` `leak_scan.hits`), or one not in the release
+  commit's history, refuses the package. `--build` names a pipeline build folder or a player folder. An export is named
+  after the project (`<Project>.exe`, `<Project>.apk`, as the release commit's `export_presets.cfg` names it): a player
+  of another name refuses the package.
+  - A desktop game: the build's `Windows\` folder, with `<Project>.exe`, goes to `Build/`. Without a pipeline build
+    the packager takes `<repo>\Build\Windows` (`Scripts\godot.ps1 build`; a warning when a commit after the build
+    changed the game). A desktop game without a player refuses the package.
+  - A mobile game: the APK alone, `builds\<slug>\<sha8>\Android\<Project>.apk`, else `<repo>\Build\Android\<Project>.apk`
+    (`Scripts\godot.ps1 build -Android`), goes in as `Build/<Project>.apk`. The Windows player of the same build is
+    what the recordings are made with and is not delivered. `manifest.json` `build` takes the APK's `bytes` and, from
+    `build_info.json` `android`, its `package`, `min_sdk`, `target_sdk` and `abis`. A build without an APK (`android`
+    status `skipped` or `failed`, or no file) leaves `Build/` pending: everything else is packaged as
+    `Dataset.pending.zip`, and the packager prints how to get the APK: install the Android toolchain with
+    `machine/get-android.ps1`, then build again (`tools/godot-pipeline/build.ps1 <slug> -Force`).
+- **The videos.** Per scenario, the first valid recording of the release commit ([Bundle](#bundle)):
+  `recordings\<slug>\<run>\` with `validation.json` `ok` or `warn`, no `FAILED` or `INVALID`, and `metadata.json`
+  `build.commit` the release commit. Its `gameplay.mp4` goes in as `Gameplay/<slug>_S<n>.mp4`, checked with the
+  pipeline's ffprobe (H.264 at the game's size and AAC) where one is found. The result (win, lose, timeout) is
+  metadata, never a reason to pick a run, and one video is enough. `manifest.json` `scenarios[]` take the scenario, its
+  name, the result, the length and `capture_notes`; the README gets a table of the videos and a "Recording note" per
+  capture note. `--exclude-runs` leaves runs out; the runs not taken are listed with the reason.
+- **The replay.** `<out>\_replay\<slug>\<release sha8>\ReplayScripts\`, once `READY` is beside it
+  ([Creation replay](#creation-replay); `--replay` names another folder). It is copied without `__pycache__`, scrubbed
+  like every text file, and its commit ids are mapped to the delivered history; `replay_verification` comes from its
+  `Verification/report.json`, and the README says PASS or FAIL. A FAIL dataset is complete too; a report of another
+  commit refuses the package.
+
+While `build.ps1` or `record.ps1` works on the game (its lock `builds\_pipeline-<slug>.lock` is held), the packager
+refuses to start. Without a brief, a design doc or a task it refuses before it writes anything, and `--dry-run` prints
+what would go in and what is missing. What it packs:
+
+| Entry | What goes in |
+|---|---|
+| `History/<slug>.bundle` | the history rewritten for delivery: authors and committers `dev_NN`, agent trailer lines dropped, the scrub rules on every message and text blob. It holds the release commit as `refs/heads/main` and each task's start branch as `refs/heads/starts/<task>`, nothing else |
+| `History/lfs/objects/` | every Git LFS object of every commit of the bundle, from the repo's own store; one that names the account or an agent as a patched copy (below) |
+| `History/sessions/` | the creation sessions as recorded: `messages.jsonl` (every prompt the person typed, every reply the model wrote and every reasoning summary the agent saved) and `actions.jsonl` (every tool call with its whole result), rows up to the release commit, without the sessions that packaged and those named with `--exclude-sessions`, each session named `session_NN` in both files; scrubbed and scanned like every text file, and a row at a time once a file reaches 256 MB (other text of that size is left to the binary scan). `manifest.json` counts the rows in `history.sessions` |
+| `git.log` | every commit of the delivered history up to the release, oldest first, with full diffs |
+| `workflow.jsonl` | the creation record at the release commit |
+| `GodotProject/` | the delivered tree at the release commit, LFS files as their real content, without `Dataset/`. The `.godot/` cache is git-ignored, so it is never in it: the first open of the project rebuilds it |
+| `Tasks/` | the tasks of the repo's tasks branch (`--tasks-ref` names another ref), seeds mapped to the delivered history (`seed.history` `dataset`), each split into `task.json` and `grader.json` by the rule of `tools/split-tasks.py`, plus `README.md` |
+| `Brief/` | `brief.md` and `design.md`: the files given with `--brief` and `--design`, else the game repo's `Brief/<kind>.md` or `Docs/<Kind>.md` as the release commit has them (the working tree's, with a warning, when the commit has none), else this repo's `docs/briefs/original/game-<slug>.md`, then `docs/briefs/games/<slug>.md`, for the brief and `docs/games/<slug>.md` for the design doc |
+| `Gameplay/<slug>_S<n>.mp4` | the videos above |
+| `ReplayScripts/` | the replay above |
+| `Screenshots/` | the images the game's `README.md` shows, else the project's `Docs/screenshots/`, else up to four stills of the recordings taken |
+| `Build/` | the player above: a desktop game's Windows player, or a mobile game's APK alone |
+| `README.md`, `manifest.json` | written by the packager (`--version` gives the release version). A mobile game's README says that it is an Android phone game, how it is held, how to install the APK (`adb install Build/<Project>.apk`, an arm64 phone with Android 8.0, API 26, or later) and how its videos were recorded (on a PC with the Mobile renderer at the phone's size, played by touch events) |
+
+Every text file of the delivery is scrubbed (the studio and tool names, agent, model and provider names, the account
+and machine name, e-mail addresses, git identities, the build machine's session folders and ids) and then scanned: a
+name left in a text file or a path refuses the package (exit 2, nothing zipped; the hits are in
+`<repo>\.dataset\<slug>.refused-hits.tsv`). The account name counts as a word, a path segment, or at a lower -> upper
+boundary (`OwnerNameDesktop`), and the delivered commits that `git.log` does not show (a task's start branch) are
+scanned too. In text, the account name in a `zh_` locale id and in random bytes written out as escapes (`\x86...`) is
+allowed.
+
+Binary files are never changed. A name in one refuses the package as one in a text file does (`--lenient-binaries`
+lists them without refusing, to review a refusal), except where it is allowed: the Opus audio codec's own names
+(`opus_*`, `libopus`, `audio/opus`, Authenticode's `SpcSpOpusInfo`, the bare codec name), "opus" spelled by compressed
+bytes, the short terms (claude, openai, opus, the account name) inside a media file's compressed payload (an MP4's
+`mdat` of video and audio tracks, a WAV `data` chunk, Matroska blocks; never their metadata), the account name in a
+`zh_` locale id, and the single hits a person reviewed (`--reviewed-hits`, default `tools/package-reviewed-hits.tsv`:
+the file's sha256, the offset and the word). "opus" counts only as a word of its own inside a string; so does a short
+account name (under 6 letters), which refuses in a string of 8 or more printable characters or as a whole C string and
+is only listed as a few letters among random bytes. The history's people refuse in binaries too: their full names,
+handles and e-mail addresses (an FBX's creator, a PNG's author); other e-mail addresses in binaries (a library
+author's in the player) are listed only. Every binary hit is in `<repo>\.dataset\<slug>.binary-hits.tsv`, every
+allowed one in `.allowlisted.tsv`.
+
+Every Git LFS object of the history is scanned (`tools/godot-pipeline/export-lfs-history.py`) for the account name and
+the agent and provider names. One that names them in a path segment, a whole length-prefixed string (an FBX property)
+or an XML element (XMP) is patched with a stand-in of the same length into a new object, and the delivered history
+points at that one: `History/lfs/objects/` and `GodotProject/` carry the patched bytes, and the game repo is not
+changed. An object that names them anywhere else is delivered as it is, for the scan to judge;
+`--lfs-unpatchable-use-head` puts the release commit's version of that path in every commit that held it instead.
+
+Commit ids change with the rewrite: the delivery uses the new ids everywhere, and
+`<out>\<slug>\<slug>_<sha8>.commit-map.tsv` keeps original -> delivered for each delivered release (`<sha8>`: the
+delivered release commit's; `<out>`: env `GGF_OUT`, config `out`, else `<root>\deliverables`). Beside it, never in the
+delivery, go the run's audit files (`<slug>_<sha8>.scrub-report.json`: the rules and their counts, the files touched,
+the history's and the scan's numbers; `.allowlisted.tsv`; `.binary-emails.tsv`; `.leaks.tsv`: other people's profile
+folders found in the delivery's text, listed only) and a row per delivery in `package-log.jsonl`.
+
+It ends with the checks a consumer runs: the dataset checks of `tools/validate-game.py` and, where PowerShell is
+installed, `tools/validate-dataset.ps1`, which reads the platform from `manifest.json` and holds `Build/` (an `.exe`
+and no `.apk` for a desktop game, an `.apk` and no `.exe` for a mobile one) and the size of the videos to it. An error
+refuses the package. Then it writes the zip (`--no-zip` stops after the checks) and, unless `--no-repo-dataset`, the
+repo's `Dataset/` folder (`README.md`, `git.log`, `workflow.jsonl`, `Brief/`, `Gameplay/`, `ReplayScripts/`,
+`Screenshots/`, `manifest.json`, and a `.gitattributes` that keeps them byte for byte as `manifest.json` lists them: no
+line-ending conversion, videos and images in Git LFS), which the game session then commits. It never commits and never
+changes the game repo's history, and one run per game works at a time (a lock in `<out>\<slug>\`). Its scratch and
+reports are in `<repo>\.dataset\` (git-ignored); `--out` puts them and the zip in another folder; when the repo's
+`.gitignore` lacks `/Dataset.zip`, `/Dataset.pending.zip` or `/.dataset/`, it adds them to the repo's
+`.git\info\exclude` and says so. Before the scrub it checks that every staged folder holds the files copied into it.
+With `--version`, a `release/<version>` tag must name the release commit (a warning otherwise). It refuses a drive
+with less than `min_free_gb` free (env `GGF_MIN_FREE_GB`, default 50). Standard library Python 3.10+, `git` and
+`git-lfs`; its tests are `tools/tests/test_package_dataset.py`.
+
+Three tools beside the package: `--rescan <zip or folder>` scans a delivered dataset again with the current rules (its
+paths, text and binaries, the bundle's commits that `git.log` does not show, and its identities: `dev_NN` only); PASS
+exits 0, FAIL 2, and the hits go to `<out>\<slug>\<slug>.rescan-hits.tsv`. `--scrub-dir <folder>` applies the scrub
+rules to every text file of a folder, in place. `--self-check` runs the scrub and the scan on built-in samples, with
+this machine's account name built in at run time.
+
+A game repo that names the studio, the tools or the account can also be cleaned in place, each tool a dry run first
+and archiving the original history before it changes anything: `tools/godot-pipeline/scrub-lfs-history.py <slug>`
+(the account and agent names in the history's LFS objects, every commit repointed: `--apply`),
+`tools/godot-pipeline/scrub-history.ps1 <slug>` (the studio and tool names in text blobs, messages and identities:
+`-Apply`) and `python tools/scrub-workflow-rows.py <repo>` (banned names in `workflow.jsonl` rows, with the correction
+row: `--apply`). None of them pushes. The packager needs none of them: it delivers a scrubbed and patched copy.
 
 ## Names that must not reach the games
 

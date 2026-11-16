@@ -1,0 +1,384 @@
+{
+  "schema": "game-format/v1",
+  "description": "The final format of a Godot game: its released repo and its dataset. Prose: docs/game-format.md. Validator: tools/validate-game.py (repo + dataset contents) with tools/validate-dataset.ps1 (dataset layout). Severity: error = not in the format; warning = a quality rule or something to look at.",
+  "repo": {
+    "what": "the game's git repo at its release commit (tracked files only)",
+    "required_files": [
+      {
+        "pattern": "^project\\.godot$",
+        "count": 1,
+        "what": "the project: its name, main scene, renderer, window size, autoloads and input map; config/features names Godot 4.7"
+      },
+      {
+        "pattern": "^export_presets\\.cfg$",
+        "what": "the export presets: \"Windows Desktop\", and \"Android\" in a mobile game"
+      },
+      {
+        "pattern": "^.+\\.tscn$",
+        "what": "the game's scenes; everything the game is made of is committed (scenes/, game/, assets/, addons/), store packs included, every imported file with its .import and every script with its .uid"
+      },
+      {
+        "pattern": "^steps/.+",
+        "what": "every generator script that ran, kept unchanged"
+      },
+      {
+        "pattern": "^Scripts/godot\\.ps1$",
+        "what": "the game's engine runs through the heavy-job limiter, from the template"
+      },
+      {
+        "pattern": "^workflow\\.jsonl$",
+        "what": "the creation record; every row matches docs/schemas/workflow-row.schema.json (godot-workflow/v0)"
+      },
+      {
+        "pattern": "^README\\.md$",
+        "what": "hero image + captioned gallery of real gameplay stills"
+      },
+      {
+        "pattern": "^assets\\.manifest\\.json$",
+        "what": "every external asset; matches docs/schemas/assets-manifest.schema.json, every listed file committed"
+      },
+      {
+        "pattern": "^Docs/ThirdPartyNotices\\.md$",
+        "what": "credits and licences"
+      },
+      {
+        "pattern": "^\\.gitattributes$",
+        "what": "Git LFS for every binary type, Godot's text files as text"
+      },
+      {
+        "pattern": "^\\.gitignore$",
+        "what": "the engine's cache, build output and the local dataset zip"
+      }
+    ],
+    "never_tracked": [
+      {
+        "pattern": "(^|/)\\.godot/",
+        "what": "the engine's cache (.godot/) is rebuilt by the first import and never committed"
+      },
+      {
+        "pattern": "^(?i:build|builds|logs)/|^android/",
+        "what": "build output, logs and the Gradle build template the Android export installs are never committed"
+      },
+      {
+        "pattern": "(?i)\\.translation$",
+        "what": "compiled translations are made again at import"
+      },
+      {
+        "pattern": "(?i)\\.(keystore|jks)$",
+        "what": "a signing keystore is a secret"
+      }
+    ],
+    "engine_versions": [
+      "4.7"
+    ],
+    "gitignore_must_contain": [
+      "/Dataset.zip",
+      "/Dataset.pending.zip",
+      "/.dataset/"
+    ],
+    "gitignore_must_ignore": [
+      ".godot/_probe_",
+      "Build/_probe_",
+      "Logs/_probe_",
+      "android/_probe_"
+    ],
+    "gitignore_must_not_ignore": [
+      "project.godot",
+      "export_presets.cfg",
+      "Platform.json",
+      "scenes/_probe_.tscn",
+      "game/_probe_.gd",
+      "game/_probe_.gd.uid",
+      "game/_probe_/Build/probe.gd",
+      "game/_probe_/Logs/probe.txt",
+      "assets/_probe_/Probe.png",
+      "assets/_probe_/Probe.png.import",
+      "assets/ThirdParty/_probe_/Probe.glb",
+      "assets/_probe_/android/Probe.png",
+      "addons/_probe_/plugin.cfg",
+      "steps/_probe_.gd",
+      "Docs/screenshots/_probe_.jpg",
+      "Scripts/godot.ps1",
+      "Dataset/README.md",
+      "workflow.jsonl",
+      "assets.manifest.json",
+      "README.md"
+    ],
+    "lfs_required_extensions": [
+      "res",
+      "scn",
+      "mesh",
+      "ctex",
+      "multimesh",
+      "lmbake",
+      "occ",
+      "pck",
+      "bytes",
+      "fbx",
+      "obj",
+      "glb",
+      "gltf",
+      "abc",
+      "blend",
+      "max",
+      "ma",
+      "mb",
+      "3ds",
+      "dae",
+      "usd",
+      "usdc",
+      "usdz",
+      "ply",
+      "stl",
+      "spp",
+      "sbsar",
+      "png",
+      "jpg",
+      "jpeg",
+      "tga",
+      "psd",
+      "exr",
+      "hdr",
+      "bmp",
+      "tif",
+      "tiff",
+      "dds",
+      "ktx",
+      "ktx2",
+      "gif",
+      "webp",
+      "ico",
+      "raw",
+      "r16",
+      "r8",
+      "wav",
+      "ogg",
+      "mp3",
+      "flac",
+      "aif",
+      "aiff",
+      "m4a",
+      "opus",
+      "wem",
+      "bank",
+      "bnk",
+      "mp4",
+      "mov",
+      "mkv",
+      "webm",
+      "avi",
+      "ogv",
+      "bk2",
+      "ttf",
+      "otf",
+      "ttc",
+      "woff",
+      "woff2",
+      "zip",
+      "7z",
+      "rar",
+      "gz",
+      "tgz",
+      "tar",
+      "pdf",
+      "xlsx",
+      "docx",
+      "pptx",
+      "exe",
+      "dll",
+      "pdb",
+      "lib",
+      "so",
+      "dylib",
+      "a",
+      "bin",
+      "dat",
+      "apk",
+      "aab",
+      "ies"
+    ],
+    "text_extensions": [
+      "godot",
+      "cfg",
+      "tscn",
+      "tres",
+      "import",
+      "uid",
+      "gdshader",
+      "gdshaderinc",
+      "gd"
+    ],
+    "lfs_why": "every binary type of templates/godot-game/.gitattributes goes through Git LFS; Godot's own text files (scenes and resources saved as text, GDScript, shaders, .import and .uid sidecars, project.godot, export_presets.cfg) stay plain git text so they diff and merge: one of them in LFS is an error. Binary content under any other name in plain git is a warning.",
+    "sidecars": {
+      "imported_extensions": [
+        "bmp",
+        "csv",
+        "dae",
+        "exr",
+        "fbx",
+        "fnt",
+        "font",
+        "glb",
+        "gltf",
+        "hdr",
+        "jpeg",
+        "jpg",
+        "mp3",
+        "obj",
+        "ogg",
+        "otf",
+        "png",
+        "svg",
+        "tga",
+        "ttc",
+        "ttf",
+        "wav",
+        "webp",
+        "woff",
+        "woff2"
+      ],
+      "uid_extensions": [
+        "gd",
+        "gdshader",
+        "gdshaderinc",
+        "dds",
+        "ktx",
+        "ktx2",
+        "ogv"
+      ],
+      "what": "every tracked file Godot 4.7 imports (imported_extensions) has its <file>.import tracked, every tracked file it gives a uid file (uid_extensions: scripts, shaders, and the formats it loads without importing) has its <file>.uid tracked, and every tracked .import or .uid has its file; what the engine skips needs none (a name that starts with a dot, and everything under a folder that holds a .gdignore: Docs/, Dataset/, Brief/, Scripts/)",
+      "why": "the sidecar holds the uid that scenes and resources refer to the file by, and an imported file's import settings: without it the engine writes a new one on the next import and every reference by uid breaks; a sidecar without its file is an orphan"
+    },
+    "readme": {
+      "images_committed": true,
+      "gameplay_images": {
+        "min": 1,
+        "recommended_min": 5,
+        "recommended_max": 7
+      },
+      "image_extensions": [
+        "jpg",
+        "jpeg",
+        "png",
+        "webp"
+      ]
+    },
+    "banned_names": {
+      "what": "never inside a game: tool, vendor and owner names (text files of the repo; LFS and binary files are scanned by the packager)",
+      "patterns": [
+        "(?i)superposition",
+        "(?i)game[-_ ]?factory",
+        "(?i)\\banthropic\\b",
+        "(?i)\\bclaude\\b",
+        "(?i)\\bopenai\\b"
+      ],
+      "skip_paths": [
+        "^Dataset/"
+      ],
+      "account_name": {
+        "what": "the account (user) name of the machine running the validator, as a word (USERNAME at run time; machine paths carry it): never written in the repo",
+        "exempt_paths": "(?i)^Scripts/|^steps/|\\.(ps1|psm1|py|sh|bat|cmd)$",
+        "why": "enforced in workflow.jsonl and every other non-script file; scripts and steps that already ran (Scripts/, steps/, and .ps1/.psm1/.py/.sh/.bat/.cmd files anywhere) stay unchanged and are scrubbed at packaging"
+      }
+    },
+    "platform": {
+      "file": "Platform.json",
+      "what": "a mobile (Android phone) game has Platform.json at its root, {\"platform\": \"mobile\", \"orientation\": \"landscape\" or \"portrait\"}, written by templates/new-game.ps1 -Platform mobile and never edited after; a game without it is a desktop game; a file that says anything else is an error, never read as desktop",
+      "reader": "tools/validate-game.py read_platform (python tools/validate-game.py --platform <folder> prints desktop, mobile landscape or mobile portrait); no other code parses the file",
+      "size": {
+        "desktop": [
+          1920,
+          1080
+        ],
+        "mobile landscape": [
+          1920,
+          1080
+        ],
+        "mobile portrait": [
+          1080,
+          1920
+        ]
+      },
+      "mobile": [
+        "project.godot: rendering/renderer/rendering_method and rendering_method.mobile are \"mobile\" (never the desktop renderer forward_plus), rendering/textures/vram_compression/import_etc2_astc is true, display/window/size/viewport_width x viewport_height is 1920x1080 (landscape) or 1080x1920 (portrait), display/window/handheld/orientation is a landscape or a portrait setting as Platform.json says (never sensor), application/config/quit_on_go_back is false",
+        "export_presets.cfg: a preset named \"Android\" for the platform Android with gradle_build/use_gradle_build true, architectures/arm64-v8a true and the other three false, gradle_build/min_sdk at least 26, gradle_build/target_sdk at least 34, package/unique_name com.<name>.game",
+        "a key the file leaves out is read as Godot 4.7's default (the editor drops a setting put back to its default), never as wrong",
+        "a mobile game's tasks never choose a renderer or a size: no --rendering-method, --rendering-driver, --resolution, -size or --write-movie in play_args or a task play's args"
+      ]
+    },
+    "dataset_folder": "Dataset/ (variant repo-dataset): checked as a dataset when manifest.json is there; a game that is not packaged yet has none (python tools/package-dataset.py <slug> writes the folder)",
+    "tasks": [
+      "Tasks/<game>-<kind>-<slug>.json, one GameTask each (game-task/1: docs/schemas/game-task.schema.json), on the repo's orphan branch `tasks` (no shared history with main; a short README.md, optionally tasks-workflow.jsonl), never on main; the name field equals the file stem",
+      "the tasks branch is checked out as a git worktree outside the game folder (e.g. <root>/tasks/<slug>) and committed and pushed there; task work never enters the game's history: main tracks nothing under Tasks/ and never references the tasks branch, the recording hooks ignore commits on it, and the delivered history (History/) leaves it out",
+      "the validator and the packager read the tasks from `tasks`, else `origin/tasks`; a missing tasks branch is an error",
+      "at least 5 and up to about 10 per game (fewer than 5 is an error; more than 10 is reported, never an error or warning)",
+      "at least 4 of a game's tasks are hard (fewer is an error); the others may be medium (what a task that names no difficulty is, the schema's default), none easier",
+      "seed.game is the repo's slug; seed.commit and seed.reference are commits of main's history (ancestors of main's head) or of the task's own start branch starts/<task name>; at both, project.godot's config/features names Godot 4.7 (a start opens as committed, never upgraded)",
+      "every task is a long thread of multiple edits: never easy, tagged long-thread, with seed.reference, at least 3 required outcome probes outside still_works, and from seed.commit to seed.reference at least 5 game files (scenes/, game/, assets/, addons/ but the AutoPlay drop-in and the task probe, project.godot; a step script, an .import or a .uid is not one), 100 code lines and 2 systems, and for a seed on main 4 commits that change the game (tools/validate-game.py); everything a no-op passes weighs 0",
+      "written with the godot-write-tasks skill (skills/godot-write-tasks)",
+      "An agent given a task starts from a history-less snapshot of the game at seed.commit with Tasks/, History/ and Dataset/ removed (they hold every task's rubrics and references): only the brief and that snapshot. The grader's half (milestones: rubrics, judge and code-judge questions, log_absent patterns; and seed.reference) never reaches the agent."
+    ]
+  },
+  "dataset": {
+    "layout": "docs/dataset-layout-v1.json (godot-dataset-layout/v1); tools/validate-dataset.ps1 picks the file by manifest.layout",
+    "content_schemas": {
+      "manifest.json": "docs/schemas/dataset-manifest.schema.json",
+      "workflow.jsonl": "docs/schemas/workflow-row.schema.json (each line)",
+      "ReplayScripts/Verification/report.json": "docs/schemas/replay-report.schema.json"
+    },
+    "manifest": [
+      "game equals the zip's top folder (full variant)",
+      "every files[] entry exists with that size (sha256 checked by validate-dataset.ps1)",
+      "totals.files = number of files[]; totals.bytes = sum of their bytes",
+      "every scenarios[].file is in files[]",
+      "status complete: pending empty, replay_verification present with pass equal to report.json verdict.pass (PASS or FAIL: the verdict is metadata, the replay is required but need not pass)",
+      "replay_verification is null only while ReplayScripts/ is pending (listed in pending): the delivery is then pending, not invalid",
+      "commit equals the last commit in git.log and report.json final_commit",
+      "variant full: build is an object; repo-dataset: build is null",
+      "platform is desktop or mobile and orientation landscape, portrait or (desktop) null, as GodotProject/Platform.json says (full variant; no file is a desktop game)",
+      "full variant: a desktop game's build names its Windows player (build.exe); a mobile game's names its APK (build.apk) and no Windows player, or Build/ is listed as pending while the release has no APK"
+    ],
+    "workflow": [
+      "every line is one JSON object matching the row schema",
+      "ids unique; seq strictly increasing",
+      "a row's direction names an earlier op user.direction row",
+      "user.direction rows: actor user, reason_source user_direction, params.direction a non-empty string",
+      "the person's directions are user.direction rows, written by the session (the sessions' prompts and replies themselves are in History/sessions/messages.jsonl); a game with none is reported as a warning",
+      "banned names in rows: workflow.jsonl is append-only except that a row naming a banned term is edited in place to a neutral word or placeholder, nothing else changed, followed by one appended row op \"log.correct\", params {rows: [ids], what}; the commit names the edited rows (tools/scrub-workflow-rows.py). A banned name left in a row is an error, in the repo and in the dataset."
+    ],
+    "git_log": {
+      "first_line": "GIT-LOG 1",
+      "header_comment_prefix": "# ",
+      "commit_line": "^commit [0-9a-f]{40}$",
+      "fields_in_order": [
+        "Parents",
+        "Author",
+        "AuthorDate",
+        "Committer",
+        "CommitDate"
+      ],
+      "author_pattern": "^dev_[0-9]+$",
+      "date_pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([+-][0-9]{2}:[0-9]{2}|Z)$",
+      "order": "oldest first; commits unique"
+    },
+    "history": [
+      "full variant: manifest.history is an object; History/<game>.bundle is a git bundle whose refs include history.head = manifest.commit",
+      "the bundle holds every commit (history.commits); git.log lists the same commits",
+      "every Git LFS pointer in every commit has its object under History/lfs/objects/<aa>/<bb>/<sha256>, and each object's sha256 equals its name (history.lfs_objects / lfs_bytes count them)",
+      "author and committer of every commit are dev_NN; commit messages carry no banned names (the repo's patterns; the packager's rescan also covers every text blob)",
+      "History/sessions/ (optional): messages.jsonl (every prompt the person typed and every reply the model wrote: time, session_id, role user | assistant, text) and actions.jsonl (every tool call: time, session_id, event), one JSON object per line, rows up to the release commit, each session named session_NN in both files; manifest.history.sessions counts their rows ({messages, actions}, each {file, rows}); a missing file is a note, anything wrong here a warning, never an error",
+      "repo-dataset: no History/, manifest.history null"
+    ],
+    "brief": [
+      "Brief/brief.md (the original brief) and Brief/design.md (design doc, story bible, status) are present and non-empty; manifest.brief names them"
+    ],
+    "tasks": [
+      "full variant: Tasks/README.md and, per task, Tasks/<name>/task.json (the agent's part) and Tasks/<name>/grader.json (milestones, seed.reference); manifest.tasks lists the names",
+      "task.json holds no milestones and no seed.reference; task.json merged with grader.json is valid against docs/schemas/game-task.schema.json",
+      "each task's name equals its folder; seed.game is the dataset's game; seed.commit and seed.reference are commits of History/<game>.bundle",
+      "at least 5 and up to about 10 per game; at least 4 of them hard; the others may be medium (what a task that names no difficulty is), none easier",
+      "repo-dataset: no Tasks/ (the repo's tasks branch is the source)",
+      "An agent given a task starts from a history-less snapshot of the game at seed.commit with Tasks/, History/ and Dataset/ removed (they hold every task's rubrics and references): only the brief and that snapshot. The grader's half (milestones: rubrics, judge and code-judge questions, log_absent patterns; and seed.reference) never reaches the agent."
+    ]
+  }
+}

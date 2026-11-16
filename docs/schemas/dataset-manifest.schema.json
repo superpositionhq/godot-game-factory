@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "godot-dataset-layout/v1/manifest",
+  "title": "Dataset manifest.json",
+  "description": "Metadata of one Godot game's dataset and the path, size and sha256 of every other file in it. Cross-file rules (files exist and match, status complete needs the replay report, whose verdict PASS or FAIL is metadata, commit = last git.log commit, platform against the project's Platform.json and the build, history, brief and tasks) are in docs/game-format-v1.json, dataset, and checked by tools/validate-game.py.",
+  "type": "object",
+  "required": [
+    "layout",
+    "game",
+    "title",
+    "version",
+    "commit",
+    "platform",
+    "orientation",
+    "status",
+    "variant",
+    "pending",
+    "scenarios",
+    "totals",
+    "files",
+    "brief",
+    "tasks"
+  ],
+  "properties": {
+    "layout": {
+      "enum": [
+        "godot-dataset-layout/v1"
+      ],
+      "description": "docs/dataset-layout-v1.json"
+    },
+    "game": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+      "description": "the game's slug; also the zip's top folder"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string"
+    },
+    "commit": {
+      "$ref": "#/$defs/sha1"
+    },
+    "platform": {
+      "enum": [
+        "desktop",
+        "mobile"
+      ],
+      "description": "what the release commit's Platform.json says: desktop for a game without the file, mobile for an Android phone game"
+    },
+    "orientation": {
+      "enum": [
+        "landscape",
+        "portrait",
+        null
+      ],
+      "description": "how a mobile game is held; null for a desktop game"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "pending"
+      ]
+    },
+    "variant": {
+      "enum": [
+        "full",
+        "repo-dataset"
+      ],
+      "description": "full = Dataset.zip (with GodotProject/, Build/, History/ and Tasks/); repo-dataset = the game repo's Dataset/ folder"
+    },
+    "pending": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "entries still missing (ReplayScripts/; Gameplay/ in a repo Dataset/ only; Build/ for a mobile game whose release has no APK yet); empty when complete"
+    },
+    "created": {
+      "type": "string"
+    },
+    "source_package": {
+      "type": "string"
+    },
+    "replay_verification": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "the creation replay's verification (from ReplayScripts/Verification/report.json); null while ReplayScripts/ is pending (listed in pending)",
+      "required": [
+        "pass",
+        "report",
+        "criteria",
+        "exclusions"
+      ],
+      "properties": {
+        "pass": {
+          "type": "boolean"
+        },
+        "report": {
+          "type": "string"
+        },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "text",
+              "result",
+              "pass"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              },
+              "pass": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "what",
+              "count"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "what": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "build": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "the release player in Build/ (full variant): a desktop game's Windows player (exe) or a mobile game's Android APK (apk, with what the build recorded of it); neither while a mobile game's Build/ is pending; null in the repo Dataset/",
+      "required": [
+        "config",
+        "commit"
+      ],
+      "properties": {
+        "config": {
+          "enum": [
+            "Release"
+          ],
+          "description": "a release export"
+        },
+        "commit": {
+          "$ref": "#/$defs/sha1"
+        },
+        "exe": {
+          "type": "string",
+          "pattern": "^Build/[^/]+\\.exe$",
+          "description": "a desktop game: Build/<Project>.exe"
+        },
+        "apk": {
+          "type": "string",
+          "pattern": "^Build/[^/]+\\.apk$",
+          "description": "a mobile game: Build/<Project>.apk"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "the APK's size"
+        },
+        "package": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "description": "the APK's Android package name"
+        },
+        "min_sdk": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "target_sdk": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "abis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "scenario",
+          "name",
+          "result",
+          "seconds"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "pattern": "^Gameplay/[a-z0-9-]+_S[0-9]+\\.mp4$"
+          },
+          "scenario": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "enum": [
+              "win",
+              "lose",
+              "timeout",
+              "abort"
+            ]
+          },
+          "seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "source_run": {
+            "type": "string"
+          },
+          "audio_offset_s": {
+            "type": "number"
+          },
+          "capture_notes": {
+            "type": "string",
+            "description": "what the recording did differently from the game's defaults, e.g. a lower quality level; absent when nothing"
+          }
+        }
+      },
+      "description": "one per Gameplay/ video; empty only while Gameplay/ is pending (a repo's Dataset/ folder only: a delivered dataset has a video)"
+    },
+    "totals": {
+      "type": "object",
+      "required": [
+        "files",
+        "bytes"
+      ],
+      "properties": {
+        "files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "bytes",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "history": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "full variant: the git history in History/; null in a repo Dataset/ (the repo is its own history)",
+      "required": [
+        "bundle",
+        "head",
+        "commits",
+        "refs",
+        "lfs_objects",
+        "lfs_bytes",
+        "authors_anonymised"
+      ],
+      "properties": {
+        "bundle": {
+          "type": "string",
+          "pattern": "^History/[^/]+\\.bundle$"
+        },
+        "head": {
+          "$ref": "#/$defs/sha1"
+        },
+        "commits": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "lfs_objects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lfs_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authors_anonymised": {
+          "const": true
+        },
+        "sessions": {
+          "type": "object",
+          "description": "the creation sessions in History/sessions/ (optional; one key per file that is there): messages = every prompt the person typed and every reply the model wrote, actions = every tool call",
+          "properties": {
+            "messages": {
+              "$ref": "#/$defs/session_file"
+            },
+            "actions": {
+              "$ref": "#/$defs/session_file"
+            }
+          }
+        }
+      }
+    },
+    "brief": {
+      "type": "object",
+      "description": "the Brief/ files",
+      "required": [
+        "brief",
+        "design"
+      ],
+      "properties": {
+        "brief": {
+          "const": "Brief/brief.md"
+        },
+        "design": {
+          "const": "Brief/design.md"
+        }
+      }
+    },
+    "tasks": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "full variant: the tasks in Tasks/ (null in a repo Dataset/)",
+      "required": [
+        "count",
+        "names"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "names": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+          }
+        },
+        "schema": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "session_file": {
+      "type": "object",
+      "required": [
+        "file",
+        "rows"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "pattern": "^History/sessions/(messages|actions)\\.jsonl$"
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

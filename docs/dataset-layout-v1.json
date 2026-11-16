@@ -1,0 +1,284 @@
+{
+  "schema": "godot-dataset-layout/v1",
+  "description": "The delivery layout of every Godot game: the creation record (git.log, workflow.jsonl, ReplayScripts/, the full git history in History/, the brief and design doc in Brief/), the game's tasks in Tasks/, the project, per-scenario gameplay videos, README screenshots and the built player (a desktop game's Windows player, a mobile game's Android APK). docs/game-format.md is the prose version of this file; tools/validate-dataset.ps1 checks against this file.",
+  "names": {
+    "zip": "Dataset.zip",
+    "zip_place": "the game repo's own folder, next to Dataset/ (git-ignored, with the packager's scratch in .dataset/)",
+    "zip_pending_suffix": ".pending.zip",
+    "top_folder_in_zip": "<game>",
+    "repo_folder": "Dataset"
+  },
+  "entries": [
+    {
+      "name": "README.md",
+      "kind": "file",
+      "required": true,
+      "in_repo_dataset": true,
+      "what": "game, how to play and open it, how to replay the creation, scenario videos, screenshots, licences"
+    },
+    {
+      "name": "git.log",
+      "kind": "file",
+      "required": true,
+      "in_repo_dataset": true,
+      "what": "every commit, oldest first: message, anonymised author, dates, full text diff; binary and LFS files as path + sha256"
+    },
+    {
+      "name": "workflow.jsonl",
+      "kind": "file",
+      "required": true,
+      "in_repo_dataset": true,
+      "what": "editor, code and build operations, one row each (godot-workflow/v0), written when the operation happened"
+    },
+    {
+      "name": "Brief",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": true,
+      "what": "the original brief the game was built from (brief.md) and the design doc with story bible and status (design.md); images they link may sit next to them",
+      "must_contain": [
+        "brief.md",
+        "design.md"
+      ],
+      "only_files_matching": "(?i)^[A-Za-z0-9._-]+\\.(md|png|jpe?g|webp)$"
+    },
+    {
+      "name": "History",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": false,
+      "what": "the full git history: <game>.bundle (the release commit's history as refs/heads/main and each task's start branch as refs/heads/starts/<task>, nothing else: the tasks branch never enters the delivered history; scrubbed: anonymised authors, no tool or vendor names), lfs/objects/<aa>/<bb>/<sha256> (every Git LFS object of every commit of the bundle, in git's own layout) and sessions/ (the creation sessions as recorded, two optional files: messages.jsonl, every prompt the person typed and every reply the model wrote, and actions.jsonl, every tool call; see sessions). Restore: git clone <game>.bundle <dir>, copy lfs/ into <dir>/.git/lfs/, git lfs checkout",
+      "must_contain": [
+        "*.bundle"
+      ]
+    },
+    {
+      "name": "Tasks",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": false,
+      "what": "the game's tasks in the task format (GameTask, docs/schemas/game-task.schema.json; probe checks: docs/task-probes.md), copied from Tasks/ at the tip of the game repo's orphan tasks branch (never on main) with seed commits mapped to the delivered history: Tasks/<name>/task.json (the agent's part: everything but the grader's) and Tasks/<name>/grader.json (the grader's part: milestones, seed.reference), plus Tasks/README.md (what a task is, the split, the harness rule, how a seed is checked out of History/)",
+      "must_contain": [
+        "README.md"
+      ]
+    },
+    {
+      "name": "GodotProject",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": false,
+      "what": "the project at the release commit (project.godot, export_presets.cfg, the scenes, scripts and assets, every imported file with its .import and every script with its .uid; store content included; no .godot/ cache: the first open rebuilds it); a mobile game's Platform.json is at its root; in the repo the repository itself is the project",
+      "must_contain": [
+        "project.godot"
+      ],
+      "forbid_folders": [
+        ".godot"
+      ]
+    },
+    {
+      "name": "ReplayScripts",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": true,
+      "pending_allowed": true,
+      "what": "scripts that replay the creation headless, with Verification/ (report.json with a verdict required for complete; PASS or FAIL is metadata)"
+    },
+    {
+      "name": "Gameplay",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": true,
+      "what": "the release version's scenario videos: at least one (one recorded scenario is enough; videos of other scenarios already recorded may be included), named by their scenario number, at the size of the game's platform (gameplay_video); a game without a gameplay video is rejected at upload: a delivered dataset (variant full) never lists Gameplay/ as pending; only a repo's Dataset/ folder may (listed in manifest pending, status pending)",
+      "only_files_matching": "^<game>_S([0-9]+)\\.mp4$",
+      "scenario_numbers": "distinct, 1 or more; a dataset may hold a subset of the game's scenarios",
+      "pending_allowed": true
+    },
+    {
+      "name": "Screenshots",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": true,
+      "what": "the README hero and gallery images, linked from README.md by relative path",
+      "only_files_matching": "(?i)\\.(png|jpe?g|webp)$"
+    },
+    {
+      "name": "Build",
+      "kind": "dir",
+      "required": true,
+      "in_repo_dataset": false,
+      "what": "the release player, by the game's platform (manifest platform). A desktop game: the Windows player (x64), <Project>.exe with what the export puts beside it. A mobile game: the Android APK, <Project>.apk (arm64, min SDK 26), and no Windows player; while the release has no APK (built on a machine without the Android toolchain) Build/ is pending",
+      "by_platform": {
+        "desktop": {
+          "must_contain": [
+            "*.exe"
+          ],
+          "forbid": [
+            "*.apk"
+          ]
+        },
+        "mobile": {
+          "must_contain": [
+            "*.apk"
+          ],
+          "forbid": [
+            "*.exe"
+          ],
+          "pending_allowed": true
+        }
+      }
+    },
+    {
+      "name": "manifest.json",
+      "kind": "file",
+      "required": true,
+      "in_repo_dataset": true,
+      "what": "metadata and path, bytes, sha256 of every other file"
+    }
+  ],
+  "repo_dataset_extra_allowed": [
+    ".gitattributes"
+  ],
+  "gameplay_video": {
+    "container": "mp4",
+    "video_codec": "h264",
+    "audio_codec": "aac",
+    "audio_required": true,
+    "sizes": {
+      "desktop": [
+        1920,
+        1080
+      ],
+      "mobile landscape": [
+        1920,
+        1080
+      ],
+      "mobile portrait": [
+        1080,
+        1920
+      ]
+    },
+    "sizes_rule": "width and height by the manifest's platform and orientation: the size the game is played at"
+  },
+  "manifest": {
+    "required_keys": [
+      "layout",
+      "game",
+      "title",
+      "version",
+      "commit",
+      "platform",
+      "orientation",
+      "status",
+      "variant",
+      "pending",
+      "scenarios",
+      "totals",
+      "files",
+      "brief",
+      "tasks"
+    ],
+    "layout_value": "godot-dataset-layout/v1",
+    "platform_values": [
+      "desktop",
+      "mobile"
+    ],
+    "orientation_values": [
+      "landscape",
+      "portrait"
+    ],
+    "platform_rule": "platform is what the release commit's Platform.json says (tools/validate-game.py read_platform): \"desktop\" for a game without the file, with orientation null; \"mobile\" with orientation \"landscape\" or \"portrait\"",
+    "status_values": [
+      "complete",
+      "pending"
+    ],
+    "pending_rule": "pending lists the entries still missing: ReplayScripts (the creation replay is not made yet) and, for a mobile game alone, Build (the release has no APK yet)",
+    "complete_requires": "ReplayScripts/ with Verification/report.json (the creation replay run end to end, headless, from ReplayScripts/ and verified: every tracked file against the release commit byte for byte, the known non-content differences normalised and listed, and the structure of every scene and resource compared) and manifest.json replay_verification from it; the verdict is metadata (the replay is required but need not pass): replay_verification.pass equals the report verdict.pass, true or false, and the README says PASS or FAIL",
+    "replay_verification_keys": [
+      "pass",
+      "report",
+      "criteria",
+      "exclusions"
+    ],
+    "variant_values": [
+      "full",
+      "repo-dataset"
+    ],
+    "file_keys": [
+      "path",
+      "bytes",
+      "sha256"
+    ],
+    "history_keys": [
+      "bundle",
+      "head",
+      "commits",
+      "refs",
+      "lfs_objects",
+      "lfs_bytes",
+      "authors_anonymised"
+    ],
+    "history_rule": "full variant: history is an object (head = commit, the bundle holds every commit, every LFS object of every commit is under History/lfs/objects); repo-dataset: history is null (the repo is its own history)",
+    "brief_rule": "brief lists the Brief/ files: {\"brief\": \"Brief/brief.md\", \"design\": \"Brief/design.md\"}",
+    "tasks_rule": "tasks: {\"count\": n >= 1, \"names\": [the task names], \"schema\": \"game-task/1\"} (full variant); null in a repo Dataset/",
+    "build_rule": "full variant: build is an object: {config \"Release\", commit, source} with exe \"Build/<Project>.exe\" for a desktop game; with apk \"Build/<Project>.apk\" and, where the build recorded them, bytes, package, min_sdk, target_sdk and abis for a mobile game (no exe); neither exe nor apk while a mobile game's Build/ is pending; null in a repo Dataset/"
+  },
+  "readme": {
+    "sections_in_order": [
+      "Requirements",
+      "Package contents",
+      "Play the game",
+      "Replay the creation process",
+      "Restore the git history",
+      "Tasks",
+      "Scenarios",
+      "Screenshots",
+      "Assets and licences",
+      "Integrity"
+    ],
+    "must_link_every_screenshot": true,
+    "restore_history_section_repo_dataset": "in a repo Dataset/ README the \"Restore the git history\" section says the repository itself is the history"
+  },
+  "scan": {
+    "tool": "the packager's rescan",
+    "blocking": [
+      "Superposition",
+      "game-factory and godot-game-factory (and game_factory, gamefactory)",
+      "Claude",
+      "Opus (as a word; codec allowlist)",
+      "Anthropic",
+      "the account (user) name of the machine that built it",
+      "e-mail addresses",
+      "git author names and handles"
+    ],
+    "history": "History/: commit messages, author/committer identities (dev_NN only) and every text blob of every commit are scanned the same way",
+    "tasks": "Tasks/: every text field is scrubbed like the rest of the delivery"
+  },
+  "unlisted_allowed": {
+    "prefix": "History/lfs/objects/",
+    "why": "content-addressed: each file is named by its own sha256 (checked by tools/validate-game.py); manifest.history counts them"
+  },
+  "workflow": {
+    "directions": "every direction a person gave (what to change and why) is a user.direction row, written before the work it caused; rows acting on it carry \"direction\": <id>. The sessions' prompts and replies themselves are in History/sessions/messages.jsonl (see sessions)."
+  },
+  "sessions": {
+    "what": "History/sessions/: the creation sessions as the build machine's hooks recorded them, one JSON object per line. No new top-level entry: both files live inside History/ (full variant only)",
+    "optional": "both files are optional: a game recorded without prompts and replies has no messages.jsonl; tools/validate-game.py reports what it finds here as warnings and notes, never as errors",
+    "files": {
+      "messages.jsonl": "every prompt the person typed and every reply the model wrote, one row each: time, project, session_id, agent, role (user | assistant | thinking: a reasoning summary the agent saved, with redacted true and no text when it was saved without readable text), message_id, text; where they apply model, images, mid_turn, phase, subagent. Not in it: tool calls and results (actions.jsonl), text the agent tool put into a turn itself",
+      "actions.jsonl": "every tool call, one row each, with time, session_id, event, the tool, its input and its result (whole up to 1,000,000 characters)"
+    },
+    "session_id": "session_NN, the same session under the same name in both files (the build machine's session ids are not delivered)",
+    "rows": "rows up to the release commit; the sessions that packaged the dataset and those the packager was told to exclude are left out; the text is scrubbed like every other text file of the delivery",
+    "manifest": "manifest.json history.sessions: {\"messages\": {\"file\": \"History/sessions/messages.jsonl\", \"rows\": n}, \"actions\": {\"file\": \"History/sessions/actions.jsonl\", \"rows\": n}}, one key per file that is there"
+  },
+  "tasks": {
+    "count": "at least 5 and up to about 10 per game (a game with fewer than 5 is rejected); at least 4 of them hard; the others may be medium (what a task that names no difficulty is), none easier",
+    "format": "GameTask (game-task/1, docs/schemas/game-task.schema.json); merging task.json and grader.json (grader.json's seed into task.json's) gives the task",
+    "split": {
+      "task.json": "name, title, instruction, engine, seed {game, commit, kind}, play_scene, play_args, player, asset_packs, difficulty, tags, limits",
+      "grader.json": "name, seed {reference} when the task has one, milestones"
+    },
+    "seed_rules": "seed.game = the dataset's game; seed.commit and seed.reference are commits of History/<game>.bundle",
+    "harness_rule": "An agent given a task starts from a history-less snapshot of the game at seed.commit with Tasks/, History/ and Dataset/ removed (they hold every task's rubrics and references): only the brief and that snapshot. The grader's half (milestones: rubrics, judge and code-judge questions, log_absent patterns; and seed.reference) never reaches the agent."
+  }
+}

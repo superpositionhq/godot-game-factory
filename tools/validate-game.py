@@ -1,0 +1,2078 @@
+#!/usr/bin/env python3
+"""Validate a Godot game against the final game format (docs/game-format-v1.json, prose docs/game-format.md).
+
+    python tools/validate-game.py <games>/<slug>                 # the repo, its Dataset/ and Dataset.zip if present
+    python tools/validate-game.py --dataset <Dataset.zip|folder>  # a dataset alone (what a consumer receives)
+    python tools/validate-game.py --platform <folder>             # the game's platform, one line
+    options: --no-layout (skip tools/validate-dataset.ps1), --no-zip, --json <file>, --quiet
+
+Checks the repo (required files, a project.godot of the factory's Godot version with its main scene, .gitignore, Git
+LFS for binaries and Godot's text files out of it, every imported file with its .import, every script with its .uid
+and no orphan sidecar, README images, banned names, assets.manifest.json in the one unified format with every listed
+file committed under assets/ or addons/, workflow.jsonl rows, the tasks on the orphan tasks branch, the game contract,
+the sound rule and a mobile game's settings) and the dataset contents (manifest.json, workflow.jsonl, git.log,
+ReplayScripts/Verification/report.json against docs/schemas/, cross-file rules, and in Dataset.zip every asset file
+inside GodotProject/). The dataset layout (entries, video format, hashes, README sections) is
+tools/validate-dataset.ps1, which this script runs too on Windows unless --no-layout.
+
+Verdict: VALID (no errors), INVALID (errors). Exit code 0 / 2. Warnings never change the verdict.
+
+--platform reads the folder's Platform.json and nothing else: it prints `desktop`, `mobile landscape` or
+`mobile portrait` (exit 0), or for a file that says anything else the reason on stderr (exit 2). The PowerShell tools
+read a game's platform through it, so there is one reader.
+Standard library only (Python 3.10+).
+"""
+import argparse, io, json, os, re, shutil, subprocess, sys, zipfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+
+
+def load_json(path):
+    """A JSON file's content, the file closed once read (json.load(open(...)) leaves it open for the garbage collector:
+    a ResourceWarning in the tests of every tool that imports this file)."""
+    with open(path, encoding='utf-8-sig') as f:
+        return json.load(f)
+
+
+# A game's platform (docs/game-format.md, "Platform"): a mobile (Android) game has Platform.json at its root, written by
+# templates/new-game.ps1 -Platform mobile when the project is created; a game without the file is a desktop game.
+PLATFORM_FILE = 'Platform.json'
+ORIENTATIONS = ('landscape', 'portrait')
+
+
+def read_platform(folder):
+    """How the game in `folder` (a game repo, a copy of one at a commit, a dataset's GodotProject/) is held when it is
+    a mobile game ('landscape' or 'portrait'), or None: a desktop game, which has no Platform.json. ValueError, saying
+    why, for a file that is there and says neither: never read as desktop."""
+    path = os.path.join(str(folder), PLATFORM_FILE)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding='utf-8-sig') as f:
+            said = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ValueError(f'{PLATFORM_FILE} cannot be read ({type(e).__name__})') from e
+    if (not isinstance(said, dict) or set(said) != {'platform', 'orientation'} or said['platform'] != 'mobile'
+            or said['orientation'] not in ORIENTATIONS):
+        raise ValueError(f'{PLATFORM_FILE} must be {{"platform": "mobile", "orientation": "landscape" or "portrait"}}')
+    return said['orientation']
+
+
+def print_platform(folder):
+    """--platform: one line, `desktop`, `mobile landscape` or `mobile portrait`; the exit code (2, with the reason on
+    stderr, for a Platform.json that says anything else, or a folder that isn't there)."""
+    try:
+        if not os.path.isdir(folder):
+            raise ValueError(f'{folder} is not a folder')
+        orientation = read_platform(folder)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
+    print(f'mobile {orientation}' if orientation else 'desktop')
+    return 0
+
+
+# asked on its own, before the format files are loaded: the PowerShell tools call it for every game they touch, and it
+# needs nothing but the folder
+if __name__ == '__main__' and len(sys.argv) == 3 and sys.argv[1] == '--platform':
+    sys.exit(print_platform(sys.argv[2]))
+
+
+SPEC = load_json(os.path.join(REPO, 'docs', 'game-format-v1.json'))
+SCHEMAS = {n: load_json(os.path.join(REPO, 'docs', 'schemas', n + '.schema.json'))
+           for n in ('workflow-row', 'dataset-manifest', 'replay-report', 'assets-manifest', 'game-task')}
+
+
+def read_text(path):
+    """A text file's content ('' when it isn't there): project.godot, export_presets.cfg, .gitignore, README.md."""
+    if not os.path.isfile(path):
+        return ''
+    with open(path, encoding='utf-8-sig', errors='replace') as f:
+        return f.read()
+
+
+class Report:
+    def __init__(self):
+        self.items = []  # (severity, area, message)
+
+    def error(self, area, msg): self.items.append(('error', area, msg))
+    def warn(self, area, msg): self.items.append(('warning', area, msg))
+    def note(self, area, msg): self.items.append(('note', area, msg))
+
+    def count(self, sev): return sum(1 for s, _, _ in self.items if s == sev)
+
+
+# ---- a small JSON Schema subset validator (type, required, properties, additionalProperties: false, minProperties,
+# ---- enum, const, pattern, minLength, minimum, items, minItems, $ref "#/$defs/...") --------------------------------
+TYPES = {'object': dict, 'array': list, 'string': str, 'boolean': bool, 'null': type(None)}
+
+
+def _is(v, t):
+    if t == 'integer': return isinstance(v, int) and not isinstance(v, bool)
+    if t == 'number': return isinstance(v, (int, float)) and not isinstance(v, bool)
+    return isinstance(v, TYPES[t])
+
+
+def _same(a, b):
+    """JSON equality: true is not 1 (to Python's == it is)."""
+    return a == b and isinstance(a, bool) == isinstance(b, bool)
+
+
+def _ecma(pattern):
+    """A schema's pattern as JSON Schema (ECMA-262) reads it: its final `$` ends the string (Python's `$` also matches
+    before a final newline), and with re.ASCII `\\d` is 0-9 only. The schemas' patterns have `$` at their end only."""
+    return pattern[:-1] + r'\Z' if pattern.endswith('$') else pattern
+
+
+def check_schema(value, schema, root=None, path='$'):
+    """Yield 'path: problem' strings for value against schema."""
+    root = root or schema
+    if '$ref' in schema:
+        ref = schema['$ref']
+        node = root
+        for part in ref.lstrip('#/').split('/'):
+            node = node[part]
+        yield from check_schema(value, node, root, path)
+        return
+    if 'type' in schema:
+        ts = schema['type'] if isinstance(schema['type'], list) else [schema['type']]
+        if not any(_is(value, t) for t in ts):
+            yield f'{path}: expected {"/".join(ts)}, got {type(value).__name__}'
+            return
+    # combinators (the task schema uses them: optional fields, check kinds)
+    if 'allOf' in schema:
+        for sub in schema['allOf']:
+            yield from check_schema(value, sub, root, path)
+    for key in ('anyOf', 'oneOf'):
+        if key in schema:
+            tag = (schema.get('discriminator') or {}).get('propertyName')
+            if tag and isinstance(value, dict):
+                # the shape its tag names, and that shape's own problems: against every shape, a wrong kind read as
+                # the nearest shape's ("builds": must be "build") and a wrong field as "matches none"
+                shapes = schema['discriminator'].get('mapping') or {}
+                if tag not in value:
+                    yield f'{path}: missing "{tag}"'
+                elif not isinstance(value[tag], str) or value[tag] not in shapes:
+                    yield f'{path}.{tag}: {json.dumps(value[tag])[:80]} not one of {sorted(shapes)}'
+                else:
+                    yield from check_schema(value, {'$ref': shapes[value[tag]]}, root, path)
+                continue
+            fits = [list(check_schema(value, sub, root, path)) for sub in schema[key]]
+            ok = sum(1 for f in fits if not f)
+            if ok == 0:
+                best = min(fits, key=len)
+                yield f'{path}: matches none of the allowed shapes ({best[0] if best else "?"})'
+            elif key == 'oneOf' and ok > 1 and 'discriminator' not in schema:
+                yield f'{path}: matches more than one of the allowed shapes'
+    if 'const' in schema and not _same(value, schema['const']):
+        yield f'{path}: must be {json.dumps(schema["const"])}, got {json.dumps(value)[:80]}'
+    if 'enum' in schema and not any(_same(value, e) for e in schema['enum']):
+        yield f'{path}: {json.dumps(value)[:80]} not one of {schema["enum"]}'
+    if isinstance(value, str):
+        if 'minLength' in schema and len(value) < schema['minLength']:
+            yield f'{path}: empty'
+        if 'maxLength' in schema and len(value) > schema['maxLength']:
+            yield f'{path}: longer than {schema["maxLength"]}'
+        if 'pattern' in schema and not re.search(_ecma(schema['pattern']), value, re.ASCII):
+            yield f'{path}: {value[:80]!r} does not match {schema["pattern"]}'
+    if _is(value, 'number'):
+        if 'minimum' in schema and value < schema['minimum']:
+            yield f'{path}: {value} < {schema["minimum"]}'
+        if 'maximum' in schema and value > schema['maximum']:
+            yield f'{path}: {value} > {schema["maximum"]}'
+        if 'exclusiveMinimum' in schema and value <= schema['exclusiveMinimum']:
+            yield f'{path}: {value} <= {schema["exclusiveMinimum"]}'
+        if 'exclusiveMaximum' in schema and value >= schema['exclusiveMaximum']:
+            yield f'{path}: {value} >= {schema["exclusiveMaximum"]}'
+    if isinstance(value, dict):
+        if 'minProperties' in schema and len(value) < schema['minProperties']:
+            yield f'{path}: needs at least {schema["minProperties"]} key(s)'
+        for k in schema.get('required', []):
+            if k not in value:
+                yield f'{path}: missing "{k}"'
+        props = schema.get('properties', {})
+        for k, v in value.items():
+            if k in props:
+                yield from check_schema(v, props[k], root, f'{path}.{k}')
+            elif schema.get('additionalProperties') is False:
+                yield f'{path}: unexpected key "{k}"'
+    if isinstance(value, list):
+        if 'minItems' in schema and len(value) < schema['minItems']:
+            yield f'{path}: needs at least {schema["minItems"]} item(s)'
+        if 'maxItems' in schema and len(value) > schema['maxItems']:
+            yield f'{path}: more than {schema["maxItems"]} item(s)'
+        if 'items' in schema:
+            for i, v in enumerate(value):
+                yield from check_schema(v, schema['items'], root, f'{path}[{i}]')
+
+
+def schema_errors(rep, area, value, name, limit=20):
+    problems = list(check_schema(value, SCHEMAS[name]))
+    for p in problems[:limit]:
+        rep.error(area, p)
+    if len(problems) > limit:
+        rep.error(area, f'... and {len(problems) - limit} more schema problems')
+    return not problems
+
+
+# ---- shared content checks ---------------------------------------------------------------------------------------------
+def check_workflow(rep, area, lines):
+    """lines: iterable of text lines of a workflow.jsonl. Returns ids of user.direction rows."""
+    seen, directions, prev_seq, bad_rows, n, empty_reason = set(), set(), None, 0, 0, 0
+    problems = []
+    grouped = {}  # schema problem (row-independent text) -> [count, first line]
+    for i, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line:
+            continue
+        n += 1
+        try:
+            row = json.loads(line)
+        except ValueError as e:
+            problems.append(f'line {i}: not JSON ({e})')
+            continue
+        errs = list(check_schema(row, SCHEMAS['workflow-row']))
+        if errs:
+            bad_rows += 1
+            for e in errs:
+                g = grouped.setdefault(e, [0, i])
+                g[0] += 1
+            continue
+        if not row['reason'].strip():
+            empty_reason += 1
+        if row['id'] in seen:
+            problems.append(f'line {i}: duplicate id {row["id"]}')
+        seen.add(row['id'])
+        if prev_seq is not None and row['seq'] <= prev_seq:
+            problems.append(f'line {i}: seq {row["seq"]} not after {prev_seq}')
+        prev_seq = row['seq']
+        if row['op'] == 'user.direction':
+            if row['actor'] != 'user' or row['reason_source'] != 'user_direction' or not str(row['params'].get('direction', '')).strip():
+                problems.append(f'line {i}: user.direction row needs actor user, reason_source user_direction, params.direction')
+            directions.add(row['id'])
+        if 'direction' in row and row['direction'] not in directions:
+            problems.append(f'line {i}: direction {row["direction"]} is not an earlier user.direction row')
+    for e, (count, first) in sorted(grouped.items(), key=lambda kv: -kv[1][0])[:15]:
+        rep.error(area, f'{count} row(s), first at line {first}: {e}')
+    for p in problems[:25]:
+        rep.error(area, p)
+    if len(problems) > 25:
+        rep.error(area, f'... {len(problems) - 25} more')
+    if empty_reason:
+        rep.warn(area, f'{empty_reason} row(s) with an empty reason')
+    if n == 0:
+        rep.error(area, 'no rows')
+    else:
+        rep.note(area, f'{n} rows, {bad_rows} not matching the row schema, {len(directions)} user.direction rows')
+    return directions
+
+
+def check_git_log(rep, area, stream):
+    g = SPEC['dataset']['git_log']
+    first = stream.readline().rstrip('\r\n')
+    if first != g['first_line']:
+        rep.error(area, f'first line must be "{g["first_line"]}", got {first[:40]!r}')
+    shas, expect, problems = [], None, []
+    commit_rx, author_rx, date_rx = re.compile(g['commit_line']), re.compile(g['author_pattern']), re.compile(g['date_pattern'])
+    for i, line in enumerate(stream, 2):
+        line = line.rstrip('\r\n')
+        if expect is None:
+            if line.startswith('commit ') and not line.startswith(' '):
+                if not commit_rx.match(line):
+                    problems.append(f'line {i}: bad commit line {line[:60]!r}')
+                    continue
+                shas.append(line[7:])
+                expect = list(g['fields_in_order'])
+            continue
+        field = expect.pop(0)
+        if not line.startswith(field + ':'):
+            problems.append(f'line {i}: expected "{field}:" after commit {shas[-1][:8]}, got {line[:40]!r}')
+            expect = None
+            continue
+        value = line[len(field) + 1:].strip()
+        if field in ('Author', 'Committer') and not author_rx.match(value):
+            problems.append(f'line {i}: {field} "{value[:40]}" is not anonymised (dev_NN)')
+        if field in ('AuthorDate', 'CommitDate') and not date_rx.match(value):
+            problems.append(f'line {i}: {field} "{value}" is not ISO 8601')
+        if not expect:
+            expect = None
+    if len(set(shas)) != len(shas):
+        problems.append('a commit appears twice')
+    for p in problems[:20]:
+        rep.error(area, p)
+    if not shas:
+        rep.error(area, 'no commits')
+    else:
+        rep.note(area, f'{len(shas)} commits')
+    return shas[-1] if shas else None
+
+
+def git_ls(repo):
+    out = subprocess.run(['git', '-C', repo, '-c', 'core.quotepath=off', 'ls-files', '-z'], capture_output=True)
+    return [p for p in out.stdout.decode('utf-8', 'replace').split('\0') if p]
+
+
+def check_assets_manifest(rep, area, data, present):
+    """data: parsed assets.manifest.json; present(path) -> True when the file (or, for a path ending in /, any file
+    under the folder) is there."""
+    if not isinstance(data, dict) or data.get('schema') != 'assets-manifest/v1':
+        rep.error(area, 'not in the unified format (schema "assets-manifest/v1", docs/schemas/assets-manifest.schema.json)')
+        return
+    schema_ok = schema_errors(rep, area, data, 'assets-manifest')
+    # the schema's if/then/else (the small validator above does not evaluate it): in-house assets (origin "studio")
+    # carry a description instead of a url; every other asset needs an https url
+    for i, a in enumerate(data.get('assets') if isinstance(data.get('assets'), list) else []):
+        if not isinstance(a, dict):
+            continue
+        if a.get('origin') == 'studio':
+            if not str(a.get('description', '')).strip():
+                rep.error(area, f'$.assets[{i}] ({a.get("name")}): origin studio needs a "description"')
+        elif not str(a.get('url', '')).startswith('https://'):
+            rep.error(area, f'$.assets[{i}] ({a.get("name")}): needs an https "url" (or origin "studio" with a description, for in-house assets)')
+    if not schema_ok:
+        return
+    missing, outside, n = [], [], 0
+    for a in data['assets']:
+        for f in a['files']:
+            n += 1
+            if not re.match(r'^(assets|addons)/', f):
+                outside.append(f'{a["name"]}: {f}')
+            if not present(f):
+                missing.append(f'{a["name"]}: {f}')
+    for m in outside[:10]:
+        rep.error(area, f'asset path outside assets/ or addons/: {m}')
+    for m in missing[:15]:
+        rep.error(area, f'listed asset file not present: {m}')
+    if len(missing) > 15:
+        rep.error(area, f'... {len(missing) - 15} more listed files not present')
+    rep.note(area, f'{len(data["assets"])} assets, {n} listed paths, {len(missing)} missing')
+
+
+# ---- dataset (folder or zip) -------------------------------------------------------------------------------------------
+class DatasetView:
+    def __init__(self, path):
+        self.path = path
+        self.zip = None
+        if path.lower().endswith('.zip'):
+            self.zip = zipfile.ZipFile(path)
+            names = [n for n in self.zip.namelist() if not n.endswith('/')]
+            tops = sorted({n.split('/')[0] for n in names})
+            self.top = tops[0] if len(tops) == 1 else None
+            self.names = {n[len(self.top) + 1:]: n for n in names} if self.top else {}
+            self.sizes = {n[len(self.top) + 1:]: self.zip.getinfo(n).file_size for n in names} if self.top else {}
+        else:
+            self.top = os.path.basename(os.path.normpath(path))
+            self.names, self.sizes = {}, {}
+            for d, _, fs in os.walk(path):
+                for f in fs:
+                    full = os.path.join(d, f)
+                    rel = os.path.relpath(full, path).replace('\\', '/')
+                    self.names[rel] = full
+                    self.sizes[rel] = os.path.getsize(full)
+
+    def has(self, rel): return rel in self.names
+    def has_dir(self, rel): return any(n.startswith(rel.rstrip('/') + '/') for n in self.names)
+
+    def open_text(self, rel):
+        if self.zip:
+            return io.TextIOWrapper(self.zip.open(self.names[rel]), encoding='utf-8-sig', errors='replace')
+        return open(self.names[rel], encoding='utf-8-sig', errors='replace')
+
+    def json(self, rel):
+        with self.open_text(rel) as f:
+            return json.load(f)
+
+
+def check_dataset(rep, path, area='dataset'):
+    v = DatasetView(path)
+    try:
+        _check_dataset(rep, v, area)
+    finally:
+        if v.zip:
+            v.zip.close()   # Windows keeps an open zip locked
+
+
+def _check_dataset(rep, v, area):
+    if v.zip and not v.top:
+        rep.error(area, 'the zip must hold exactly one top folder (<game>/)')
+        return
+    if not v.has('manifest.json'):
+        rep.error(area, 'no manifest.json')
+        return
+    try:
+        m = v.json('manifest.json')
+    except ValueError as e:
+        rep.error(area, f'manifest.json is not JSON: {e}')
+        return
+    ok = schema_errors(rep, f'{area}: manifest.json', m, 'dataset-manifest')
+    if not ok:
+        return
+    a = f'{area}: manifest.json'
+    if v.zip and m['game'] != v.top:
+        rep.error(a, f'game "{m["game"]}" differs from the zip top folder "{v.top}"')
+    listed = {f['path']: f for f in m['files']}
+    for p, f in listed.items():
+        if p not in v.sizes:
+            rep.error(a, f'files[] lists {p}, not in the dataset')
+        elif v.sizes[p] != f['bytes']:
+            rep.error(a, f'{p}: {v.sizes[p]} bytes, manifest says {f["bytes"]}')
+    if m['totals']['files'] != len(m['files']) or m['totals']['bytes'] != sum(f['bytes'] for f in m['files']):
+        rep.error(a, 'totals do not match files[]')
+    for s in m['scenarios']:
+        if s['file'] not in listed:
+            rep.error(a, f'scenario file {s["file"]} not in files[]')
+    if m['variant'] == 'full' and not isinstance(m.get('build'), dict):
+        rep.error(a, 'variant full needs a build object')
+    if m['variant'] == 'repo-dataset' and m.get('build') is not None:
+        rep.error(a, 'variant repo-dataset has build null')
+    # workflow.jsonl
+    directions = set()
+    if v.has('workflow.jsonl'):
+        with v.open_text('workflow.jsonl') as f:
+            text = f.read()
+        directions = check_workflow(rep, f'{area}: workflow.jsonl', io.StringIO(text))   # lines end at \n only
+        for p in SPEC['repo']['banned_names']['patterns']:   # a banned name left in a row is an error here too
+            n = len(re.findall(p, text))
+            if n:
+                rep.error(f'{area}: workflow.jsonl', f'banned name {p} x{n}')
+    else:
+        rep.error(area, 'no workflow.jsonl')
+    # git.log
+    last = None
+    if v.has('git.log'):
+        with v.open_text('git.log') as f:
+            last = check_git_log(rep, f'{area}: git.log', f)
+        if last and last != m['commit']:
+            rep.error(f'{area}: git.log', f'last commit {last[:12]} differs from manifest commit {m["commit"][:12]}')
+    else:
+        rep.error(area, 'no git.log')
+    # replay report
+    rp = 'ReplayScripts/Verification/report.json'
+    if v.has(rp):
+        try:
+            r = v.json(rp)
+        except ValueError as e:
+            rep.error(f'{area}: report.json', f'not JSON: {e}')
+        else:
+            if schema_errors(rep, f'{area}: report.json', r, 'replay-report'):
+                if r['final_commit'] != m['commit']:
+                    rep.error(f'{area}: report.json', f'final_commit {r["final_commit"][:12]} differs from manifest commit {m["commit"][:12]}')
+                # the verdict is metadata (the replay is required but need not pass); manifest and report agree
+                rv = m.get('replay_verification')
+                if isinstance(rv, dict) and 'pass' in rv and bool(rv['pass']) != bool(r['verdict']['pass']):
+                    rep.error(f'{area}: report.json', f'verdict pass {r["verdict"]["pass"]} differs from manifest replay_verification.pass {rv["pass"]}')
+                if not r['verdict']['pass']:
+                    rep.note(f'{area}: report.json', 'creation replay verification FAIL (metadata)')
+    elif m['status'] == 'complete':
+        rep.error(area, f'status complete but no {rp}')
+    if m['status'] == 'complete':
+        if m['pending']:
+            rep.error(a, 'status complete with pending entries')
+        if not isinstance(m.get('replay_verification'), dict) or not isinstance(m['replay_verification'].get('pass'), bool):
+            rep.error(a, 'status complete needs replay_verification with pass true or false')
+    else:
+        rep.warn(a, f'status pending: {", ".join(m["pending"]) or "(nothing listed)"}')
+    # replay_verification is null only while ReplayScripts/ is pending (listed in pending)
+    if m.get('replay_verification') is None and not any(str(p).rstrip('/') == 'ReplayScripts' for p in m['pending']):
+        rep.error(a, 'replay_verification is null but ReplayScripts/ is not listed as pending')
+    # videos: at least one (one recorded scenario is enough), unless Gameplay/ is listed as pending
+    if not m['scenarios'] and not any(str(p).rstrip('/') == 'Gameplay' for p in m['pending']):
+        rep.error(a, 'no scenario videos: a delivery has at least one, or lists Gameplay/ as pending')
+    # a game without a gameplay video is rejected at upload: the delivered zip never has Gameplay/ pending
+    if m.get('variant') == 'full' and any(str(p).rstrip('/') == 'Gameplay' for p in m['pending']):
+        rep.error(a, 'Gameplay/ is pending: a game is rejected without a gameplay video; record a scenario of the release '
+                     'commit and package again')
+    # Brief/, the person's directions, History/, Tasks/
+    b = m.get('brief')
+    if not isinstance(b, dict):
+        rep.error(a, 'the layout needs brief {"brief": "Brief/brief.md", "design": "Brief/design.md"}')
+    for rel in ('Brief/brief.md', 'Brief/design.md'):
+        if not v.has(rel):
+            rep.error(area, f'no {rel}')
+        elif v.sizes[rel] < 200:
+            rep.error(area, f'{rel} is nearly empty ({v.sizes[rel]} bytes)')
+    if not directions:
+        rep.warn(f'{area}: workflow.jsonl', "no user.direction rows: the person's directions are recorded nowhere else")
+    if m['variant'] == 'full':
+        check_history(rep, area, v, m)
+        check_sessions(rep, area, v, m)
+        check_tasks(rep, area, v, m)
+    else:
+        if m.get('history') is not None or v.has_dir('History'):
+            rep.error(area, 'a repo Dataset/ has no History/ and history null (the repo is its own history)')
+        if v.has_dir('Tasks'):
+            rep.error(area, 'a repo Dataset/ has no Tasks/ (tasks live on the game repo\'s tasks branch)')
+    # full variant: every asset file listed by the project's assets.manifest.json is inside GodotProject/
+    if m['variant'] == 'full':
+        check_dataset_platform(rep, a, v, m)
+        am = 'GodotProject/assets.manifest.json'
+        if v.has(am):
+            try:
+                data = v.json(am)
+            except ValueError as e:
+                rep.error(f'{area}: {am}', f'not JSON: {e}')
+            else:
+                check_assets_manifest(rep, f'{area}: {am}', data,
+                                      lambda f: v.has_dir('GodotProject/' + f) if f.endswith('/') else (v.has('GodotProject/' + f) or v.has_dir('GodotProject/' + f)))
+        else:
+            rep.error(area, f'no {am}')
+    rep.note(area, f'{m["game"]} {m["variant"]} {m["status"]}: {len(m["files"])} files, {len(m["scenarios"])} scenario video(s)')
+
+
+def check_dataset_platform(rep, a, v, m):
+    """Full variant: the manifest's platform and orientation are what GodotProject/Platform.json says (read_platform:
+    no file is a desktop game), and its build is that platform's: a desktop game's `exe`, a mobile game's `apk` (neither
+    while a mobile game's Build/ is pending)."""
+    import tempfile
+    rel = f'GodotProject/{PLATFORM_FILE}'
+    try:
+        if not v.has(rel):
+            held = None
+        elif not v.zip:
+            held = read_platform(os.path.dirname(v.names[rel]))
+        else:
+            with tempfile.TemporaryDirectory(prefix='validate-game-') as tmp:
+                with v.zip.open(v.names[rel]) as src, open(os.path.join(tmp, PLATFORM_FILE), 'wb') as dst:
+                    shutil.copyfileobj(src, dst)
+                held = read_platform(tmp)
+    except ValueError as e:
+        rep.error(a, f'{rel}: {e}')
+        return
+    said = m['orientation'] if m['platform'] == 'mobile' else None
+    if m['platform'] != 'mobile' and m['orientation'] is not None:
+        rep.error(a, f'platform {m["platform"]} has orientation null, not {m["orientation"]!r}')
+    elif m['platform'] == 'mobile' and said is None:
+        rep.error(a, 'platform mobile needs an orientation (landscape or portrait)')
+    elif held != said:
+        name = lambda o: f'mobile {o}' if o else 'desktop'   # noqa: E731
+        rep.error(a, f'platform {name(said)}, but {rel} says {name(held)}')
+    build = m.get('build') if isinstance(m.get('build'), dict) else {}
+    waits = any(str(p).rstrip('/') == 'Build' for p in m['pending'])
+    if m['platform'] == 'mobile':
+        if 'exe' in build:
+            rep.error(a, 'a mobile game\'s build is its APK (build.apk), never a Windows player (build.exe)')
+        if 'apk' not in build and not waits:
+            rep.error(a, 'a mobile game needs build.apk, or Build/ listed as pending while the release has no APK')
+    else:
+        if 'apk' in build or 'exe' not in build:
+            rep.error(a, 'a desktop game\'s build is its Windows player (build.exe)')
+        if waits:
+            rep.error(a, 'Build/ is pending: only a mobile game without its APK waits for a build')
+    for key in ('exe', 'apk'):
+        if key in build and not v.has(build[key]):
+            rep.error(a, f'build.{key} {build[key]} is not in the dataset')
+
+
+LFS_PTR = re.compile(rb'^version https://git-lfs\.github\.com/spec/v1\r?\noid sha256:([0-9a-f]{64})\r?\nsize ([0-9]+)')
+OPTS = {'hash': True, 'quick': False}
+
+
+def git_out(*args, input=None):
+    r = subprocess.run(['git', *args], capture_output=True, input=input)
+    if r.returncode != 0:
+        raise RuntimeError(f'git {" ".join(args[:3])}: {r.stderr.decode("utf-8", "replace").strip()[:200]}')
+    return r.stdout
+
+
+def check_sessions(rep, area, v, m):
+    """Full variant: History/sessions/, the creation sessions as recorded: messages.jsonl (every prompt the person
+    typed and every reply the model wrote) and actions.jsonl (every tool call), one JSON row per line. Games recorded
+    before prompts and replies were have no messages.jsonl; nothing here is an error."""
+    a = f'{area}: History/sessions'
+    files = {'messages.jsonl': ('role', 'text'), 'actions.jsonl': ('event',)}
+    stray = sorted(r for r in v.names if r.startswith('History/sessions/') and r[len('History/sessions/'):] not in files)
+    if stray:
+        rep.warn(a, f'{len(stray)} file(s) that are not messages.jsonl or actions.jsonl, e.g. {stray[0]}')
+    listed = (m.get('history') or {}).get('sessions') or {}
+    for name, keys in files.items():
+        rel = f'History/sessions/{name}'
+        if not v.has(rel):
+            rep.note(a, f'no {name}' + (': the prompts and replies of the creation sessions are not in this dataset'
+                                        if name == 'messages.jsonl' else ''))
+            continue
+        rows, bad, raw_ids, sessions, roles = 0, 0, 0, set(), {}
+        with v.open_text(rel) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                rows += 1
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    r = None
+                if not isinstance(r, dict) or not all(isinstance(r.get(k), str) for k in ('time', 'session_id') + keys):
+                    bad += 1
+                    continue
+                sessions.add(r['session_id'])
+                if re.fullmatch(r'[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}', r['session_id']):
+                    raw_ids += 1
+                if name == 'messages.jsonl':
+                    roles[r['role']] = roles.get(r['role'], 0) + 1
+        if bad:
+            rep.warn(a, f'{name}: {bad} of {rows} row(s) are not a JSON object with {", ".join(("time", "session_id") + keys)}')
+        if raw_ids:
+            rep.warn(a, f"{name}: {raw_ids} row(s) carry the build machine's session id, not session_NN")
+        if name == 'messages.jsonl' and set(roles) - {'user', 'assistant', 'thinking'}:
+            rep.warn(a, f'{name}: roles other than user, assistant and thinking: {", ".join(sorted(set(roles) - {"user", "assistant", "thinking"}))}')
+        want = (listed.get(name[:-len('.jsonl')]) or {}).get('rows') if isinstance(listed, dict) else None
+        if want is not None and want != rows:
+            rep.warn(a, f'{name}: {rows} row(s), manifest.json history.sessions says {want}')
+        detail = f'{roles.get("user", 0)} prompt(s), {roles.get("assistant", 0)} repl(ies), {roles.get("thinking", 0)} reasoning summar(ies)' if name == 'messages.jsonl' else f'{rows} row(s)'
+        rep.note(a, f'{name}: {detail} in {len(sessions)} session(s)')
+
+
+def check_history(rep, area, v, m):
+    """Full variant: History/<game>.bundle + History/lfs/objects (every LFS object of every commit)."""
+    import hashlib, tempfile
+    a = f'{area}: History'
+    h = m.get('history')
+    if not isinstance(h, dict):
+        rep.error(a, 'manifest.json history must be an object in a Dataset.zip')
+        return
+    if h['head'] != m['commit']:
+        rep.error(a, f'history.head {h["head"][:12]} differs from manifest commit {m["commit"][:12]}')
+    if not v.has(h['bundle']):
+        rep.error(a, f'no {h["bundle"]}')
+        return
+    objs = {rel[len('History/lfs/objects/'):].split('/')[-1]: rel for rel in v.names if rel.startswith('History/lfs/objects/')}
+    for oid, rel in objs.items():
+        if not re.fullmatch(r'[0-9a-f]{64}', oid) or rel != f'History/lfs/objects/{oid[:2]}/{oid[2:4]}/{oid}':
+            rep.error(a, f'{rel}: not at lfs/objects/<aa>/<bb>/<sha256>')
+    if len(objs) != h['lfs_objects'] or sum(v.sizes[r] for r in objs.values()) != h['lfs_bytes']:
+        rep.error(a, f'{len(objs)} LFS objects / {sum(v.sizes[r] for r in objs.values())} bytes, manifest history says {h["lfs_objects"]} / {h["lfs_bytes"]}')
+    if OPTS['quick']:
+        rep.note(a, 'quick: bundle contents and LFS hashes not checked')
+        return
+    with tempfile.TemporaryDirectory(prefix='validate-game-') as tmp:
+        bundle = v.names[h['bundle']]
+        if v.zip:
+            bundle = os.path.join(tmp, 'h.bundle')
+            with v.zip.open(v.names[h['bundle']]) as src, open(bundle, 'wb') as dst:
+                shutil.copyfileobj(src, dst, 1 << 20)
+        try:
+            heads = git_out('bundle', 'list-heads', bundle).decode().split()
+            if h['head'] not in heads:
+                rep.error(a, f'the bundle has no ref at history.head {h["head"][:12]}')
+            bare = os.path.join(tmp, 'repo.git')
+            git_out('clone', '--quiet', '--bare', '--mirror', bundle, bare)
+            commits = git_out('-C', bare, 'rev-list', '--all').decode().split()
+            v.commits = set(commits)   # for the tasks' seed commits
+            if len(commits) != h['commits']:
+                rep.error(a, f'the bundle holds {len(commits)} commits, manifest history says {h["commits"]}')
+            idents = set(git_out('-C', bare, 'log', '--all', '--format=%an%n%cn%n%ae%n%ce').decode('utf-8', 'replace').split('\n')) - {''}
+            bad = sorted(i for i in idents if not re.fullmatch(r'dev_[0-9]+(@[a-z0-9.-]+)?', i))
+            if bad:
+                rep.error(a, f'{len(bad)} author/committer identities are not anonymised (dev_NN), e.g. {bad[0][:3]}...')
+            msgs = git_out('-C', bare, 'log', '--all', '--format=%B').decode('utf-8', 'replace')
+            for p in SPEC['repo']['banned_names']['patterns']:
+                n = len(re.findall(p, msgs))
+                if n:
+                    rep.error(a, f'commit messages: {p} x{n}')
+            # every LFS pointer of every commit has its object
+            objlist = git_out('-C', bare, 'rev-list', '--objects', '--all').decode('utf-8', 'replace').splitlines()
+            shas = '\n'.join(l.split(' ')[0] for l in objlist) + '\n'
+            small = [l.split(' ') for l in git_out('-C', bare, 'cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)',
+                                                   input=shas.encode()).decode().splitlines()]
+            cand = [s[0] for s in small if len(s) == 3 and s[1] == 'blob' and int(s[2]) < 300]
+            need, missing = set(), []
+            if cand:
+                data = git_out('-C', bare, 'cat-file', '--batch', input=('\n'.join(cand) + '\n').encode())
+                pos = 0
+                while pos < len(data):
+                    nl = data.index(b'\n', pos)
+                    size = int(data[pos:nl].split()[2])
+                    body = data[nl + 1:nl + 1 + size]
+                    pos = nl + 1 + size + 1
+                    mm = LFS_PTR.match(body)
+                    if mm:
+                        need.add((mm.group(1).decode(), int(mm.group(2))))
+            for oid, size in sorted(need):
+                rel = objs.get(oid)
+                if not rel:
+                    missing.append(oid)
+                elif v.sizes[rel] != size:
+                    rep.error(a, f'LFS object {oid[:12]}: {v.sizes[rel]} bytes, its pointer says {size}')
+            for oid in missing[:10]:
+                rep.error(a, f'LFS object {oid[:12]}... is referenced by a commit but not in History/lfs/objects')
+            if len(missing) > 10:
+                rep.error(a, f'... {len(missing) - 10} more LFS objects missing')
+            if OPTS['hash']:
+                badhash = 0
+                for oid, rel in objs.items():
+                    hs = hashlib.sha256()
+                    with (v.zip.open(v.names[rel]) if v.zip else open(v.names[rel], 'rb')) as f:
+                        for chunk in iter(lambda: f.read(1 << 20), b''):
+                            hs.update(chunk)
+                    if hs.hexdigest() != oid:
+                        badhash += 1
+                        if badhash <= 5:
+                            rep.error(a, f'{rel}: content does not hash to its name')
+            rep.note(a, f'{len(commits)} commits, {len(heads) // 2} ref(s), {len(need)} LFS objects referenced, {len(objs)} present')
+        except (RuntimeError, ValueError, IndexError) as e:
+            rep.error(a, f'cannot read the bundle: {e}')
+
+
+TASK_NAME = re.compile(r'^[a-z0-9][a-z0-9-]{1,62}\Z')
+GRADER_KEYS = ('milestones',)          # the grader's half of a task, with seed.reference
+
+
+RES = 'res://'   # a project path as Godot names it: a scene, a script, a resource
+
+# A play's command line (play_args, a task play's args): the game's own arguments, never the checker's
+# (docs/task-probes.md, section 1.1). An element starting with "-" and a letter is a flag, anything else a value.
+PLAY_FLAG = re.compile(r'^-+([A-Za-z][^=]*)')   # "--x" too
+DENIED_PLAY_ARGS = {'headless', 'path', 'log-file', 'fixed-fps', 'disable-vsync', 'audio-driver', 'quit', 'quit-after',
+                    'script', 'import', 'editor', 'main-pack', 'display-driver', 'position', 'screen', 'fullscreen',
+                    'maximized', 'windowed', 'single-window', 'shots', 'shotdir'}
+DENIED_PLAY_PREFIXES = ('taskprobe',)
+# a task play's `scene` and `args` take the task's place only when present, so they have no default here
+TASK_PLAY_DEFAULTS = {'inputs': [], 'every': None}
+
+
+def denied_play_args(args):
+    """The flags among `args` the checker sets itself (window, log, frame rate, screenshots, the probe's own) or that
+    would undo them, as written."""
+    for arg in args or []:
+        mm = PLAY_FLAG.match(arg) if isinstance(arg, str) else None
+        if mm and (mm.group(1).lower() in DENIED_PLAY_ARGS or mm.group(1).lower().startswith(DENIED_PLAY_PREFIXES)):
+            yield mm.group(1)
+
+
+# fields whose threshold is never a literal: how bright a light, how big a component's bounds, how loud a sound and
+# how fast a part spins depend on what a build chose (docs/task-probes.md)
+NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'spin'), 'objects': ('spin',),
+                 'audio': ('volume', 'max_volume', 'level')}
+UI_SIGNATURE_AGGS = ('changes', 'any', 'all', 'count')  # a ui signature's value means nothing; whether it changes does
+WAITS = 300   # seconds of real time a task play's waits add at most
+# seconds a finger stays up before it goes down again (docs/task-probes.md, section 1.5): the probe lifts a finger a
+# frame after its touch is over, so a touch that began sooner would find its finger still down and miss on every run
+TOUCH_GAP = 0.1
+JUDGE_PLAY_SHOTS = 5   # the screenshots a judge check is shown of each of its own plays, unless its `shots` says
+JUDGE_SHOTS = 20       # the screenshots a judge check is shown at most: its plays times its shots
+
+
+def dotted(path):
+    """Why a project path (a scene) can't be used, as a list: a `.` or `..` part names a file by a way round, outside
+    the project even, and an empty part (`//` after res://, a `/` at the end) is no name at all."""
+    parts = path[len(RES):].split('/') if isinstance(path, str) and path.startswith(RES) else \
+        (path.split('/') if isinstance(path, str) else [])
+    if any(part in ('.', '..') for part in parts):
+        return [f'{path} has a "." or ".." part: name the file by its own {RES} path']
+    if '' in parts:
+        return [f'{path} has an empty part ("//", or a "/" at its end): name the file by its own {RES} path']
+    return []
+
+
+def nears(o):
+    """Every `near` inside `o` (a measure, a play's inputs, a select), wherever it is nested."""
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == 'near' and isinstance(v, dict):
+                yield v
+            yield from nears(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from nears(v)
+
+
+def near_errors(label, o):
+    """A near's height band has y_min < y_max, and `y_relative` only with one of them."""
+    errs = []
+    for near in nears(o):
+        lo, hi = near.get('y_min'), near.get('y_max')
+        if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) and not lo < hi:
+            errs.append(f'{label}: a near band has y_min < y_max')
+        if near.get('y_relative') and lo is None and hi is None:
+            errs.append(f'{label}: `y_relative` goes with y_min or y_max')
+    return errs
+
+
+def live(o, keys=('player', 'camera')):
+    """Whether a select names the player or the camera anywhere in it (a `player` select, a point on either), which
+    only a running game has."""
+    if isinstance(o, dict):
+        return any(o.get(k) for k in keys) or any(live(v, keys) for v in o.values())
+    if isinstance(o, list):
+        return any(live(v, keys) for v in o)
+    return False
+
+
+def component_selects(measure):
+    """The components selects of a measure (its own when it reads components)."""
+    if measure.get('probe') == 'components' and isinstance(measure.get('select'), dict):
+        yield measure['select']
+
+
+def named_shots(play):
+    """The names of the screenshots a task play's `shot` inputs take."""
+    return [i['shot'] for i in play.get('inputs') or [] if isinstance(i, dict) and isinstance(i.get('shot'), str)]
+
+
+def task_play_errors(n, play, plays):
+    """A task play's rules beyond the schema, for check `n` (a probe's `play`, a judge's `plays`): not named
+    look/drive, no input at or after its end, no touch that ends after it or begins less than TOUCH_GAP after its
+    finger lifts, no flag of the checker's own, a scene path without dotted segments, waits of at most 300 s in all,
+    its named shots each named once (20 at most), a view's pitch within -89 to 89, scene loads without dotted
+    segments, and identical to every other task play of its name in the task (`plays`: those seen so far, by name)."""
+    errs, pname = [], play.get('name')
+    if pname in ('look', 'drive'):
+        errs.append(f"check {n}: a task play can't be named {pname}")
+    secs = play.get('seconds')
+    if isinstance(secs, (int, float)) and any(isinstance(i, dict) and isinstance(i.get('t'), (int, float))
+                                              and i['t'] >= secs for i in play.get('inputs') or []):
+        errs.append(f'check {n}: play {pname} has an input at or after its end ({secs} s)')
+    for name in denied_play_args(play.get('args') if isinstance(play.get('args'), list) else []):
+        errs.append(f"check {n}: a task play can't set -{name}")
+    errs += [f'check {n}: play {pname}: {e}' for e in dotted(play.get('scene'))]
+    waits = sum(i['wait'] for i in play.get('inputs') or []
+                if isinstance(i, dict) and isinstance(i.get('wait'), (int, float)))
+    if waits > WAITS:
+        errs.append(f'check {n}: play {pname} waits {waits:g} s in all, more than {WAITS} s')
+    shots = named_shots(play)
+    if len(shots) != len(set(shots)):
+        errs.append(f'check {n}: play {pname} names a shot twice')
+    if len(shots) > JUDGE_SHOTS:
+        errs.append(f'check {n}: play {pname} takes {len(shots)} named shots, more than {JUDGE_SHOTS}')
+    for i in play.get('inputs') or []:
+        if not isinstance(i, dict):
+            continue
+        view = i.get('view')
+        if isinstance(view, list) and len(view) == 2 and all(isinstance(v, (int, float)) for v in view) and not (
+                -89 <= view[0] <= 89 and -360 <= view[1] <= 360):
+            errs.append(f'check {n}: play {pname} has a view {view}: [pitch, yaw], pitch -89 to 89, yaw -360 to 360')
+        errs += [f'check {n}: play {pname}: {e}' for e in dotted(i.get('scene'))]
+    down = {}   # finger -> when its last touch lifts
+    touches = [i for i in play.get('inputs') or [] if isinstance(i, dict) and ('tap' in i or 'drag' in i)
+               and isinstance(i.get('t'), (int, float))]
+    for i in sorted(touches, key=lambda i: i['t']):
+        lasts = sum(i[k] for k in (('over', 'hold') if 'drag' in i else ('hold',))
+                    if isinstance(i.get(k), (int, float)) and not isinstance(i.get(k), bool))
+        finger = i.get('finger') if isinstance(i.get('finger'), int) else 0
+        if isinstance(secs, (int, float)) and i['t'] + lasts > secs:
+            errs.append(f'check {n}: play {pname} has a touch that ends after the play ({secs} s)')
+        if finger in down and i['t'] < down[finger] + TOUCH_GAP - 1e-9:
+            errs.append(f"check {n}: play {pname} puts finger {finger} down at {i['t']:g} s, less than {TOUCH_GAP:g} s "
+                        f"after it lifts ({down[finger]:g} s): give the second touch another finger, or start it later")
+        down[finger] = i['t'] + lasts
+    whole = dict(TASK_PLAY_DEFAULTS, **play)
+    if plays.setdefault(pname, whole) != whole:
+        errs.append(f'check {n}: task play {pname} differs from another play of that name')
+    return errs
+
+
+def probe_errors(c, seed, ref, plays):
+    """A probe check's rules beyond the schema (docs/task-probes.md):
+    a task play is not named look/drive, has no input at or after its end, sets no flag of the checker's own, and
+    same-named task plays are identical; == and != take a literal value; a screen measure's threshold is calibrated or
+    relative to the start (the frame's luminance moves between machines), and so is every NEVER_LITERAL field; a
+    screen rect [x0, y0, x1, y1] has x0 < x1 and y0 < y1; a player measure's dist has its `to`; `to_angle` or
+    `to_axis`, not both; `window` or `at`, not both; a components select names its component or `effect`; a near's
+    height band has y_min < y_max and `y_relative` only with one of them; a task play's waits add at most 300 s;
+    regular expressions that compile; a ui measure takes `match` exactly when it reads text, `agg` changes, any, all
+    or count when it reads its signature, and a select rect [x0, y0, x1, y1] with x0 < x1 and y0 < y1; a calibrated
+    threshold needs seed.reference and a start-relative one a seed."""
+    errs, n = [], c.get('name')
+    play = c.get('play')
+    measure = c.get('measure') if isinstance(c.get('measure'), dict) else {}
+    expect = c.get('expect') if isinstance(c.get('expect'), dict) else {}
+    probe = measure.get('probe')
+    field = measure.get('field')
+    rel = 'calibrate' if 'calibrate' in expect else ('start' if 'start_times' in expect or 'start_plus' in expect else None)
+    if isinstance(play, dict):
+        errs.extend(task_play_errors(n, play, plays))
+    if probe == 'screen' and not rel:
+        errs.append(f"check {n}: the frame's luminance moves between machines, so a screen measure's threshold is "
+                    'calibrated or relative to the start, never a literal value')
+    rect = measure.get('rect')
+    if probe == 'screen' and isinstance(rect, list) and len(rect) == 4 and not (rect[0] < rect[2] and rect[1] < rect[3]):
+        errs.append(f'check {n}: a screen rect is [x0, y0, x1, y1] with x0 < x1 and y0 < y1')
+    if field in NEVER_LITERAL.get(probe, ()) and not rel:
+        errs.append(f"check {n}: a {probe} measure's {field} depends on what a build chose, so its "
+                    'threshold is calibrated or relative to the start, never a literal value')
+    if probe == 'player' and field == 'dist' and measure.get('to') is None:
+        errs.append(f"check {n}: a player measure's dist is the distance to its `to` point, which it lacks")
+    if measure.get('to_angle') is not None and measure.get('to_axis') is not None:
+        errs.append(f'check {n}: `to_angle` or `to_axis`, not both')
+    if measure.get('window') is not None and measure.get('at') is not None:   # pick() would take the window alone
+        errs.append(f'check {n}: `window` or `at`, not both')
+    for sel in component_selects(measure):
+        if sel.get('component') is None and sel.get('effect') is None:
+            errs.append(f'check {n}: a components select names its component, or `effect`')
+    errs += near_errors(f'check {n}', [measure, play.get('inputs') if isinstance(play, dict) else None])
+    # every regular expression of the measure: the checker reads `match` and a log's `pattern` with Python's re (one
+    # that doesn't compile would stop the task check), the probe a select's `text` with the engine's (checked as Python
+    # reads it)
+    sel = measure.get('select') if isinstance(measure.get('select'), dict) else {}
+    for pattern in (measure.get('match'), measure.get('pattern'), sel.get('text')):
+        try:
+            re.compile(pattern) if isinstance(pattern, str) else None
+        except re.error as e:
+            errs.append(f"check {n}: {pattern!r} isn't a regular expression ({e})")
+    if probe == 'ui':
+        if (field == 'text') != (measure.get('match') is not None):
+            errs.append(f'check {n}: a ui measure takes `match` exactly when its field is text')
+        if field == 'signature' and measure.get('agg') not in UI_SIGNATURE_AGGS:
+            errs.append(f'check {n}: a ui signature is read with `agg` changes, any, all or count')
+        rect = sel.get('rect')
+        if isinstance(rect, list) and len(rect) == 4 and not (rect[0] < rect[2] and rect[1] < rect[3]):
+            errs.append(f'check {n}: a ui select rect is [x0, y0, x1, y1] with x0 < x1 and y0 < y1')
+        if sel.get('text') is not None and sel.get('kind') not in (None, 'text'):
+            errs.append(f"check {n}: a ui select's `text` picks text elements: its kind is text or unset")
+    if rel and expect.get('op') in ('==', '!='):
+        errs.append(f'check {n}: == and != take a literal value, never a calibrated threshold')
+    if rel == 'calibrate' and not ref:
+        errs.append(f"check {n} calibrates against a reference the task's seed doesn't name")
+    if rel == 'start' and not seed:
+        errs.append(f'check {n} sets its threshold from the start, which only a seeded task has')
+    return errs
+
+
+def task_semantic_errors(t):
+    """What the schema cannot say (the task format's own rules): check names unique, `needs` naming earlier
+    checks, a code judge or a reference judge only with seed.reference, a before/after judge only with a seed, a
+    judge's own `plays` each named once in the check and under a task play's rules (task_play_errors), its `shots` only
+    with plays of its own and its plays times its shots 20 at most, a log_absent pattern that compiles, the task's
+    play_args and player select (no flag of the checker's own; near bands; no `player` in the select that says which
+    object the player is) and the probe rules (probe_errors); a task whose start doesn't build (a build check's
+    `fails_at_start`) has nothing that needs the start played: no start-relative threshold, no before/after judge
+    (docs/task-probes.md, 3.1)."""
+    errs, seen, plays = [], set(), {}
+    seed = t.get('seed') if isinstance(t.get('seed'), dict) else None
+    ref = seed.get('reference') if seed else None
+    for name in denied_play_args(t.get('play_args') if isinstance(t.get('play_args'), list) else []):
+        errs.append(f"play_args can't set -{name}")
+    errs += [f'play_scene: {e}' for e in dotted(t.get('play_scene'))]
+    errs += near_errors('player', t.get('player'))
+    if live(t.get('player'), ('player',)):
+        errs.append('player: this select says which object the player is, so it names no `player` and no point on the '
+                    "player (the probe drops a `player` key here and would take the scene's first node)")
+    checks = [c for m in t.get('milestones') or [] if isinstance(m, dict) for c in m.get('checks') or []
+              if isinstance(c, dict)]
+    broken = next((c.get('name') for c in checks if c.get('kind') == 'build' and c.get('fails_at_start') is True), None)
+    for m in t.get('milestones') or []:
+        for c in (m.get('checks') or []) if isinstance(m, dict) else []:
+            if not isinstance(c, dict):
+                continue
+            n, k = c.get('name'), c.get('kind')
+            if k == 'probe':
+                errs.extend(probe_errors(c, seed, ref, plays))
+                expect = c.get('expect') if isinstance(c.get('expect'), dict) else {}
+                relative = [x for x in ('calibrate', 'start_times', 'start_plus') if x in expect]
+                if broken and relative:
+                    errs.append(f"check {n}: its threshold is relative to the start ({relative[0]}), but the start "
+                                f"doesn't build ({broken}: fails_at_start), so it is never played; use a literal value")
+            if k == 'judge' and c.get('before') and broken:
+                errs.append(f"check {n} compares with the start (before: true), but the start doesn't build "
+                            f"({broken}: fails_at_start), so it is never played")
+            if k == 'judge':
+                own = [p for p in c.get('plays') or [] if isinstance(p, dict)]
+                if len({p.get('name') for p in own}) != len(own):
+                    errs.append(f'judge check {n} names a play twice')
+                for p in own:
+                    errs.extend(task_play_errors(n, p, plays))
+                    errs.extend(near_errors(f'check {n}', p.get('inputs')))
+                shots = c.get('shots', JUDGE_PLAY_SHOTS)
+                if shots != JUDGE_PLAY_SHOTS and not own:
+                    errs.append(f'judge check {n} sets shots but names no play of its own to take them in')
+                named = sum(len(named_shots(p)) for p in own)
+                if isinstance(shots, int) and len(own) * shots + named > JUDGE_SHOTS:
+                    errs.append(f"judge check {n} asks {len(own)} plays of {shots} screenshots"
+                                + (f' and {named} named ones' if named else '') + f": more than a judge's {JUDGE_SHOTS}")
+            if k == 'code_judge' and not ref:
+                errs.append(f'check {n}: a code judge needs seed.reference')
+            if k == 'judge' and c.get('before') and not seed:
+                errs.append(f'check {n}: a before/after judge needs a seed')
+            if k == 'judge' and c.get('reference') and not ref:
+                errs.append(f'check {n}: a reference judge needs seed.reference')
+            if k == 'log_absent':
+                try:
+                    re.compile(c.get('pattern') or '')
+                except re.error as e:
+                    errs.append(f"check {n}: {c.get('pattern')!r} isn't a regular expression ({e})")
+            if n in seen:
+                errs.append(f'check {n} is named twice')
+            missing = [x for x in (c.get('needs') or []) if x not in seen]
+            if missing:
+                errs.append(f'check {n} needs {missing}, which come later or do not exist')
+            seen.add(n)
+    return errs
+
+
+def wild(sel):
+    """A select that takes its objects by a wildcard on their name and nothing else that narrows them (a components
+    select's effect, owner and mesh, a widgets select's text narrow it too)."""
+    return isinstance(sel, dict) and isinstance(sel.get('name'), str) and bool(re.search(r'[*?]', sel['name'])) and \
+        all(sel.get(k) is None for k in ('component', 'tag', 'where', 'near', 'has', 'player', 'effect', 'owner', 'mesh',
+                                         'text'))
+
+
+def object_points(o):
+    """Every object point ({"object": <select>, ...}) inside `o`, wherever it is nested."""
+    if isinstance(o, dict):
+        if isinstance(o.get('object'), dict):
+            yield o
+        for v in o.values():
+            yield from object_points(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from object_points(v)
+
+
+def task_warnings(t):
+    """Selects that take one object by a wildcard name alone (a warning, never an error): a teleport_to goes to the
+    nearest match, an object point stands at the first match in tree order, and "of": "first" reads the first row, in
+    the same order. A spawner, a pool or a parent whose name fits is matched too: a teleport_to {"name": "Coin*"}
+    takes CoinSpawner."""
+    out = []
+    for m in t.get('milestones') or []:
+        for c in (m.get('checks') or []) if isinstance(m, dict) else []:
+            if not isinstance(c, dict) or c.get('kind') not in ('probe', 'judge'):
+                continue
+            measure = c.get('measure') if isinstance(c.get('measure'), dict) else {}
+            own = [c.get('play')] if c['kind'] == 'probe' else c.get('plays') or []   # a judge's own plays too
+            check, first, found = f'check {c.get("name")}', 'the first (in tree order)', []
+            for play in (p for p in own if isinstance(p, dict)):
+                inputs = play.get('inputs') or []
+                found += [(f'play {play.get("name")}', 'teleport_to', i['teleport_to'], 'goes to the nearest')
+                          for i in inputs if isinstance(i, dict) and wild(i.get('teleport_to'))]
+                found += [(f'play {play.get("name")}', 'the point', {'object': p['object']}, 'stands at ' + first)
+                          for p in object_points(inputs) if wild(p['object'])]
+            found += [(check, 'the point', {'object': p['object']}, 'stands at ' + first)
+                      for p in object_points(measure) if wild(p['object'])]
+            if measure.get('of') == 'first' and wild(measure.get('select')):
+                found.append((check, 'the select', measure['select'], 'reads ' + first))
+            for where, what, sel, how in found:
+                said = (f'{where}: {what} {json.dumps(sel)} {how} object whose name fits, and a spawner, a pool or a '
+                        'parent named like it fits too (Coin* takes CoinSpawner): select it by its component (or tag, '
+                        'near), or by its full name')
+                if said not in out:   # a play's inputs once, whichever checks use the play
+                    out.append(said)
+    return out
+
+
+# The bar every task meets: only long threads of multiple edits qualify (godot-write-tasks sections 1, 6)
+MIN_OUTCOME_PROBES = 3     # required probes outside still_works: one per issue the thread settled
+MIN_THREAD_FILES = 5       # game files the reference changes against the start
+MIN_THREAD_COMMITS = 4     # commits from seed.commit to seed.reference that change the game (a seed on main)
+MIN_THREAD_CODE_LINES = 100   # code lines added plus removed from start to reference
+MIN_THREAD_SYSTEMS = 2        # systems the change crosses, as thread_size counts them
+CODE_FILE = re.compile(r'\.(gd|gdshader|gdshaderinc|cs|cpp|h|hpp|c|cc|inl|py|ps1|bat|cmd|sh|js)$', re.I)
+NOT_CODE_DIR = re.compile(r'^(Dataset|Docs)/|/ThirdParty/')   # store packs' own code is not the thread's
+# the game itself, not its records or docs: scenes/, game/, assets/, the addons but the AutoPlay drop-in and the task
+# probe, and project.godot. The steps are the creation's record, and an .import or .uid follows its file (its import
+# settings and its uid)
+GAME_FILE = re.compile(r'^(?:(?:scenes|game|assets)/|addons/(?!autoplay/|task_probe/)|project\.godot$)(?!.*\.(?:import|uid)$)')
+GAME_PATHS = ('scenes', 'game', 'assets', 'addons', 'project.godot', ':(exclude)addons/autoplay',
+              ':(exclude)addons/task_probe', ':(exclude)*.import', ':(exclude)*.uid')
+
+
+def thread_errors(t, outcomes):
+    """Why task `t` (with `outcomes` required probes outside still_works) is not a long thread, from the task alone."""
+    errs = []
+    if t.get('difficulty') == 'easy':
+        errs.append('difficulty \'easy\': a task is "hard" or "medium" (a game needs at least 4 "hard")')
+    if 'long-thread' not in (t.get('tags') or []):
+        errs.append('no long-thread tag')
+    if not (isinstance(t.get('seed'), dict) and t['seed'].get('reference')):
+        errs.append("no seed.reference: every task ends at the game's own accepted fix of the thread")
+    if outcomes < MIN_OUTCOME_PROBES:
+        errs.append(f'{outcomes} required outcome probe(s) outside still_works, fewer than {MIN_OUTCOME_PROBES}')
+    return errs + noop_errors(t)
+
+
+def noop_errors(t):
+    """Why a no-op would earn something, from the task alone: a no-op scores zero. The score is the weighted share of
+    checks passed, so what is true of the start takes `"weight": 0`. The task check measures the rest."""
+    errs, earning = [], 0
+    for m in t.get('milestones') or []:
+        for c in (m.get('checks') or []) if isinstance(m, dict) else []:
+            if not isinstance(c, dict):
+                continue
+            kind, weight = c.get('kind'), c.get('weight', 1)
+            passes_at_start = (kind == 'build' and not c.get('fails_at_start')) or kind == 'boot' \
+                or m.get('name') == 'still_works'
+            if passes_at_start and weight != 0:
+                errs.append(f'check {c.get("name")}: a no-op passes it, so a no-op would score; give it "weight": 0')
+            elif not passes_at_start and c.get('required', True) and kind in ('probe', 'build') and weight > 0:
+                earning += 1
+    if not earning:
+        errs.append('no required outcome check carries weight, so no run can score')
+    return errs
+
+
+def thread_system(path):
+    """Which system a changed game file belongs to, by its path and extension: config (project.godot), an addon, code
+    (GDScript), a scene, materials (shaders and textures among them), data (resources saved as text or binary, tables)
+    or another asset."""
+    low = path.lower()
+    if low == 'project.godot':
+        return 'config'
+    if low.startswith('addons/'):
+        return 'addon'
+    if low.endswith(('.gd', '.cs', '.gdextension')):
+        return 'code'
+    if low.endswith(('.tscn', '.scn')):
+        return 'scene'
+    if low.endswith(('.gdshader', '.gdshaderinc', '.material', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.tga', '.bmp',
+                     '.exr', '.hdr', '.dds', '.ktx', '.ktx2')):
+        return 'material'
+    if low.endswith(('.tres', '.res', '.json', '.csv', '.txt', '.cfg')):
+        return 'data'
+    return 'asset'
+
+
+def thread_size(numstat):
+    """(code lines, systems) from `git diff --numstat --no-renames`. Binary files and assets never count as code lines;
+    assets do count as systems."""
+    lines, systems = 0, set()
+    for row in numstat.splitlines():
+        parts = row.split('\t')
+        if len(parts) != 3:
+            continue
+        added, removed, path = parts
+        if GAME_FILE.search(path):
+            systems.add(thread_system(path))
+        if added.isdigit() and removed.isdigit() and CODE_FILE.search(path) and not NOT_CODE_DIR.search(path):
+            lines += int(added) + int(removed)
+    return lines, len(systems)
+
+
+MIN_TASKS = 5          # a game with fewer tasks is rejected
+MIN_HARD_TASKS = 4     # at least this many are hard; the others may be medium, none easier
+
+
+def task_bar_errors(levels):
+    """Why a game's tasks ({name: its difficulty or None}) miss the bar a game is accepted at: at least MIN_TASKS tasks,
+    at least MIN_HARD_TASKS of them hard; the others may be medium. A task that names no difficulty is medium, the
+    format's default; an easy one is thread_errors' finding."""
+    errs = []
+    if len(levels) < MIN_TASKS:
+        errs.append(f'{len(levels)} task(s): a game ships at least {MIN_TASKS}')
+    level = {n: d or 'medium' for n, d in levels.items()}
+    errs += [f'{n}: difficulty {d!r}: a task is "hard"' for n, d in sorted(level.items()) if d not in ('easy', 'medium', 'hard')]
+    hard = sum(d == 'hard' for d in level.values())
+    if hard < MIN_HARD_TASKS:
+        medium = sorted(n for n, d in level.items() if d == 'medium')
+        errs.append(f'{hard} hard task(s): a game needs at least {MIN_HARD_TASKS} hard tasks'
+                    + (f' (medium: {", ".join(medium)})' if medium else '') + '; the others may be medium')
+    return errs
+
+
+def thread_span_errors(repo, seed, on_main):
+    """Why the span from seed.commit to seed.reference is too short: game files changed, and on main the commits."""
+    start, ref = seed.get('commit'), seed.get('reference')
+    if not (start and ref):
+        return []
+    errs = []
+    files = [p for p in _git(repo, '-c', 'core.quotepath=off', 'diff', '--name-only', start, ref, '--', *GAME_PATHS)
+             .stdout.decode('utf-8', 'replace').splitlines() if p.strip()]
+    if len(files) < MIN_THREAD_FILES:
+        errs.append(f'the reference changes {len(files)} game file(s) against the start, fewer than {MIN_THREAD_FILES}')
+    lines, systems = thread_size(_git(repo, '-c', 'core.quotepath=off', 'diff', '--numstat', '--no-renames', start, ref)
+                                 .stdout.decode('utf-8', 'replace'))
+    if lines < MIN_THREAD_CODE_LINES:
+        errs.append(f'the reference changes {lines} code line(s) against the start, fewer than {MIN_THREAD_CODE_LINES}')
+    if systems < MIN_THREAD_SYSTEMS:
+        errs.append(f'the reference crosses {systems} system(s), fewer than {MIN_THREAD_SYSTEMS}')
+    if on_main:
+        n = _git(repo, 'rev-list', '--count', f'{start}..{ref}', '--', *GAME_PATHS).stdout.decode().strip()
+        if int(n or 0) < MIN_THREAD_COMMITS:
+            errs.append(f'{n or 0} commit(s) change the game from seed.commit to seed.reference, '
+                        f'fewer than {MIN_THREAD_COMMITS}')
+    return errs
+
+
+def required_quality_judges(t):
+    """The required judge checks that should be optional quality checks: every required judge but the ones covering
+    the brief's looks, a `judge` named `looks_as_asked` and a `judge` in the `still_works` milestone."""
+    return [c.get('name') for m in t.get('milestones') or [] if isinstance(m, dict) for c in m.get('checks') or []
+            if isinstance(c, dict) and c.get('kind') in ('judge', 'code_judge')
+            and c.get('required', True) and not (c.get('kind') == 'judge' and (
+                c.get('name') == 'looks_as_asked' or m.get('name') == 'still_works'))]
+
+
+def check_task(rep, a, label, t, game, has_commit):
+    """One whole task (GameTask): schema, the format's extra rules, seed on `game` and on known commits. False when the
+    schema refuses it: the rest reads the values as the schema types them, so it waits until the task matches."""
+    problems = list(check_schema(t, SCHEMAS['game-task']))
+    for e in problems[:5]:
+        rep.error(a, f'{label}: {e}')
+    if problems:
+        return False
+    for e in task_semantic_errors(t)[:5]:
+        rep.error(a, f'{label}: {e}')
+    for w in task_warnings(t)[:5]:
+        rep.warn(a, f'{label}: {w}')
+    gated = [c for m in t.get('milestones') or [] if isinstance(m, dict) for c in m.get('checks') or []
+             if isinstance(c, dict) and c.get('kind') == 'probe' and c.get('required', True)]
+    judged = required_quality_judges(t)
+    if not gated:
+        rep.error(a, f'{label}: no required probe check: pass/fail must be deterministic (godot-write-tasks section 5)')
+    outcomes = [c for m in t.get('milestones') or [] if isinstance(m, dict) and m.get('name') != 'still_works'
+                for c in m.get('checks') or [] if isinstance(c, dict) and c.get('kind') == 'probe'
+                and c.get('required', True)]
+    for e in thread_errors(t, len(outcomes)):
+        rep.error(a, f'{label}: {e} (godot-write-tasks section 1: only long threads of multiple edits)')
+    if judged:
+        rep.note(a, f'{label}: required judge check(s) {judged}: only a judge of the brief\'s looks is required '
+                    '(`looks_as_asked`, or a judge in `still_works`); other judges should be "required": false '
+                    'quality checks')
+    s = t.get('seed')
+    if isinstance(s, dict):
+        if s.get('game') != game:
+            rep.error(a, f'{label}: seed.game {s.get("game")!r} is not this game ({game})')
+        for k in ('commit', 'reference'):
+            c = s.get(k)
+            if c and has_commit is not None and not has_commit(c):
+                rep.error(a, f'{label}: seed.{k} {str(c)[:12]} is not a commit of this game\'s history'
+                             + (' (an ancestor of main\'s head)' if a.startswith('repo') else ''))
+    return True
+
+
+TASKS_REFS = ('tasks', 'origin/tasks')   # where a game's tasks live: its orphan tasks branch, never main
+
+
+def _git(repo, *args):
+    return subprocess.run(['git', '-C', repo, *args], capture_output=True)
+
+
+def check_repo_tasks(rep, repo, files=None):
+    """The game's tasks on its orphan `tasks` branch (`tasks`, else `origin/tasks`): Tasks/<name>.json, one GameTask
+    each, name = file stem, seeds on commits of main's history (ancestors of HEAD, the main branch in a game checkout)
+    or of the task's own start branch `starts/<name>` (godot-write-tasks section 2), each a Godot ENGINE project as
+    committed. The branch shares no history with main, and main's HEAD tracks nothing under Tasks/. A mobile game's
+    plays never choose a renderer or a size (mobile_play_errors). Read from git, not the working tree (`files` is
+    unused)."""
+    a = 'repo: Tasks'
+    game = os.path.basename(os.path.normpath(repo))
+    on_main = [p for p in _git(repo, '-c', 'core.quotepath=off', 'ls-tree', '-r', '--name-only', 'HEAD', '--', 'Tasks')
+               .stdout.decode('utf-8', 'replace').splitlines() if p.strip()]
+    if on_main:
+        rep.error(a, f'main tracks {len(on_main)} path(s) under Tasks/ (e.g. {on_main[0]}): '
+                     'tasks live on the tasks branch, never on main')
+    ref = next((r for r in TASKS_REFS if _git(repo, 'rev-parse', '--verify', '-q', r + '^{commit}').returncode == 0), None)
+    if not ref:
+        rep.error(a, 'no tasks branch (neither tasks nor origin/tasks): a game ships at least 5 tasks, '
+                     'on its orphan tasks branch')
+        return
+    if _git(repo, 'merge-base', ref, 'HEAD').returncode == 0:
+        rep.error(a, f'{ref} shares history with main: tasks must be an orphan branch')
+    names = [n for n in _git(repo, '-c', 'core.quotepath=off', 'ls-tree', '--name-only', ref + ':Tasks')
+             .stdout.decode('utf-8', 'replace').splitlines() if n.strip()]
+    paths = ['Tasks/' + n for n in names if n.endswith('.json')]
+    if not paths:
+        rep.error(a, f'no task files in Tasks/ on {ref} (a game ships at least {MIN_TASKS}; about 10 recommended)')
+        return
+    known, current, levels = {}, {'stem': ''}, {}
+    try:
+        mobile = read_platform(repo) is not None   # a mobile game: its plays never choose a renderer or a size
+    except ValueError:
+        mobile = False                              # said by rule `mobile` (check_mobile)
+
+    def has_commit(c):   # an ancestor of main's head, or of the task's own start branch
+        key = (c, current['stem'])
+        if key not in known:
+            tips = ['HEAD'] + [r for r in (f'refs/heads/starts/{current["stem"]}', f'refs/remotes/origin/starts/{current["stem"]}')
+                               if _git(repo, 'rev-parse', '--verify', '-q', r).returncode == 0]
+            known[key] = any(_git(repo, 'merge-base', '--is-ancestor', c, tip).returncode == 0 for tip in tips)
+        return known[key]
+    for f in paths:
+        stem = f[len('Tasks/'):-len('.json')]
+        label = f'{ref}:{f}'
+        r = _git(repo, 'show', label)
+        if r.returncode != 0:
+            rep.error(a, f'{label}: cannot read ({r.stderr.decode("utf-8", "replace").strip()[:120]})')
+            continue
+        try:
+            t = json.loads(r.stdout.decode('utf-8-sig'))
+        except ValueError as e:
+            rep.error(a, f'{label}: not JSON ({e})')
+            continue
+        if not isinstance(t, dict):
+            rep.error(a, f'{label}: not a task object')
+            continue
+        levels[stem] = t.get('difficulty') if isinstance(t.get('difficulty'), str) else None
+        if t.get('name') != stem:
+            rep.error(a, f'{label}: name {t.get("name")!r} differs from the file name')
+        current['stem'] = stem
+        if not check_task(rep, a, label, t, game, has_commit):
+            continue
+        if mobile:
+            for e in mobile_play_errors(t)[:5]:
+                rep.error(a, f'{label}: {e}')
+        seed = t.get('seed') if isinstance(t.get('seed'), dict) else {}
+        for k in ('commit', 'reference'):
+            if seed.get(k) and has_commit(seed[k]):
+                version = start_engine(repo, seed[k])
+                if version != ENGINE:
+                    rep.error(a, f'{label}: seed.{k} {seed[k][:12]} is a Godot {version or "?"} project: a task starts '
+                                 f'from a commit that opens on Godot {ENGINE} as committed (never upgraded; '
+                                 'godot-write-tasks section 2)')
+        if all(seed.get(k) and has_commit(seed[k]) for k in ('commit', 'reference')):
+            on_main = all(_git(repo, 'merge-base', '--is-ancestor', seed[k], 'HEAD').returncode == 0
+                          for k in ('commit', 'reference'))
+            for e in thread_span_errors(repo, seed, on_main):
+                rep.error(a, f'{label}: {e} (godot-write-tasks section 1: only long threads of multiple edits)')
+            for check, name in reference_only_names(repo, t):
+                rep.error(a, f'{label}: check {check} names {name}, which only the reference has: another fair build '
+                             'names it otherwise; select by what it does or where it is (godot-write-tasks section 5)')
+    for e in task_bar_errors(levels):
+        rep.error(a, f'{ref}: {e} (godot-write-tasks section 1)')
+    rep.note(a, f'{len(paths)} task(s) on {ref} (at least {MIN_TASKS}, up to about 10, every one a long thread)')
+
+
+# What a probe names: the component, tag, name and mesh keys of its selects (owner selects and `has` included) and the
+# scene paths of its play and the task's play_scene. A name that exists in the reference and not at the start can only
+# be matched by a build that chose the reference's names; another fair build reads as absent (godot-write-tasks
+# section 5).
+NAMED_KEYS = ('component', 'tag', 'name', 'mesh')
+PATH_KEYS = ('scene',)
+GAME_ROOTS = ('scenes', 'game', 'assets', 'addons', 'project.godot')   # where a name is looked for at a commit
+# a field that names a part: world_yaw:<Part>, forward:<Part>.x
+FIELD_PART = re.compile(r'(?:rel_yaw|world_yaw|world_pitch|world_roll):(.+)$|forward:(.+)\.[xyz]$')
+
+
+def probe_names(c):
+    """The literal names and project paths a probe check depends on (wildcards skipped: they match by pattern)."""
+    names, paths = set(), set()
+
+    def walk(v, key=None):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                walk(x, k)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x, key)
+        elif isinstance(v, str) and not any(ch in v for ch in '*?'):
+            if key in PATH_KEYS and v.startswith(RES):
+                paths.add(v[len(RES):])
+            elif key in NAMED_KEYS and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_ ]{2,120}', v):
+                names.add(v)
+
+    walk(c.get('measure'))
+    field = c['measure'].get('field') if isinstance(c.get('measure'), dict) else None
+    found = FIELD_PART.match(field) if isinstance(field, str) else None
+    part = next((g for g in found.groups() if g), None) if found else None
+    if part and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_ ]{2,120}', part):
+        names.add(part)
+    play = c.get('play')
+    if isinstance(play, dict):
+        walk({'scene': play.get('scene')})
+        for i in play.get('inputs') or []:
+            if isinstance(i, dict):
+                walk(i.get('teleport_to'))
+    return names, paths
+
+
+def _has_name(repo, commit, name, tree):
+    """Whether `name` shows at `commit`: as a file name in its tree, or in a text file of the game (scripts, scenes and
+    resources saved as text, project.godot with its groups, layers and autoloads)."""
+    if any(re.search(rf'(^|/){re.escape(name)}(\.|$)', p) for p in tree):
+        return True
+    return _git(repo, 'grep', '-q', '-I', '-w', '-F', name, commit, '--', *GAME_ROOTS).returncode == 0
+
+
+def reference_only_names(repo, t):
+    """[(check, name)] of required probes that name something the reference has and the start doesn't (a script
+    class, group, node or scene the thread itself created). Engine names are in neither tree and pass."""
+    seed = t.get('seed') if isinstance(t.get('seed'), dict) else {}
+    start, ref = seed.get('commit'), seed.get('reference')
+    if not (start and ref):
+        return []
+    trees = {k: set(_git(repo, '-c', 'core.quotepath=off', 'ls-tree', '-r', '--name-only', k).stdout
+                    .decode('utf-8', 'replace').splitlines()) for k in (start, ref)}
+    scene = t.get('play_scene') if isinstance(t.get('play_scene'), str) else None
+    found, cache = [], {}
+    for m in t.get('milestones') or []:
+        for c in (m.get('checks') or []) if isinstance(m, dict) else []:
+            if not (isinstance(c, dict) and c.get('kind') == 'probe' and c.get('required', True)):
+                continue
+            names, paths = probe_names(c)
+            if scene and scene.startswith(RES) and not isinstance(c.get('play'), dict):
+                paths.add(scene[len(RES):])
+            for p in sorted(paths):
+                if p in trees[ref] and p not in trees[start]:
+                    found.append((c.get('name'), RES + p))
+            for n in sorted(names):
+                if n not in cache:
+                    cache[n] = (_has_name(repo, ref, n, trees[ref]), _has_name(repo, start, n, trees[start]))
+                if cache[n][0] and not cache[n][1]:
+                    found.append((c.get('name'), n))
+    return found
+
+
+ENGINE = '4.7'   # the checker's Godot: it opens a start exactly as committed
+FEATURES = re.compile(r'^config/features\s*=\s*PackedStringArray\((.*?)\)', re.M | re.S)
+
+
+def engine_version(text):
+    """The Godot version a project.godot names in its config/features ("4.7"; '' when it names none)."""
+    mm = FEATURES.search(text or '')
+    return next((f for f in re.findall(r'"([^"]*)"', mm.group(1) if mm else '') if re.fullmatch(r'\d+\.\d+', f)), '')
+
+
+def start_engine(repo, commit):
+    """The Godot version project.godot names at `commit` ('' when there is none)."""
+    r = _git(repo, 'show', f'{commit}:project.godot')
+    return engine_version(r.stdout.decode('utf-8-sig', 'replace')) if r.returncode == 0 else ''
+
+
+def check_tasks(rep, area, v, m):
+    """Tasks/ in a Dataset.zip: README.md and Tasks/<name>/task.json + grader.json per task; the agent's part holds none
+    of the grader's half; merged, each is a valid task on this game and on commits of History/."""
+    a = f'{area}: Tasks'
+    if not v.has('Tasks/README.md'):
+        rep.error(a, 'no Tasks/README.md')
+    folders = sorted({r.split('/')[1] for r in v.names if r.startswith('Tasks/') and r.count('/') >= 2})
+    stray = sorted(r for r in v.names if r.startswith('Tasks/') and r != 'Tasks/README.md'
+                   and not re.fullmatch(r'Tasks/[^/]+/(task|grader)\.json', r))
+    for r in stray[:5]:
+        rep.error(a, f'{r}: not part of the layout (Tasks/<name>/task.json, Tasks/<name>/grader.json, Tasks/README.md)')
+    if not folders:
+        rep.error(a, f'no tasks (a game ships at least {MIN_TASKS})')
+    commits = getattr(v, 'commits', None)
+    names, levels = [], {}
+    for name in folders:
+        tp, gp = f'Tasks/{name}/task.json', f'Tasks/{name}/grader.json'
+        if not (v.has(tp) and v.has(gp)):
+            rep.error(a, f'Tasks/{name}/: needs task.json and grader.json')
+            continue
+        try:
+            task, grader = v.json(tp), v.json(gp)
+        except ValueError as e:
+            rep.error(a, f'Tasks/{name}/: not JSON ({e})')
+            continue
+        if not isinstance(task, dict) or not isinstance(grader, dict):
+            rep.error(a, f'Tasks/{name}/: task.json and grader.json must be objects')
+            continue
+        leaked = [k for k in GRADER_KEYS if k in task] + (['seed.reference'] if isinstance(task.get('seed'), dict) and 'reference' in task['seed'] else [])
+        if leaked:
+            rep.error(a, f'{tp}: holds the grader\'s half ({", ".join(leaked)}): it belongs in grader.json')
+        extra = [k for k in grader if k not in ('name', 'seed') + GRADER_KEYS] + \
+                ([k for k in grader['seed'] if k != 'reference'] if isinstance(grader.get('seed'), dict) else [])
+        if extra:
+            rep.error(a, f'{gp}: only name, milestones and seed.reference belong here, not {extra}')
+        if task.get('name') != name or grader.get('name') != name:
+            rep.error(a, f'Tasks/{name}/: name fields must equal the folder name')
+        whole = dict(task)
+        for k in GRADER_KEYS:
+            if k in grader:
+                whole[k] = grader[k]
+        if isinstance(grader.get('seed'), dict) and isinstance(whole.get('seed'), dict):
+            whole['seed'] = dict(whole['seed'], **grader['seed'])
+        check_task(rep, a, f'Tasks/{name}', whole, m['game'], (lambda c: c in commits) if commits is not None else None)
+        names.append(name)
+        levels[name] = whole.get('difficulty') if isinstance(whole.get('difficulty'), str) else None
+    if folders:
+        for e in task_bar_errors(levels):
+            rep.error(a, f'Tasks/: {e}')
+    if commits is None and folders:
+        rep.note(a, 'seed commits not checked against History/ (bundle not unpacked: --quick)')
+    mt = m.get('tasks')
+    if not isinstance(mt, dict):
+        rep.error(a, 'the layout needs manifest tasks {"count": n, "names": [...]}')
+    elif sorted(mt.get('names') or []) != names or mt.get('count') != len(names):
+        rep.error(a, 'manifest tasks (count, names) differ from Tasks/')
+    rep.note(a, f'{len(names)} task(s) (at least {MIN_TASKS}; about 10 recommended)')
+
+
+def run_layout_validator(rep, path, repo_dataset):
+    ps = shutil.which('powershell') or shutil.which('pwsh')
+    if not ps:
+        rep.note('layout', 'PowerShell not found: tools/validate-dataset.ps1 not run')
+        return
+    args = [ps, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', os.path.join(HERE, 'validate-dataset.ps1'), path]
+    if repo_dataset:
+        args.append('-RepoDataset')
+    r = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    out = r.stdout.strip().splitlines()
+    vl = [l for l in out if re.match(r'^(VALID|PENDING|INVALID) ', l)]
+    verdict = vl[0].strip() if vl else f'no verdict (exit {r.returncode}): {r.stderr.strip()[:200]}'
+    area = f'layout ({os.path.basename(path)})'
+    for line in out:
+        s = line.strip()
+        if s.startswith('x '):
+            rep.error(area, s[2:])
+        elif s.startswith('! '):
+            rep.note(area, s[2:])   # validate-dataset.ps1: "!" = note
+    if r.returncode == 1:
+        m = re.search(r'pending: ([^)]+)\)', verdict)
+        rep.warn(area, f'PENDING: {m.group(1).strip() if m else "parts"} not there yet')
+    rep.note(area, f'validate-dataset.ps1: {verdict}')
+
+
+# ---- repo ---------------------------------------------------------------------------------------------------------------
+def godot_config(text):
+    """A Godot config text (project.godot, export_presets.cfg) as {section: {key: value}}: a value as written, a
+    quoted string without its quotes; a value over several lines keeps its first line."""
+    found, keys = {}, None
+    for line in (text or '').splitlines():
+        head = re.match(r'^\[([^\]]+)\]\s*$', line)
+        if head:
+            keys = found.setdefault(head.group(1), {})
+            continue
+        pair = re.match(r'^([A-Za-z0-9_./\-]+)\s*=\s*(.*?)\s*$', line)
+        if pair and keys is not None:
+            value = pair.group(2)
+            keys[pair.group(1)] = value[1:-1] if len(value) >= 2 and value[0] == value[-1] == '"' else value
+    return found
+
+
+def sidecar_problems(files, imported, scripts):
+    """(missing, orphan, sidecars): tracked files the engine imports (an extension of `imported`) without a tracked
+    .import and those it gives a uid of their own file (an extension of `scripts`) without a tracked .uid; tracked
+    .import and .uid files whose file is not tracked; and the tracked sidecars the engine reads. What the engine skips
+    needs none and is not looked at: a name that starts with a dot, and everything under a folder that holds a
+    .gdignore."""
+    tracked = set(files)
+    ignored = {f.rsplit('/', 1)[0] for f in files if f.endswith('/.gdignore')}
+
+    def skipped(path):
+        parts = path.split('/')
+        return any(p.startswith('.') for p in parts) or any('/'.join(parts[:i]) in ignored for i in range(1, len(parts)))
+    missing, orphan, sidecars = [], [], []
+    for f in files:
+        if skipped(f):
+            continue
+        ext = f.rsplit('.', 1)[-1].lower() if '.' in f.rsplit('/', 1)[-1] else ''
+        if ext in ('import', 'uid'):
+            sidecars.append(f)
+            if f[:-len(ext) - 1] not in tracked:
+                orphan.append(f)
+        elif ext in imported and f + '.import' not in tracked:
+            missing.append((f, '.import'))
+        elif ext in scripts and f + '.uid' not in tracked:
+            missing.append((f, '.uid'))
+    return sorted(missing), sorted(orphan), sidecars
+
+
+def check_sidecars(rep, repo, files):
+    """Every imported file with its .import and every script with its .uid (godot-commit-always skill): the sidecar
+    holds the uid scenes and resources refer to the file by, and an imported file's import settings, so it is there,
+    it has its file, and a .uid names a uid."""
+    a = 'repo: sidecars'
+    s = SPEC['repo']['sidecars']
+    missing, orphan, sidecars = sidecar_problems(files, set(s['imported_extensions']), set(s['uid_extensions']))
+    for f, kind in missing[:15]:
+        rep.error(a, f'{f}: no {kind} tracked (the engine writes a new one on the next import, with a new uid, and '
+                     'every reference to the file by its uid breaks'
+                     + ('; its import settings are lost too)' if kind == '.import' else ')'))
+    if len(missing) > 15:
+        rep.error(a, f'... {len(missing) - 15} more files without their .import or .uid')
+    for f in orphan[:15]:
+        rep.error(a, f'{f}: its file is not tracked (an orphan: delete it, or commit the file it belongs to)')
+    if len(orphan) > 15:
+        rep.error(a, f'... {len(orphan) - 15} more orphan .import or .uid files')
+    bad = []
+    for f in (f for f in sidecars if f.endswith('.uid') and f not in orphan):
+        text = read_text(os.path.join(repo, f))
+        if not re.match(r'uid://[a-z0-9]+\s*$', text) and not text.startswith('version https://git-lfs'):
+            bad.append(f)   # an LFS pointer: the .uid in LFS is reported above
+    for f in bad[:10]:
+        rep.error(a, f'{f}: no uid (the engine writes a new one and every reference to its script breaks)')
+    if not missing and not orphan and not bad:
+        rep.note(a, f'{len(sidecars)} .import and .uid files, each with its file')
+
+
+def check_repo(rep, repo):
+    R = SPEC['repo']
+    files = git_ls(repo)
+    if not files:
+        rep.error('repo', 'not a git repo, or nothing tracked')
+        return
+    tracked = set(files)
+    gone = [f for f in files if not os.path.lexists(os.path.join(repo, f))]
+    if gone:   # the rules below read the checkout
+        rep.error('repo', f'{len(gone)} tracked file(s) not in the working tree (e.g. {gone[0]}): check out the release '
+                          'commit as it is')
+    for req in R['required_files']:
+        hits = [f for f in files if re.match(req['pattern'], f)]
+        if not hits:
+            rep.error('repo', f'missing {req["pattern"]} ({req["what"]})')
+        elif req.get('count') and len(hits) != req['count']:
+            rep.error('repo', f'{len(hits)} files match {req["pattern"]}, expected {req["count"]}')
+    for rule in R['never_tracked']:
+        hits = [f for f in files if re.search(rule['pattern'], f)]
+        if hits:
+            rep.error('repo', f'{len(hits)} tracked file(s) match {rule["pattern"]} (e.g. {hits[0]}): {rule["what"]}')
+    # engine: the factory's Godot version, as committed, and a main scene that is committed
+    pg = 'project.godot'
+    if pg in tracked:
+        project = read_text(os.path.join(repo, pg))
+        version = engine_version(project)
+        if version not in R['engine_versions']:
+            rep.error('repo', f'{pg}: config/features names Godot {version or "(none)"!r}, not Godot '
+                              f'{" or ".join(R["engine_versions"])}')
+        else:
+            rep.note('repo', f'{pg}: Godot {version}')
+        scene = godot_config(project).get('application', {}).get('run/main_scene', '')
+        if not scene:
+            rep.error('repo', f'{pg}: no run/main_scene (the scene the game starts in)')
+        elif scene.startswith(RES) and scene[len(RES):] not in tracked:
+            rep.error('repo', f'{pg}: run/main_scene {scene} is not committed')
+    # .gitignore: the engine's cache, build output and the local dataset ignored, nothing the game is made of
+    text = read_text(os.path.join(repo, '.gitignore'))
+    for line in R['gitignore_must_contain']:
+        if line not in text.split():
+            rep.error('repo: .gitignore', f'missing {line}')
+    probes = R['gitignore_must_ignore'] + R['gitignore_must_not_ignore']
+    out = subprocess.run(['git', '-C', repo, '-c', 'core.quotepath=off', 'check-ignore', '--no-index', '--stdin'],
+                         input=('\n'.join(probes) + '\n').encode(), capture_output=True)   # bytes: no \r on Windows
+    ignored = set(out.stdout.decode('utf-8', 'replace').splitlines())
+    for p in R['gitignore_must_ignore']:
+        if p not in ignored:
+            rep.error('repo: .gitignore', f'{p.split("/")[0]}/ is not ignored (the engine or a build makes it again; '
+                                          'it holds machine state and never belongs in the repo)')
+    for p in R['gitignore_must_not_ignore']:
+        if p in ignored:
+            rep.error('repo: .gitignore', f'{p} would be git-ignored: everything the game is made of is committed '
+                                          '(store packs included, every .import and .uid), only the engine\'s cache '
+                                          'and build output are ignored')
+    # Git LFS for binaries; Godot's text files stay plain git text
+    r = subprocess.run(['git', '-C', repo, '-c', 'core.quotepath=off', 'lfs', 'ls-files', '--name-only'],
+                       capture_output=True, text=True, encoding='utf-8', errors='replace')
+    lfs = set(r.stdout.splitlines())
+    ext_rx = re.compile(r'(?i)\.(' + '|'.join(R['lfs_required_extensions']) + r')$')
+    text_rx = re.compile(r'(?i)\.(' + '|'.join(R['text_extensions']) + r')$')
+    binary = lambda f: ext_rx.search(f)
+    if r.returncode:   # without Git LFS every binary would read as plain git
+        rep.error('repo: LFS', f'git lfs ls-files failed, so LFS is not checked (is Git LFS installed?): '
+                               f'{r.stderr.strip()[:200]}')
+    else:
+        plain = [f for f in files if binary(f) and f not in lfs]
+        for f in plain[:10]:
+            rep.error('repo: LFS', f'binary tracked in plain git: {f}')
+        if len(plain) > 10:
+            rep.error('repo: LFS', f'... {len(plain) - 10} more binaries in plain git')
+        text_lfs = [f for f in files if f in lfs and text_rx.search(f)]
+        for f in text_lfs[:10]:
+            rep.error('repo: LFS', f'Godot text or GDScript in LFS: {f} (it loses its diffs and merges; .gitattributes '
+                                   'must keep it plain git text, as the template\'s does)')
+        if len(text_lfs) > 10:
+            rep.error('repo: LFS', f'... {len(text_lfs) - 10} more text files in LFS')
+    # README images
+    if 'README.md' in tracked:
+        md = re.sub(r'(?s)<!--.*?-->', '', read_text(os.path.join(repo, 'README.md')))
+        links = re.findall(r'!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)', md) + re.findall(r'(?i)<img\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']', md)
+        local = []
+        for l in links:
+            if re.match(r'(?i)^(https?:|data:)', l):
+                continue
+            p = re.sub(r'^\./|^/', '', l.split('#')[0].split('?')[0]).replace('%20', ' ')
+            if p not in local:
+                local.append(p)
+        for p in local:
+            if p not in tracked:
+                rep.error('repo: README', f'links {p}, which is not committed')
+        imgs = R['readme']['gameplay_images']
+        if len(local) < imgs['min']:
+            rep.error('repo: README', 'shows no gameplay image')
+        elif not imgs['recommended_min'] <= len(local) <= imgs['recommended_max']:
+            rep.warn('repo: README', f'{len(local)} images; the rule is a hero + gallery of {imgs["recommended_min"]}-{imgs["recommended_max"]} gameplay stills')
+        else:
+            rep.note('repo: README', f'{len(local)} images, all committed' if all(p in tracked for p in local) else f'{len(local)} images')
+    # banned names in tracked text files (LFS and binaries are scanned by the packager)
+    bn = R['banned_names']
+    rxs = [re.compile(p) for p in bn['patterns']]
+    labels = list(bn['patterns'])
+    exempt = [None] * len(rxs)
+    # the account name of this machine (machine paths with it included), read at run time, never written in the repo;
+    # not enforced in scripts (account_name.exempt_paths: Scripts/, the steps that ran and script files anywhere),
+    # which stay unchanged once they ran and are scrubbed at packaging
+    acct = os.environ.get('USERNAME') or os.path.basename(os.path.expanduser('~'))
+    if acct and len(acct) >= 4:
+        rxs.append(re.compile(r'(?i)(?<![A-Za-z0-9_])' + re.escape(acct) + r'(?![A-Za-z0-9_])'))
+        labels.append('the account name')
+        exempt.append(re.compile(bn.get('account_name', {}).get('exempt_paths', r'^Scripts/')))
+    skip = [re.compile(p) for p in bn['skip_paths']]
+    hits, nul = {}, []
+    for f in files:
+        if f in lfs or binary(f) or any(s.search(f) for s in skip):
+            continue
+        full = os.path.join(repo, f)
+        try:
+            if os.path.getsize(full) > 20 * 1024 * 1024:
+                continue
+            with open(full, 'rb') as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        if b'\0' in data[:8192]:
+            nul.append(f)   # binary content under a text name
+            continue
+        text = data.decode('utf-8', 'replace')
+        for rx, label, ex in zip(rxs, labels, exempt):
+            if ex is not None and ex.search(f):
+                continue
+            n = len(rx.findall(text))
+            if n:
+                hits.setdefault(f, []).append(f'{label} x{n}')
+    for f, h in list(hits.items())[:15]:
+        rep.error('repo: banned names', f'{f}: {", ".join(h)}')
+    if len(hits) > 15:
+        rep.error('repo: banned names', f'... {len(hits) - 15} more files')
+    for f in nul[:10]:
+        rep.warn('repo: LFS', f'binary content in plain git: {f} (give its type an LFS pattern in .gitattributes)')
+    # every imported file with its .import, every script with its .uid, no orphan sidecar
+    check_sidecars(rep, repo, files)
+    # assets.manifest.json: unified format, every listed file committed under assets/ or addons/
+    if 'assets.manifest.json' in tracked and os.path.isfile(os.path.join(repo, 'assets.manifest.json')):
+        try:
+            data = load_json(os.path.join(repo, 'assets.manifest.json'))
+        except ValueError as e:
+            rep.error('repo: assets.manifest.json', f'not JSON: {e}')
+            data = None
+        if data is not None:
+            check_assets_manifest(rep, 'repo: assets.manifest.json', data,
+                                  lambda p: any(t.startswith(p) for t in files) if p.endswith('/') else (p in tracked or any(t.startswith(p + '/') for t in files)))
+    # workflow.jsonl: same row schema as the dataset copy (the packager rewrites nothing else)
+    if 'workflow.jsonl' in tracked and os.path.isfile(os.path.join(repo, 'workflow.jsonl')):
+        with open(os.path.join(repo, 'workflow.jsonl'), encoding='utf-8-sig', errors='replace') as f:
+            check_workflow(rep, 'repo: workflow.jsonl', f)
+    check_repo_tasks(rep, repo, files)
+    check_rules(rep, repo, files)
+
+
+def check_rules(rep, repo, files):
+    """The game contract, the sound rule and a mobile game's settings: every game, a game in progress too, meets them
+    before it is packaged."""
+    check_contract(rep, repo, files)
+    check_sound(rep, repo, files)
+    check_mobile(rep, repo, files)
+
+
+# ---- a mobile game's own rules (rule `mobile`; godot-mobile-game skill) ---------------------------------------------
+# What Godot 4.7 itself uses for a setting the file leaves out: the editor drops a project setting put back to its
+# default, so a missing key is read as this, never as wrong.
+PROJECT_DEFAULTS = {('rendering', 'renderer/rendering_method'): 'forward_plus',
+                    ('rendering', 'renderer/rendering_method.mobile'): 'mobile',
+                    ('rendering', 'textures/vram_compression/import_etc2_astc'): 'false',
+                    ('display', 'window/size/viewport_width'): '1152', ('display', 'window/size/viewport_height'): '648',
+                    ('display', 'window/handheld/orientation'): '0', ('application', 'config/quit_on_go_back'): 'true'}
+ANDROID_DEFAULTS = {'gradle_build/use_gradle_build': 'false', 'gradle_build/min_sdk': '', 'gradle_build/target_sdk': '',
+                    'architectures/armeabi-v7a': 'false', 'architectures/arm64-v8a': 'true', 'architectures/x86': 'false',
+                    'architectures/x86_64': 'false', 'package/unique_name': 'com.example.$genname'}
+ANDROID_ENGINE_SDK = {'gradle_build/min_sdk': 29, 'gradle_build/target_sdk': 36}   # what an empty SDK level means (Vulkan)
+MOBILE_MIN_SDK, MOBILE_TARGET_SDK = 26, 34
+MOBILE_SIZE = {'landscape': (1920, 1080), 'portrait': (1080, 1920)}   # the size a mobile game is made for and played at
+# display/window/handheld/orientation, by its number: the game is held one way, so no setting that follows the sensor
+# to the other
+HANDHELD = ('landscape', 'portrait', 'reverse landscape', 'reverse portrait', 'sensor landscape', 'sensor portrait',
+            'sensor')
+ANDROID_PRESET = 'Android'
+ANDROID_PACKAGE = re.compile(r'^com\.[a-z][a-z0-9_]*\.game\Z')
+# the renderer and the size a mobile game's plays are launched with are the tools' choice, never a task play's
+MOBILE_DENIED_PLAY_ARGS = {'rendering-method', 'rendering-driver', 'resolution', 'size', 'write-movie'}
+
+
+def mobile_project_errors(orientation, project):
+    """What a mobile game's project.godot (`project`, its text) breaks: the Mobile renderer on the PC and on the
+    phone (nothing of the desktop renderer alone forced on), textures imported for Android, the viewport and the way
+    the phone is held as Platform.json says (`orientation`), and the back button left to the game."""
+    errs, said = [], godot_config(project)
+    get = lambda section, key: said.get(section, {}).get(key, PROJECT_DEFAULTS[(section, key)])   # noqa: E731
+    for key in ('renderer/rendering_method', 'renderer/rendering_method.mobile'):
+        method = get('rendering', key)
+        if method != 'mobile':
+            errs.append(f'rendering/{key}="{method}": a mobile game uses the Mobile renderer ("mobile")'
+                        + (', never the desktop renderer' if method == 'forward_plus' else ''))
+    if get('rendering', 'textures/vram_compression/import_etc2_astc').lower() != 'true':
+        errs.append('rendering/textures/vram_compression/import_etc2_astc is not true: an Android build needs its '
+                    'textures imported as ETC2/ASTC')
+    size = tuple(get('display', f'window/size/viewport_{side}') for side in ('width', 'height'))
+    if size != tuple(str(n) for n in MOBILE_SIZE[orientation]):
+        errs.append(f'display/window/size is {size[0]}x{size[1]}, but {PLATFORM_FILE} says {orientation} '
+                    f'({MOBILE_SIZE[orientation][0]}x{MOBILE_SIZE[orientation][1]})')
+    held = get('display', 'window/handheld/orientation')
+    name = HANDHELD[int(held)] if held.isdigit() and int(held) < len(HANDHELD) else held
+    if name == 'sensor' or orientation not in name:
+        errs.append(f'display/window/handheld/orientation={held} ({name}), but {PLATFORM_FILE} says {orientation}')
+    if get('application', 'config/quit_on_go_back').lower() != 'false':
+        errs.append("application/config/quit_on_go_back is not false: the back button is the game's to handle")
+    return errs
+
+
+def mobile_preset_errors(presets):
+    """What a mobile game's export_presets.cfg (`presets`, its text) breaks: a preset named Android for the Android
+    platform, built with Gradle (only a Gradle build takes the SDK levels), arm64-v8a alone, the SDK levels, and the
+    package name com.<name>.game."""
+    said = godot_config(presets)
+    section = next((s for s, keys in said.items() if re.fullmatch(r'preset\.\d+', s) and keys.get('name') == ANDROID_PRESET),
+                   None)
+    if section is None:
+        return [f'no preset named "{ANDROID_PRESET}"']
+    errs = []
+    if said[section].get('platform') != 'Android':
+        errs.append(f'the preset "{ANDROID_PRESET}" is for the platform {said[section].get("platform")!r}, not Android')
+    a = {**ANDROID_DEFAULTS, **said.get(section + '.options', {})}
+    if a['gradle_build/use_gradle_build'].lower() != 'true':
+        errs.append('gradle_build/use_gradle_build is not true: only a Gradle build takes the SDK levels')
+    if a['architectures/arm64-v8a'].lower() != 'true':
+        errs.append('architectures/arm64-v8a is not true: a mobile game is built for arm64')
+    for abi in ('armeabi-v7a', 'x86', 'x86_64'):
+        if a[f'architectures/{abi}'].lower() == 'true':
+            errs.append(f'architectures/{abi} is true: a mobile game is built for arm64 alone')
+    for key, least in (('gradle_build/min_sdk', MOBILE_MIN_SDK), ('gradle_build/target_sdk', MOBILE_TARGET_SDK)):
+        level = a[key] or str(ANDROID_ENGINE_SDK[key])
+        if not level.isdigit() or int(level) < least:
+            errs.append(f'{key}={a[key]}: at least {least}')
+    if not ANDROID_PACKAGE.match(a['package/unique_name']):
+        errs.append(f'package/unique_name={a["package/unique_name"]}: a mobile game\'s package is com.<name>.game '
+                    '(lower case)')
+    return errs
+
+
+def mobile_play_errors(t):
+    """The plays of a mobile game's task `t` (and its play_args) that choose a renderer or a size themselves: its
+    plays are launched with the Mobile renderer at the phone's size."""
+    errs = []
+
+    def denied(where, args):
+        for arg in (x for x in args or [] if isinstance(x, str)):
+            mm = PLAY_FLAG.match(arg)
+            if mm and mm.group(1).lower() in MOBILE_DENIED_PLAY_ARGS:
+                errs.append(f"{where} can't set -{mm.group(1)}: a mobile game's plays are launched with the Mobile "
+                            "renderer at the phone's size")
+    denied('play_args', t.get('play_args') if isinstance(t.get('play_args'), list) else [])
+    for m in t.get('milestones') or []:
+        for c in (m.get('checks') or []) if isinstance(m, dict) else []:
+            if not isinstance(c, dict):
+                continue
+            plays = [c.get('play')] if c.get('kind') == 'probe' else (c.get('plays') or [] if c.get('kind') == 'judge' else [])
+            for play in (x for x in plays if isinstance(x, dict)):
+                denied(f"check {c.get('name')}: play {play.get('name')}", play.get('args'))
+    return errs
+
+
+def check_mobile(rep, repo, files):
+    """Rule `mobile`: nothing for a desktop game (no Platform.json); a mobile game's project settings
+    (mobile_project_errors) and its Android preset (mobile_preset_errors). A Platform.json that says neither is an
+    error, never read as desktop."""
+    try:
+        orientation = read_platform(repo)
+    except ValueError as e:
+        rep.error('mobile', str(e))
+        return
+    if orientation is None:
+        return
+    if PLATFORM_FILE not in files:
+        rep.error('mobile', f'{PLATFORM_FILE} is not committed')
+    for name, errors in (('project.godot', lambda text: mobile_project_errors(orientation, text)),
+                         ('export_presets.cfg', mobile_preset_errors)):
+        if not os.path.isfile(os.path.join(repo, name)):
+            rep.error('mobile', f'no {name}')
+            continue
+        for e in errors(read_text(os.path.join(repo, name))):
+            rep.error('mobile', f'{name}: {e}')
+
+
+# ---- the contract on a game with combat: damage through one take_damage method the probe can find, key gameplay
+# ---- state on node instances, never in a static var or an autoload ---------------------------------------------------
+HEALTH_WORDS = {'health', 'hp', 'hitpoints', 'hull', 'poise', 'armor', 'armour'}
+STATE_WORDS = {'shield', 'stamina', 'mana', 'lives', 'dead', 'alive', 'dying', 'stun', 'stunned', 'stagger', 'staggered',
+               'invulnerable', 'invincible', 'guard', 'guarding', 'blocking', 'parry', 'parrying', 'alert', 'aggro',
+               'awake', 'asleep', 'dormant', 'roused'}
+WHOLE_WORDS = {'phase', 'state'}
+SHOWN_WORDS = {'sound', 'sfx', 'audio', 'fx', 'vfx', 'shown', 'display', 'shake'}
+GD_NUMBERS = {'float', 'int', 'bool'}
+GD_NOT_WHOLE = {'String', 'StringName', 'NodePath', 'Array', 'Dictionary', 'Callable', 'Signal'}
+GD_HIT_FUNCTION = re.compile(r'^[ \t]*(?:static[ \t]+)?func[ \t]+(?!take_damage\b)((?:take|receive|apply|deal)_'
+                             r'(?:hit|hurt|damage)\w*)[ \t]*\(', re.M)
+# a member of a script, at the script's own level (a variable inside a function is indented): its annotations,
+# `static`, its name, its type when it names one, and what it starts as
+GD_MEMBER = re.compile(r'^(?:@[\w.]+(?:\([^)\n]*\))?[ \t]*)*(?P<static>static[ \t]+)?var[ \t]+(?P<name>[A-Za-z_]\w*)[ \t]*'
+                       r'(?::[ \t]*(?P<type>[A-Za-z_][\w.]*)?(?:\[[^\]\n]*\])?)?[ \t]*(?:=[ \t]*(?P<init>[^\n]*))?', re.M)
+GD_TAKE_DAMAGE = re.compile(r'^[ \t]*func[ \t]+take_damage[ \t]*\(\s*\w+\s*:\s*float\s*,\s*\w+\s*:\s*[A-Z]\w*\s*'
+                            r'(?:=[^,)]*)?\)\s*->\s*float\s*:', re.M)
+GD_STRING = re.compile(r'("""|\'\'\')(?:\\.|.)*?\1|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|#[^\n]*', re.S)
+# a sound made at run time: every game sound is an imported audio file
+RUNTIME_SOUND = re.compile(r'\bAudioStreamGenerator(?:Playback)?\b|\bAudioStreamWAV\s*\.\s*new\s*\(')
+NOT_THE_GAME = ('addons/autoplay/', 'addons/task_probe/', 'steps/', 'Scripts/')   # the factory's own and the steps
+
+
+def game_scripts(files):
+    """The game's own GDScript files among `files`: not the AutoPlay drop-in, the task probe or the steps."""
+    return [f for f in files if f.endswith('.gd') and not f.startswith(NOT_THE_GAME)]
+
+
+def check_sound(rep, repo, files):
+    """Every sound the game plays is an imported audio file: no script of the game makes one at run time
+    (AudioStreamGenerator, AudioStreamWAV.new) and no scene or resource holds an AudioStreamGenerator, each named with
+    its file and line."""
+    found = []
+    for f in game_scripts(files) + [f for f in files if f.endswith(('.tscn', '.tres')) and not f.startswith(NOT_THE_GAME)]:
+        text = read_text(os.path.join(repo, f))
+        if f.endswith('.gd'):
+            text = _strip_gd(text)
+        for m in RUNTIME_SOUND.finditer(text):
+            what = 'AudioStreamWAV.new' if 'WAV' in m.group(0) else 'AudioStreamGenerator'
+            found.append((f, text.count('\n', 0, m.start()) + 1, what))
+    for f, ln, what in found[:20]:
+        rep.error('sound', f'{f}:{ln}: {what} makes a sound at run time: import every sound as an audio file (a clip, '
+                  'or a WAV a committed step script made), so it has a name' + REQUIRED)
+    if len(found) > 20:
+        rep.error('sound', f'... {len(found) - 20} more places that make a sound at run time' + REQUIRED)
+
+
+# every finding of the contract and the sound rule ends with this: a game in progress is brought up to them first
+REQUIRED = (' (required before this game can be packaged: godot-game-session skill, "Combat through one method" and'
+            ' "Sound")')
+
+
+def _gd_words(name):
+    return [w.lower() for part in name.strip('_').split('_')
+            for w in re.findall(r'[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+', part)]
+
+
+def _gd_number(type_, init):
+    """Whether a member is a number or a bool: by its type when it names one, else by what it starts as (a node, a
+    loaded resource, a string, a list or a new object is not; a member that starts as nothing is taken by its name)."""
+    if type_:
+        return type_ in GD_NUMBERS
+    init = (init or '').strip()
+    return not re.match(r'[$%"\'\[{&^]|(?:pre)?load\s*\(|[A-Za-z_][\w.]*\.new\s*\(|null\b', init)
+
+
+def _gd_key(type_, init, name):
+    """Why a GDScript member is key state, or None."""
+    words, low = set(_gd_words(name)), name.lower()
+    if SHOWN_WORDS & words:
+        return None
+    number = _gd_number(type_, init)
+    if number and (HEALTH_WORDS & words or 'hitpoint' in low):
+        return 'health'
+    if number and (STATE_WORDS & words or 'cooldown' in low):
+        return 'combat state'
+    whole = (type_ == 'int' or re.match(r'^[A-Z]\w*(\.\w+)*$', type_) and type_ not in GD_NOT_WHOLE) if type_ else \
+        bool(re.match(r'(?:[-+]?\d+|[A-Z]\w*\.\w+)?\s*$', (init or '').strip()))
+    if WHOLE_WORDS & words and whole:
+        return 'phase or state'
+    return None
+
+
+def _strip_gd(text):
+    """GDScript text without comments and string literals (newlines kept, so line numbers hold)."""
+    return GD_STRING.sub(lambda m: '' if m.group(0).startswith('#') else '""' + '\n' * m.group(0).count('\n'), text)
+
+
+def autoloads(project):
+    """{script path: name} of the autoloads a project.godot (its text) lists that are scripts."""
+    return {v.lstrip('*')[len(RES):]: k for k, v in godot_config(project).get('autoload', {}).items()
+            if v.lstrip('*').startswith(RES) and v.endswith('.gd')}
+
+
+def check_contract(rep, repo, files):
+    """The contract on the game's own GDScript (the AutoPlay drop-in, the task probe and the steps aside): a game with
+    combat has a `take_damage(amount: float, source: Node) -> float` method on what can be hurt and calls it; no key
+    state member is a static var or lives in an autoload (the probe reads state on the scene's nodes)."""
+    sources = game_scripts(files)
+    auto = autoloads(read_text(os.path.join(repo, 'project.godot')))
+    health, shared, hit_functions = [], [], []
+    declares = calls = False
+    for f in sources:
+        text = _strip_gd(read_text(os.path.join(repo, f)))
+        for m in GD_MEMBER.finditer(text):
+            why = _gd_key(m.group('type'), m.group('init'), m.group('name'))
+            if not why:
+                continue
+            if why == 'health':
+                health.append(f)
+            where = 'a static var' if m.group('static') else (f'in the autoload {auto[f]}' if f in auto else None)
+            if where:
+                shared.append((f, text.count('\n', 0, m.start()) + 1, m.group('name'), why, where))
+        for m in GD_HIT_FUNCTION.finditer(text):
+            hit_functions.append((f, text.count('\n', 0, m.start()) + 1, m.group(1)))
+        if GD_TAKE_DAMAGE.search(text):
+            declares = True
+        if re.search(r'\.\s*take_damage\s*\(', text):
+            calls = True
+    if not (health or hit_functions):
+        rep.note('contract', 'no combat (no health member, no hit function): the damage rule does not apply')
+    else:
+        if not declares:
+            rep.error('contract', 'combat without a take_damage method: what can be hurt has `func take_damage(amount: '
+                      'float, source: Node) -> float`, returning the damage actually applied' + (
+                          f" (the game's own hit function {hit_functions[0][2]} at {hit_functions[0][0]}:"
+                          f'{hit_functions[0][1]} must be a step called from take_damage)' if hit_functions else '')
+                      + REQUIRED)
+        if not calls:
+            rep.error('contract', "combat without a call of take_damage: everything that hurts calls its target's "
+                      'take_damage' + REQUIRED)
+    for f, ln, name, why, where in shared[:20]:
+        rep.error('contract', f'{f}:{ln}: {name} ({why}) is {where}: keep it on a node instance in the scene, where a '
+                  'probe reads it' + REQUIRED)
+    if len(shared) > 20:
+        rep.error('contract', f'... {len(shared) - 20} more key state members in a static var or an autoload' + REQUIRED)
+
+
+def main():
+    for stream in (sys.stdout, sys.stderr):  # paths and names in any script, on any Windows console code page
+        stream.reconfigure(encoding='utf-8', errors='replace')
+    ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    ap.add_argument('repo', nargs='?', help='a game repo (games/<slug>)')
+    ap.add_argument('--dataset', help='validate only this dataset (Dataset.zip or a Dataset folder)')
+    ap.add_argument('--platform', metavar='FOLDER', help="print the game's platform (desktop, mobile landscape or "
+                                                         'mobile portrait) from its Platform.json and exit')
+    ap.add_argument('--no-layout', action='store_true', help='skip tools/validate-dataset.ps1')
+    ap.add_argument('--content-only', action='store_true', help=argparse.SUPPRESS)  # used by validate-dataset.ps1
+    ap.add_argument('--no-zip', action='store_true', help="skip the repo's Dataset.zip")
+    ap.add_argument('--json', help='write the findings as JSON')
+    ap.add_argument('--quiet', action='store_true', help='print only errors and warnings')
+    ap.add_argument('--no-hash', action='store_true', help='skip hashing History/ LFS objects')
+    ap.add_argument('--quick', action='store_true', help='skip unpacking the History/ bundle')
+    ap.add_argument('--rules-only', action='store_true',
+                    help="only the game contract, the sound rule and a mobile game's settings (what the packager "
+                         'checks first)')
+    a = ap.parse_args()
+    if a.platform:
+        sys.exit(print_platform(a.platform))
+    if a.rules_only:
+        if not a.repo:
+            ap.error('--rules-only takes a game repo')
+        rep = Report()
+        check_rules(rep, os.path.abspath(a.repo), git_ls(os.path.abspath(a.repo)))
+        print(f'{"INVALID" if rep.count("error") else "VALID"}  {rep.count("error")} error(s)  [{a.repo}: contract, sound, mobile]')
+        for sev, area, msg in rep.items:
+            print(f'  {"x" if sev == "error" else "-"} {area}: {msg}')
+        sys.exit(2 if rep.count('error') else 0)
+    OPTS['hash'] = not a.no_hash
+    OPTS['quick'] = a.quick
+    if not a.repo and not a.dataset:
+        ap.error('give a game repo or --dataset')
+    rep = Report()
+    targets = []
+    if a.dataset:
+        targets.append((os.path.abspath(a.dataset), os.path.basename(os.path.normpath(a.dataset)) == 'Dataset'))
+    else:
+        repo = os.path.abspath(a.repo)
+        check_repo(rep, repo)
+        ds = os.path.join(repo, 'Dataset')
+        if os.path.isfile(os.path.join(ds, 'manifest.json')):
+            targets.append((ds, True))
+        else:
+            rep.warn('dataset', 'Dataset/ has no manifest.json: not packaged yet (run python tools/package-dataset.py '
+                                '<slug>, docs/godot-pipeline.md: it writes Dataset/ for the game session to commit)')
+        for z in ('Dataset.zip', 'Dataset.pending.zip'):
+            if not a.no_zip and os.path.isfile(os.path.join(repo, z)):
+                targets.append((os.path.join(repo, z), False))
+    for path, repo_ds in targets:
+        name = os.path.basename(path) if not repo_ds else 'Dataset/'
+        check_dataset(rep, path, f'dataset {name}')
+        if not a.no_layout and not a.content_only:
+            run_layout_validator(rep, path, repo_ds)
+    verdict = 'INVALID' if rep.count('error') else 'VALID'
+    print(f'{verdict}  {rep.count("error")} error(s), {rep.count("warning")} warning(s)  [{a.dataset or a.repo}]')
+    for sev, area, msg in rep.items:
+        if a.quiet and sev == 'note':
+            continue
+        mark = {'error': 'x', 'warning': '!', 'note': '-'}[sev]
+        print(f'  {mark} {area}: {msg}')
+    if a.json:
+        with open(a.json, 'w', encoding='utf-8') as f:
+            json.dump({'verdict': verdict, 'target': a.dataset or a.repo, 'findings': [dict(severity=s, area=ar, message=m) for s, ar, m in rep.items]}, f, indent=1)
+    sys.exit(2 if rep.count('error') else 0)
+
+
+if __name__ == '__main__':
+    main()
