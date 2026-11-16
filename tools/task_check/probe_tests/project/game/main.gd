@@ -48,6 +48,7 @@ func _notification(what: int) -> void:
 		backs += 1
 		$HUD/BackLabel.text = "BACK %d" % backs
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		printerr("closing: the game saves")
 		var saved := FileAccess.open("user://closed.txt", FileAccess.WRITE)
 		saved.store_string("closed")
 		saved.close()

@@ -130,6 +130,32 @@ class PlayOrder(unittest.TestCase):
         self.assertEqual(["keep_saves" in s for s in specs], [False, True])
         self.assertEqual(len(forgot), 1, "the saved data is deleted before the first play alone")
 
+    def test_what_the_game_prints_while_it_closes_is_read_by_no_check(self):
+        """The probe marks the play's end in the game's log before it tells the game it is closing: a `log` probe and
+        a `log_absent` check read up to the mark; a crash is still looked for in the whole log."""
+        from task_check import check
+        log = ("Godot Engine v4.7.2.stable.official\nERROR: during the play\n" + godot.PLAY_END
+               + "\nERROR: while closing\nERROR: at exit\n")
+        self.assertEqual(godot.during(log), "Godot Engine v4.7.2.stable.official\nERROR: during the play\n")
+        self.assertEqual(godot.during("ERROR: the game quit by itself\n"), "ERROR: the game quit by itself\n")
+        self.assertEqual(godot.during(""), "")
+        counted = probe("errors", measure={"probe": "log", "pattern": "^ERROR"}, expect={"op": "==", "value": 1})
+        quiet = {"kind": "log_absent", "name": "no_close_error", "pattern": "while closing|at exit"}
+        loud = {"kind": "log_absent", "name": "no_play_error", "pattern": "during the play"}
+        task = task_with(counted, quiet, loud)
+
+        def answer(seconds, shots, queries):
+            return measuring(0)(seconds, shots, queries)[0], log
+
+        s = side("reference", FakeProject(answer), task)
+        rows = {r["name"]: r for r in check.Grade(task, "reference", s, s, {}).run()["checks"]}
+        self.assertTrue(rows["errors"]["passed"], rows["errors"]["detail"])
+        self.assertTrue(rows["no_close_error"]["passed"], "a line printed while the game closes is not caught")
+        self.assertFalse(rows["no_play_error"]["passed"], "one printed during the play still is")
+        crashed = side("reference", FakeProject(lambda *a: (measuring(0)(*a)[0], godot.PLAY_END
+                                                            + "\nProgram crashed with signal 11\n")), task)
+        self.assertTrue(crashed.boot(60)["crashed"], "a crash while closing is still a crash")
+
     def test_unknown_names_itself_and_cycles_are_refused(self):
         for checks, said in [
                 ([reading("reads", play("reads", 20, ["nowhere"]))], "runs after nowhere, which is no task play"),

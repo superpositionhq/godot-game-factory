@@ -429,6 +429,10 @@ def check_kept(c, found):
 def check_fresh(c, found):
     if not ended(c, found, 2.5):
         return
+    log = found["log"]
+    end = log.find("TaskProbe: the play's time is up; what follows is the game closing")
+    c.true("the game's log marks the play's end before the game is told to close", 0 <= end < log.find("closing: the game saves"),
+           log[-400:])
     c.true("a play that doesn't starts clean, whatever the play before it saved", "VISITS 1" in texts(found, "texts", 1.0),
            texts(found, "texts", 1.0))
 

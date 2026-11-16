@@ -238,8 +238,10 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
   shows on the user's screen, and the play takes neither the keyboard nor the cursor.
 - **No build.** The checker plays the commit from its source with the editor binary, after the engine's import and
   a pass that loads every script (task-check.md, "What it does").
-- **The end.** When the play's time is up the probe writes its files, tells the game it is being closed
-  (`NOTIFICATION_WM_CLOSE_REQUEST`, as a player closing the window does) and asks the engine to quit. A game that quits
+- **The end.** When the play's time is up, in this order: the last sample and the last screenshot are taken, the
+  probe writes its files, marks the play's end in the game's log, tells the game it is being closed
+  (`NOTIFICATION_WM_CLOSE_REQUEST`, as a player closing the window does) and asks the engine to quit. So nothing
+  the game does or prints while it closes reaches a sample, a `log` measure or a `log_absent` check. A game that quits
   by itself ends the play there (`"ended": "shutdown"` in its `probe.json`), with the samples taken until then.
 
 ### 1.2 Thresholds (`expect`)
@@ -702,8 +704,11 @@ window).
 ### 2.10 `log`: the play's log
 
 `{"probe": "log", "pattern": "Scenario \\d+ started", "field": "count"}`: lines of the play's log (`print` output,
-warnings, script errors and the engine's own lines) that match, during the play: the whole log of the game's run,
-from its start-up to its exit (a `log` measure takes no `window`, `at` or `agg`).
+warnings, script errors and the engine's own lines) that match, during the play: the log of the game's run from
+its start-up to the end of the play's time (a `log` measure takes no `window`, `at` or `agg`). What the game
+prints after that, while it is told it is closing and while it exits, is read by no `log` measure and no
+`log_absent` check: the probe marks the play's end in the log first. A game that quits by itself has no such mark,
+and its whole log is read.
 
 ### 2.13 Points
 

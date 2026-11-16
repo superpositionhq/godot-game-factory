@@ -311,7 +311,11 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   previous sample, `flow`, the lowest of the same reads with a read of a paused tree counted as 0, and `paused`, 1
   when a read found the tree paused. A value its
   scripts set in the sample's own frame is in that sample and, while it lasts, in the next.
-- **log**: the lines of the play's log (`--log-file`, kept as `play.log`) that match, read by the checker.
+- **log**: the lines of the play's log (`--log-file`, kept whole as `play.log`) that match, read by the checker up
+  to the play's end (`godot.during`): the probe prints `godot.PLAY_END` (`TaskProbe: the play's time is up; what
+  follows is the game closing`) into the log before it tells the game it is closing, and a `log` probe and a
+  `log_absent` check read the lines before it; a log without the line (the game quit by itself, crashed or was
+  stopped) is read whole. A crash is looked for in the whole log (`check.fatal`), as before.
 
 ## 4. Plays and inputs
 
@@ -370,8 +374,10 @@ stays the one its checks read, its files are kept as `<name>_again`, and `replay
 reader's checks when it ended otherwise, timed out otherwise or missed other inputs than the first). A play with
 `after` is played with `keep_saves`: the checker deletes nothing before it and its spec holds `"keep_saves": true`,
 on which the probe leaves `user://` as it is (`probe.log`: `the saved data is kept: the play runs after the plays
-that left it`). When a play's time is up the probe sends `NOTIFICATION_WM_CLOSE_REQUEST` down the tree before it
-asks the engine to quit, so a game that saves when it is closed has saved for the play after it.
+that left it`). When a play's time is up the probe, in this order, has taken the last sample and screenshot, writes
+probe.json, closes probe.log, prints the play's end into the game's log (`PLAY_END`), sends
+`NOTIFICATION_WM_CLOSE_REQUEST` down the tree and asks the engine to quit: a game that saves when it is closed has
+saved for the play after it, and what it prints meanwhile is read by no check (section 3, "log").
 
 A frame has two passes, each raising the probe's `stamp`: before the game's scripts (the autoload, process priority
 -2^30: a held player and the pinned objects put back, the inputs) and after them (its child `Late`, priority 2^30:

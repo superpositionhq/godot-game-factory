@@ -18,6 +18,7 @@ const SPEC_FORMAT := "godot-probe-play/1"
 const QUERIES_FORMAT := "game-probe-queries/1"
 const RESULT_FORMAT := "godot-probe/1"
 const FLAG := "-taskprobe"
+const PLAY_END := "TaskProbe: the play's time is up; what follows is the game closing"
 const MAX_QUERIES := 256
 const MAX_ERRORS := 50
 const MAX_LOAD_FRAMES := 300  # the clock holds this long for one scene change at most
@@ -587,7 +588,9 @@ func _finish(reason: String, quit: bool = true) -> void:
 		_log = null
 	if quit:
 		# the play ends as a window closed by its player does: the game is told first (what it saves on
-		# NOTIFICATION_WM_CLOSE_REQUEST is there for a play that runs after this one), then the tree exits
+		# NOTIFICATION_WM_CLOSE_REQUEST is there for a play that runs after this one), then the tree exits. The line
+		# before it marks the play's end in the game's log: what the game prints from here on is read by no check
+		print(PLAY_END)
 		get_tree().root.propagate_notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
 		get_tree().quit(0)
 

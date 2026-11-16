@@ -316,7 +316,7 @@ class Side:
             p = self._play(f"boot_{seconds}s", seconds, 2)
         crashed = fatal(p.log)
         return {"ok": p.probe is not None and p.probe.get("ended") == "time" and not crashed, "crashed": crashed,
-                "timed_out": p.timed_out, "log": p.log}
+                "timed_out": p.timed_out, "log": godot.during(p.log)}
 
     def probe_play(self, play):
         """The play a probe names ("look", "drive", a task play), played once with the queries of every probe it
@@ -380,7 +380,7 @@ class Side:
         if not self.built():
             return None, f"{self.why_unbuilt()}, so it wasn't played"
         p = self.probe_play(check["play"])
-        return probes.measured(measure, p.probe, p.log)
+        return probes.measured(measure, p.probe, godot.during(p.log))
 
 
 class Grade:

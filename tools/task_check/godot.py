@@ -45,6 +45,8 @@ LOGS = "Logs/TaskProbe"  # in the copy: specs, logs and the play's folder (Logs/
 DESK = HERE / "desk.py"  # runs the game on its own desktop
 SPEC_FORMAT = "godot-probe-play/1"
 SPEC = "play_spec.json"  # in LOGS: the last play's spec
+# the line the probe prints into the game's log when a play's time is up, before it tells the game it is closing
+PLAY_END = "TaskProbe: the play's time is up; what follows is the game closing"
 # The play's clock is frames at a fixed FPS per second, run as fast as the machine renders: only the command line can
 # set that (an autoload can't), so the spec says it too. No sound reaches the machine's speakers.
 FPS = 30
@@ -95,6 +97,14 @@ class Result:
     waited: float = 0.0  # of `seconds`, waiting for a godot-heavy.ps1 slot before the job started
     cause: str | None = None  # a failed build's first cause, one line (_cause)
     stopped: str | None = None  # a failed build with no word about the game: how it stopped (Project.build)
+
+
+def during(log):
+    """The play's log up to the end of its time: the lines before the probe's PLAY_END line. What the game prints
+    while it is told to close and while it exits is no part of the play, so no `log` probe and no `log_absent` check
+    reads it. A log without the line (the game quit by itself, crashed or was stopped) is the play's whole."""
+    at = (log or "").find(PLAY_END)
+    return log if at < 0 else log[:log.rfind("\n", 0, at) + 1]
 
 
 @dataclass
