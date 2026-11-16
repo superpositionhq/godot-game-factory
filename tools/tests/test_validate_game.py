@@ -883,6 +883,33 @@ class Units(unittest.TestCase):
         self.assertIn('x: no required probe check: pass/fail must be deterministic (godot-write-tasks section 5)',
                       errors(rep))
 
+    def test_importing_the_validator_reads_no_file(self):
+        """The format and the schemas are read when first asked for: the module can be imported where they aren't."""
+        code = (
+            "import importlib.util, json, sys\n"
+            "opened = []\n"
+            "sys.addaudithook(lambda event, args: opened.append(str(args[0])) if event == 'open' else None)\n"
+            f"spec = importlib.util.spec_from_file_location('validate_game', {os.path.join(TOOLS, 'validate-game.py')!r})\n"
+            "vg = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(vg)\n"
+            "at_import = [p for p in opened if not p.endswith(('.py', '.pyc'))]\n"
+            "del opened[:]\n"
+            "engine = vg.SCHEMAS['game-task']['properties']['engine']['const']\n"
+            "names = sorted(vg.SCHEMAS)\n"
+            "first = [p for p in opened if p.endswith('.json')]\n"
+            "kept = vg.SPEC['repo'] is vg.SPEC['repo'] and vg.SCHEMAS['game-task'] is vg.SCHEMAS['game-task']\n"
+            "print(json.dumps([at_import, engine, names, [p.replace(chr(92), '/').rsplit('/', 1)[-1] for p in first],\n"
+            "                  len(vg.SPEC) > 3, kept, len([p for p in opened if p.endswith('.json')])]))\n")
+        r = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        at_import, engine, names, first, whole, kept, opens = json.loads(r.stdout)
+        self.assertEqual(at_import, [], 'importing the module opened a file')
+        self.assertEqual(engine, 'godot-4.7')
+        self.assertEqual(names, ['assets-manifest', 'dataset-manifest', 'game-task', 'replay-report', 'workflow-row'])
+        self.assertEqual(first, ['game-task.schema.json'], 'only the schema asked for is read')
+        self.assertTrue(whole and kept)
+        self.assertEqual(opens, 2, 'each file is read once: the schema, then the format')
+
     def test_touches(self):
         """A touch ends inside its play, and a finger stays up TOUCH_GAP before it goes down again; touches of
         different fingers may overlap."""

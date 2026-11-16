@@ -22,7 +22,7 @@ Verdict: VALID (no errors), INVALID (errors). Exit code 0 / 2. Warnings never ch
 stderr (exit 2). The PowerShell tools read a game's platform through it, so there is one reader.
 Standard library only (Python 3.10+).
 """
-import argparse, io, json, os, re, shutil, subprocess, sys, zipfile
+import argparse, collections.abc, io, json, os, re, shutil, subprocess, sys, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -99,9 +99,38 @@ if __name__ == '__main__' and len(sys.argv) == 3 and sys.argv[1] == '--platform'
     sys.exit(print_platform(sys.argv[2]))
 
 
-SPEC = load_json(os.path.join(REPO, 'docs', 'game-format-v1.json'))
-SCHEMAS = {n: load_json(os.path.join(REPO, 'docs', 'schemas', n + '.schema.json'))
-           for n in ('workflow-row', 'dataset-manifest', 'replay-report', 'assets-manifest', 'game-task')}
+class Lazy(collections.abc.Mapping):
+    """A mapping whose entries are read from their JSON files when first asked for, so importing this module reads no
+    file (it is imported where the repo's docs/ may not be at hand until a check runs). `files`: {key: path}, or a
+    single path whose top-level object is the mapping."""
+
+    def __init__(self, files):
+        self._files, self._read = files, {}
+
+    def _whole(self):
+        if isinstance(self._files, str):
+            if not self._read:
+                self._read = {'': load_json(self._files)}
+            return self._read['']
+        return self._files
+
+    def __getitem__(self, key):
+        if isinstance(self._files, str):
+            return self._whole()[key]
+        if key not in self._read:
+            self._read[key] = load_json(self._files[key])   # a KeyError for a name that is no entry
+        return self._read[key]
+
+    def __iter__(self):
+        return iter(self._whole())
+
+    def __len__(self):
+        return len(self._whole())
+
+
+SPEC = Lazy(os.path.join(REPO, 'docs', 'game-format-v1.json'))
+SCHEMAS = Lazy({n: os.path.join(REPO, 'docs', 'schemas', n + '.schema.json')
+                for n in ('workflow-row', 'dataset-manifest', 'replay-report', 'assets-manifest', 'game-task')})
 
 
 def read_text(path):
