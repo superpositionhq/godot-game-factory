@@ -1,0 +1,69 @@
+<#
+.SYNOPSIS
+  Add the commit recorder to a game repo's post-commit hook (idempotent).
+.DESCRIPTION
+  Appends one line to <repo>\.git\hooks\post-commit. It runs <hooks dir>\record-godot-commit.ps1, which writes every
+  new commit to <root>\.recording\<repo name>\commits.jsonl; it is silent (a recorder that fails must never print into
+  a commit's output).
+  Git LFS's own post-commit lines stay first: when the hook does not exist yet, `git lfs update` creates it before the
+  line is appended. A repo whose hook already runs this hooks dir's record-godot-commit.ps1 is left alone; a line that
+  names another hooks dir (moved since) is replaced, and when another tool's hook ends in `exit` or `exec` the line
+  goes before that (after it, it never ran); an `exit` or `exec` higher up, which the line cannot be put before, gets
+  a warning. -Force rewrites the line in any case.
+  machine\bootstrap.ps1 runs this for every game repo under <root>\games, so after a pull of this repo and a bootstrap
+  every game has the current line; a game repo elsewhere needs this run once for the recorder.
+  The recorder exits at once when the committing checkout is on the orphan `tasks` branch (the game's tasks,
+  docs/game-format.md): a commit there, e.g. from a tasks worktree, is not recorded.
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File machine\install-git-hook.ps1 %GGF_ROOT%\games\stealth
+#>
+param(
+    [Parameter(Mandatory = $true)][string]$Repo,
+    # where bootstrap.ps1 installed record-godot-commit.ps1; default the config's hooks_dir (Get-GGFHooksDir)
+    [string]$HooksDir,
+    [switch]$Force
+)
+$ErrorActionPreference = 'Stop'
+if (-not $HooksDir) { . (Join-Path $PSScriptRoot 'lib\ggf-root.ps1'); $HooksDir = Get-GGFHooksDir }
+$Repo = (Resolve-Path -LiteralPath $Repo).Path
+if (-not (Test-Path -LiteralPath (Join-Path $Repo '.git'))) { throw "not a git repo (no .git): $Repo" }
+$hookPath = (& git -C $Repo rev-parse --git-path hooks/post-commit)
+if (-not [IO.Path]::IsPathRooted($hookPath)) { $hookPath = Join-Path $Repo $hookPath }
+$hookPath = [IO.Path]::GetFullPath($hookPath)
+New-Item -ItemType Directory -Force (Split-Path $hookPath) | Out-Null
+
+$usesLfs = (Test-Path -LiteralPath (Join-Path $Repo '.gitattributes')) -and
+    ((Get-Content -LiteralPath (Join-Path $Repo '.gitattributes') -Raw) -match 'filter=lfs')
+if (-not (Test-Path -LiteralPath $hookPath) -and $usesLfs) {
+    # git-lfs refuses to replace another tool's hook ("Hook already exists: pre-push") on stderr, which under 'Stop'
+    # ends this script before the recorder goes in
+    $ErrorActionPreference = 'Continue'
+    & git -C $Repo lfs update 2>&1 | Out-Null   # writes LFS's pre-push / post-checkout / post-commit / post-merge hooks
+    $ErrorActionPreference = 'Stop'
+}
+
+$script = ($HooksDir -replace '\\', '/').TrimEnd('/') + '/record-godot-commit.ps1'
+# The hook line is silent (a recorder that fails must never print into a commit's output), so a recorder that isn't
+# there is said here: otherwise the repo's commits go unrecorded without a word.
+if (-not (Test-Path -LiteralPath $script)) { Write-Warning "$script is not there (machine\bootstrap.ps1 installs it): this repo's commits are not recorded until it is" }
+$line = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$script`" `"`$(pwd -W 2>/dev/null || pwd)`" >/dev/null 2>&1 || true"
+$marker = '# recording: append this commit to <root>/.recording/<repo>/commits.jsonl (machine/install-git-hook.ps1)'
+
+$text = if (Test-Path -LiteralPath $hookPath) { [IO.File]::ReadAllText($hookPath) } else { "#!/bin/sh`n" }
+$text = $text -replace "`r`n", "`n"
+# drop an older recorder line (one naming a hooks dir moved since: its commits went unrecorded) and its comment, keep
+# everything else
+$new = (($text -split "`n") | Where-Object { $_ -notmatch 'record-godot-commit\.ps1' -and $_ -ne $marker }) -join "`n"
+if (-not $new.EndsWith("`n")) { $new += "`n" }
+$block = "$marker`n$line`n"
+# another tool's hook that ends in `exit` or `exec` (blank lines after it too): the line goes before it, or never runs
+$end = [regex]::Match($new, '(?m)^[ \t]*(exit|exec)\b[^\n]*\n\s*\z')
+$new = if ($end.Success) { $new.Substring(0, $end.Index) + $block + $end.Value } else { $new + $block }
+# one higher up (inside an if) cannot be moved past, and the recorder's line is silent: say so on every run
+if ($new.Substring(0, $new.IndexOf($line)) -match '(?m)^[ \t]*(exit|exec)\b') {
+    Write-Warning "$hookPath can end before the recorder's line (an exit or exec above it): move the line above that, or this repo's commits are not recorded"
+}
+# already in place (a line an older copy of this script left after such an exit is moved)
+if ($new -ceq $text -and -not $Force) { Write-Host "post-commit already records commits: $hookPath"; return }
+[IO.File]::WriteAllText($hookPath, $new, (New-Object Text.UTF8Encoding($false)))
+Write-Host "post-commit records commits via $script : $hookPath"
