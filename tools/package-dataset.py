@@ -1478,7 +1478,7 @@ def locale_form(buf, at, nl, w):
     """Whether the account name at `at` (nl characters of w bytes) is a Chinese language in a binary's locale data: a
     locale id, zh_<name> or zh-<name> (the engine's own table of variants writes zh__<NAME>), or the language's name
     as a whole string, "<Name> Chinese". The Godot player carries both tables, so an account named like one of those
-    languages (Xiang, Gan, Wu, Yue) is in every build."""
+    languages (Gan, Wu, Yue and the others) is in every build."""
     a = at
     while a >= w and buf[a - w] in b'_-' and at - a < 2 * w:
         a -= w
