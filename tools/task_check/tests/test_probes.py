@@ -6,9 +6,9 @@ import types
 import unittest
 from pathlib import Path
 
-from helpers import NO_FIX, SEED, first_check, measure_of, probe, task_with
+from helpers import NO_FIX, SEED, FakeProject, first_check, measure_of, probe, side, task_with
 
-from task_check import godot, probes, tasks
+from task_check import check, godot, probes, tasks
 
 WALLS = {"component": "CastlePiece", "tag": "Wall"}
 TRACK = [[0.0, 0, 1.0, 0], [0.5, 0.3, 1.0, 0.4], [1.0, 0.6, 0.9, 0.8], [1.5, 0.6, -5.0, 0.8]]  # [t, x, y (up), z]
@@ -531,6 +531,38 @@ class MoreFairReadings(unittest.TestCase):
                     {"t": 1, "pin": {"tag": "A"}, "hold": 3, "front": 1, "at": {"player": True}}):
             with self.assertRaises(ValueError):
                 task_with(probe(play={**play, "inputs": [bad]}, measure={"probe": "player", "field": "y"}))
+
+    def test_a_stage_that_didnt_land_fails_every_probe_of_its_play(self):
+        """A reading of a contact that never happened is no reading: `damage_taken` 0 or a time scale of 1 would pass."""
+        calm = m(probe="world", field="time_scale", agg="min")
+        qid = probes.query_id(probes.needs(calm)[0])
+        play = {"seconds": 8.5, "track": [[0.5, 0, 1.0, 0]], "inputs_missed": [],
+                "measures": {qid: sampled([{"time_scale": 1.0, "paused": 0}])}}
+        self.assertEqual(probes.measured(calm, play), (1.0, None))
+        for kind, target in (("pin", '{"tag":"foe"}'), ("damage", "Post"), ("set", "health")):
+            missed = {**play, "inputs_missed": [{"t": 2.0, "kind": kind, "target": target, "why": "no object matches"}]}
+            self.assertEqual(probes.measured(calm, missed),
+                             (None, f"a stage of the play didn't land: {kind} {target} at 2 s: no object matches"), kind)
+            self.assertIsNone(probes.reduce(m(probe="player", field="y"), missed), "the play's other probes too")
+            self.assertIsNone(probes.reduce(m(probe="log", pattern="hit"), missed, "hit\n"))
+        for kind in ("tap", "drag", "click", "shot", "scene"):  # a touch or a click that missed is read as before
+            other = {**play, "inputs_missed": [{"t": 2.0, "kind": kind, "target": "X", "why": "nothing there"}]}
+            self.assertEqual(probes.measured(calm, other), (1.0, None), kind)
+        duel = {"name": "duel", "seconds": 8, "inputs": [{"t": 2, "damage": 5, "to": {"tag": "foe"}}]}
+        task = task_with(probe(play=duel, measure={"probe": "world", "field": "time_scale", "agg": "min"},
+                               expect={"op": "==", "value": 1}))
+
+        def answer(seconds, shots, queries):
+            (query,) = queries["queries"]
+            return {**play, "inputs_missed": [{"t": 2.0, "kind": "damage", "target": '{"tag":"foe"}',
+                                               "why": "no object matches"}],
+                    "measures": {query["id"]: sampled([{"time_scale": 1.0, "paused": 0}])}}, ""
+
+        reference = side("reference", FakeProject(answer), task)
+        grade = check.Grade(task, "reference", reference, reference, {})
+        passed, detail = grade.check(first_check(task))
+        self.assertFalse(passed, "the reference's miss makes the task INVALID: no reading passes it")
+        self.assertIn("a stage of the play didn't land: damage", detail)
 
     def test_the_world_and_an_object_read_what_a_contact_leaves(self):
         slowed = m(probe="world", field="time_scale", window=[2, 4], agg="min")

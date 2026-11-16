@@ -470,9 +470,26 @@ def ended(probe):
     return max(found, default=0.0)
 
 
+STAGES = ("pin", "damage", "set")  # the stages of a contact (docs/task-probes.md, section 1.4)
+
+
+def unstaged(probe):
+    """Why a play's readings can't be trusted, or None: the first stage of a contact (a pin, a damage, a set) that
+    landed on nothing, from the play's `inputs_missed`. What the play read then is of a contact that never happened."""
+    for row in (probe or {}).get("inputs_missed") or []:
+        if isinstance(row, dict) and row.get("kind") in STAGES:
+            at = f" at {fmt(row['t'])} s" if _count(row.get("t")) else ""
+            return f"a stage of the play didn't land: {row['kind']} {row.get('target')}{at}: {row.get('why')}"
+    return None
+
+
 def measured(measure, probe, log=""):
     """(a runtime measure of one play as one number, or None; why none). A play that ended early (quit, crashed,
-    never reached the window) has no samples there: "no samples in the window (the play ended at X s)"."""
+    never reached the window) has no samples there: "no samples in the window (the play ended at X s)". A play one
+    of whose contact stages landed on nothing measures nothing (unstaged)."""
+    missed = unstaged(probe)
+    if missed:
+        return None, missed
     if measure["probe"] == "log":
         return float(sum(1 for line in (log or "").splitlines() if re.search(measure["pattern"], line))), None
     if probe is None:

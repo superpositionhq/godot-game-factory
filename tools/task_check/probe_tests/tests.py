@@ -238,6 +238,13 @@ def check_second(c, found):
     c.near("its speed", row(found, "walker", 2.0).get("speed"), 100.0, 0.5)
     c.eq("a 2D camera's row", probe["camera"][1][1:], [400, 300, 0, 0, 0, 0])
     c.eq("the 2D player is on screen", value(found, "cam", 1.0).get("player_on_screen"), 1)
+    target = row(found, "target", 2.0)
+    # the walker is at x 200 when the pin lands (it walks 100 units a second from 100): ahead is its +X
+    c.near("a 2D pin: ahead of the player along its +X, plus the offset", math.dist([target.get("x", 0), target.get("y", 0)],
+                                                                                  [250, 210]), 0.0, 4.0)
+    c.near("a 2D node isn't turned", target.get("roll"), math.degrees(0.5), 1e-3)
+    c.eq("it is held there", (row(found, "target", 1.5).get("x"), row(found, "target", 1.5).get("y")),
+         (target.get("x"), target.get("y")))
     c.eq("a scene input loads another scene", (probe.get("scene"), probe.get("player")), ("res://scenes/Main.tscn", "Player"))
     c.true("its text shows", "TAPS 0" in texts(found, "texts", 3.5), texts(found, "texts", 3.5))
     c.eq("a scene the project lacks", [(m["kind"], m["target"]) for m in probe.get("inputs_missed", [])],
@@ -269,32 +276,39 @@ def check_contact(c, found):
     c.eq("a hit from a named object", (foe(3.1).get("prop:health"), foe(3.1).get("prop:last_source"), foe(3.1).get("damage_taken")),
          (19, "Post", 1))
     stops = [s["rows"][0].get("frozen", 0) for s in samples(found, "foe") if 3.05 <= s["t"] <= 3.45]
-    c.near("its stop of 0.2 s is read once it ends", max(stops), 0.2, 0.04)
+    c.near("its stop of 0.2 s is read once it ends, a spark coming and going below it meanwhile", max(stops), 0.2, 0.04)
     c.eq("and only then", sum(1 for v in stops if v), 1)
+    stops = [s["rows"][0].get("frozen", 0) for s in samples(found, "foe") if 4.05 <= s["t"] <= 4.45]
+    c.near("a stop of the game's time (a time scale of 0 for four frames) stops it too", max(stops), 4 / 30, 0.04)
     c.eq("a hit from the player", (foe(3.6).get("prop:health"), foe(3.6).get("prop:last_source"), foe(3.6).get("damage_taken")),
          (4, "Player", 16))
     c.eq("a hit that takes less than asked", (foe(4.7).get("prop:health"), foe(4.7).get("prop:dead"), foe(4.7).get("damage_taken")),
          (0, 1, 20))
     c.eq("a shielded one takes nothing, through the node below it", row(found, "guard", 4.8).get("damage_taken"), 0)
-    c.eq("an object never struck", row(found, "post", 4.8).get("damage_taken"), 0)
+    c.eq("an object no stage struck has no damage to read", "damage_taken" in row(found, "post", 4.8), False)
+    c.eq("a take_damage with a third argument of its own", (row(found, "dummy", 4.9).get("damage_taken"),
+                                                            row(found, "dummy", 4.9).get("prop:hits")), (2, 1))
     hero = row(found, "player", 5.2)
     c.eq("the player struck, by the nearest other that can be hurt",
          (hero.get("prop:health"), hero.get("prop:last_source"), hero.get("damage_taken")), (70, "Foe", 5))
     # world: the lowest time scale and a pause, between samples too
     scale = {round(s["t"], 1): s["value"]["time_scale"] for s in samples(found, "world")}
     c.eq("the game runs at its pace", {scale.get(t) for t in (1.0, 4.9, 5.3, 8.0)}, {1})
-    c.eq("a hit slows it for three frames", min(scale.values()), 0.25)
-    c.eq("read in the sample after the hit", scale.get(5.1), 0.25)
+    c.eq("a hit slows it for three frames, read in the sample after", scale.get(5.1), 0.25)
+    c.eq("its time stopped", scale.get(4.1), 0)
     paused = {round(s["t"], 1): s["value"]["paused"] for s in samples(found, "world")}
     c.eq("a pause of six frames", [t for t in sorted(paused) if paused[t]], [5.5, 5.6, 5.7])
+    c.eq("a paused game's time stands", {scale.get(t) for t in (5.5, 5.6, 5.7)}, {0})
+    c.eq("a stopped time is no pause", paused.get(4.1), 0)
     # pin at a point
     c.near("pinned at a point and an offset", math.dist([row(found, "post", 6.4).get(k, 99) for k in "xyz"], [3, 1, 0]), 0.0, 1e-3)
     c.eq("every node but the player", [r["name"] for r in rows(found, "others", 1.0)], ["Corpse", "Foe", "Hurtbox"])
     c.eq("stages that didn't land", [(m["t"], m["kind"], m["target"]) for m in probe.get("inputs_missed", [])], [
-        (0.6, "set", "armour"), (0.6, "set", "health"), (0.6, "set", "health"), (6.5, "pin", '{"player":true}'),
+        (0.6, "set", "armour"), (0.6, "set", "health"), (0.6, "set", "health"), (0.6, "set", "locked"),
+        (4.8, "damage", "Lamp"), (6.5, "pin", '{"player":true}'),
         (6.5, "pin", '{"name":"Post"}'), (6.5, "damage", "Post"), (6.5, "damage", '{"name":"Nobody"}')])
     c.true("a missed stage says why", all(m.get("why") for m in probe.get("inputs_missed", [])))
-    c.eq("inputs sent", probe.get("inputs_sent"), 21)
+    c.eq("inputs sent", probe.get("inputs_sent"), 26)
     c.eq("no error", errors(found), [])
 
 

@@ -124,8 +124,12 @@ Fields whose threshold is never a literal (calibrated or relative to the start o
 `NEVER_LITERAL`): objects `spin`; components `intensity`, `extent_*`, `spin`; `screen` (all); audio `volume`,
 `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its own.
 
-Five of the task check's rules, each closing a case that would otherwise read wrongly:
+Six of the task check's rules, each closing a case that would otherwise read wrongly:
 
+- a play with an `inputs_missed` row of kind `pin`, `damage` or `set` has no value for any of its probes, the log's
+  too: "a stage of the play didn't land: <kind> <target> at <t> s: <why>", the first such row
+  (`probes.unstaged`, `STAGES`). A probe that reads `damage_taken` 0 or a time scale of 1 would otherwise pass on a
+  contact that never happened. Rows of other kinds (a touch, a click, a shot, a scene) change nothing;
 - a still-works probe is excused only when its start play has no samples ("no samples in the window": the play
   crashed, ended early or wrote no probe file); one that finds nothing to measure in a start that ran counts against
   the task (`verdict.verdict`);
@@ -206,16 +210,20 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
     it that is playing, else of the first playing `AnimatedSprite2D` or `AnimatedSprite3D`, else the current state
     of an active `AnimationTree` whose root is a state machine (`parameters/playback`);
   - `frozen` (`stops.gd`): each node a sample read is followed frame by frame from then on, through later samples
-    (a stop under way when a sample falls goes on). Its pose is the global transform of itself and of the placed
-    nodes below it (`Node3D`, `Node2D`; a `Control`'s global position; `MAX_PARTS` 64) and the place of every bone
-    of a `Skeleton3D` among them (`get_bone_global_pose`, `MAX_BONES` 256). A frame is one of motion when a place
-    moved more than `MOVED_3D` (0.001 m; `MOVED_2D` 0.01 units) or an axis of a transform's basis more than `TURNED`
-    (0.00175: a turn of 0.1 degrees), or the pose has another number of entries. A run of frames without motion
+    (a stop under way when a sample falls goes on). Its parts are itself and the placed nodes below it when it is
+    first read (`Node3D`, `Node2D`, `Control`; `MAX_PARTS` 64, kept as weak references); its pose is each part's
+    global transform (a `Control`'s global position) and the place of every bone of a `Skeleton3D` among them
+    (`get_bone_global_pose`, `MAX_BONES` 256). A frame is one of motion when a part's place moved more than
+    `MOVED_3D` (0.001 m; `MOVED_2D` 0.01 units), an axis of its basis more than `TURNED` (0.00175: a turn of 0.1
+    degrees) or a bone more than `MOVED_3D`. A node that comes to be below it later is no part; a part that is
+    freed or out of the tree, and a skeleton whose bones change in number, are skipped: none is motion. A node
+    dropped from a sample's rows (hidden, without `inactive`) is no longer followed, and starts anew when it is
+    read again. A run of frames without motion
     after a frame of motion, ended by one, of `LONGEST` (0.5 s) at most, is a stop; the sample has the longest that
     ended since the previous sample, 0 when none, and no value the first time the node is read. The pose is
     compared before the game's scripts of a frame, so a frame's motion counts in the next;
   - `damage_taken` (`inputs.gd` `damage_taken`): the sum of what `take_damage` returned for the play's `damage`
-    stages on the node or on a node below it; 0 when none struck it; no value when a call returned no number.
+    stages on the node or on a node below it; no value when none struck it, or when a call returned no number.
 - **components** (`queries/components.gd`): the nodes of the class, or with `effect` alone every particle node
   (`GPUParticles3D`, `CPUParticles3D`, `GPUParticles2D`, `CPUParticles2D`); `effect: true` keeps those that are
   emitting and shown. `mesh` reads a `MeshInstance3D`'s, a `MeshInstance2D`'s or a `MultiMeshInstance3D`'s mesh by
@@ -270,8 +278,8 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   textures, 10 to 19 MiB before a game adds anything; a `--headless` play reads 0.
 - **world** (`queries/world.gd`): `Engine.time_scale` and `SceneTree.paused` read every frame before the game's
   scripts and once more at the sample, after them; the value is `time_scale`, the lowest read since the previous
-  sample, and `paused`, 1 when a read found the tree paused. A value its scripts set in the sample's own frame is
-  in that sample and, while it lasts, in the next.
+  sample (a read of a paused tree counts as 0), and `paused`, 1 when a read found the tree paused. A value its
+  scripts set in the sample's own frame is in that sample and, while it lasts, in the next.
 - **log**: the lines of the play's log (`--log-file`, kept as `play.log`) that match, read by the checker.
 
 ## 4. Plays and inputs
@@ -404,13 +412,14 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   object with a place matches, `front` without a player, an `at` that doesn't resolve.
 - damage: `{"t", "damage": points, "to": <object select>, "from": <object select>}` (`from` only when set;
   `_strike`). The target is the match of `to` nearest the player; the method is `take_damage` of the target, else
-  of the first node below it that has one (`_hurt`), and must take two arguments
-  (`Object.get_method_argument_count`). The source is the match of `from` nearest the target (the target and the
-  nodes below it left out); without `from`, the player, or, when the target is the player, a node above or below
+  of the first node below it that has one (`_hurt`), and must take the two arguments (`_takes_two`, from
+  `Object.get_method_list`: at most two arguments without a default, and at least two in all). The source is the
+  match of `from` nearest the target (the target and the nodes below it left out); without `from`, the player, or, when the target is the player, a node above or below
   it, or the play has no player, the node with a `take_damage` nearest the target that is neither the target nor
   the player (`_other_hurt`; `null` when there is none). The call is `take_damage(amount, source)`, made with the
   inputs, before the game's scripts of the frame; what it returns is summed by the node whose method it is
-  (`damage_taken`). Misses: no match of `to`, no method, a method of another shape, no match of `from`.
+  (`damage_taken`); the node's id and the names for `probe.log` are taken before the call, since the hit may free
+  it. Misses: no match of `to`, no method, a method of another shape, no match of `from`.
 - set: `{"t", "set": "<path>", "on": <object select>, "value": v, "all": bool}` (`_write`, `Find.write`): on the
   match nearest the player, or on every match with `all`. The path is resolved as a `prop:` path is (a class first:
   the node itself when it is of it, else the first node below it that is; else on the node itself), without an
@@ -418,7 +427,8 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   vector's, a colour's or a transform's part, which is written back through the property that holds it. The value
   takes the type the property holds (`Find._fit`): a number or a boolean onto a boolean, an integer (rounded) or a
   float, a string onto a string or a StringName; a property that holds `null` takes any of them; anything else
-  takes nothing. Misses: no match, or no matched object the write lands on.
+  takes nothing. After `Object.set` the property is read back: one that reads as before, when another value was
+  written, took nothing (a read-only one). Misses: no match, or no matched object the write lands on.
 - shot: `{"t", "shot": "<name>"}`: `shot_<name>.png` of that frame. scene: `{"t", "scene": "res://..."}`:
   `change_scene_to_file`; a scene the project lacks is a `query_errors` line and a miss. view: `{"t", "view": [pitch,
   yaw]}`: a 3D player's yaw and the `Camera3D`'s rotation set once (pitch clamped to +-89).

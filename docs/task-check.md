@@ -287,6 +287,13 @@ alone can be another query's of that kind in the same play. The `rows` in the pl
 and `probe.log` beside it what the probe did (a `teleport_to` that found nothing, a widget click or a tap that
 matched no control).
 
+**`a stage of the play didn't land: <kind> <target> at N s: ...`.** A `pin`, a `damage` or a `set` of the probe's play
+reached nothing (no object matched, the one matched has no `take_damage`, no property took the value), so whatever
+the play read is of a contact that never happened and no probe of that play has a value on that side
+([task-probes.md](task-probes.md), section 1.4). On the reference, fix the stage: its select names what the start
+and the reference both have, and the play's `probe.log` says what each stage reached. On the start alone it is the
+start failing the check.
+
 **`of` defaults to `count`.** For `objects`, `components`, `widgets` and `ui` measures, `of` combines the selected
 rows of one sample, and without it a field like `y` counts the rows whose value isn't 0 instead of reading the value.
 Set `"of": "first"`, `"max"`, `"min"` or `"mean"` when you mean the value. "First" is the first in tree order, which

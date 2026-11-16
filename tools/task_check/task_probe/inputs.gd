@@ -669,8 +669,8 @@ func _strike(row: Dictionary) -> void:
 	if hurt == null:
 		_miss(row, "damage", String(target.name), "neither it nor a node below it has a take_damage method")
 		return
-	if hurt.get_method_argument_count("take_damage") != 2:
-		_miss(row, "damage", String(target.name), "its take_damage doesn't take (amount, source)")
+	if not _takes_two(hurt):
+		_miss(row, "damage", String(target.name), "its take_damage can't be called with (amount, source)")
 		return
 	var source: Node = player
 	if row.get("from") is Dictionary:
@@ -681,16 +681,29 @@ func _strike(row: Dictionary) -> void:
 	elif player == null or target == player or player.is_ancestor_of(target) or target.is_ancestor_of(player):
 		source = _other_hurt(target, player)  # the player is the one struck: by the nearest other thing that can be hurt
 	var amount := Find.num(row, "damage")
-	var got: Variant = hurt.call("take_damage", amount, source)
+	# what the log and the sum need of the nodes is taken before the call: the hit may free them
 	var id := hurt.get_instance_id()
+	var said := "damage %s to %s (take_damage of %s) from %s" % [
+		amount, target.name, hurt.name, source.name if source != null else "nothing"]
 	if not _hits.has(id):
 		_hits[id] = {"ref": weakref(hurt), "sum": 0.0, "numbers": true}
+	var got: Variant = hurt.call("take_damage", amount, source)
 	if (got is float or got is int) and not is_nan(got):
 		_hits[id]["sum"] += float(got)
 	else:
 		_hits[id]["numbers"] = false
-	probe.note("damage %s to %s (take_damage of %s) from %s: it returned %s" % [
-		amount, target.name, hurt.name, source.name if source != null else "nothing", got])
+	probe.note("%s: it returned %s" % [said, got])
+
+
+static func _takes_two(hurt: Node) -> bool:
+	## whether take_damage can be called with (amount, source): at most two arguments without a default, and room
+	## for two (take_damage(amount, source, crit := false) is)
+	for method: Dictionary in hurt.get_method_list():
+		if method.get("name") == "take_damage":
+			var total: int = (method.get("args") as Array).size()
+			var optional: int = (method.get("default_args") as Array).size()
+			return total - optional <= 2 and total >= 2
+	return false
 
 
 func _other_hurt(target: Node, player: Node) -> Node:
@@ -712,17 +725,19 @@ func _other_hurt(target: Node, player: Node) -> Node:
 
 
 func damage_taken(n: Node) -> Variant:
-	## what the take_damage of `n`, or of a node below it, returned for the play's damage stages so far, summed: 0 when
-	## none struck it, null when a call returned no number
+	## what the take_damage of `n`, or of a node below it, returned for the play's damage stages so far, summed; null
+	## when none struck it, or a call returned no number
 	var sum := 0.0
+	var struck := false
 	for id: int in _hits:
 		var hurt: Node = _hits[id]["ref"].get_ref()
 		if hurt == null or not (hurt == n or n.is_ancestor_of(hurt)):
 			continue
 		if not _hits[id]["numbers"]:
 			return null
+		struck = true
 		sum += _hits[id]["sum"]
-	return sum
+	return sum if struck else null
 
 
 func _write(row: Dictionary) -> void:

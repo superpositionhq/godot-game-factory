@@ -491,14 +491,15 @@ no check at all, naming the task and the sentence. Fix what you find in the task
   names, only to set the fight up; `damage` for a hit taken at a known moment, through the game's own
   `take_damage`; `where` to pick the live ones (docs/task-probes.md, section 1.4). Read the result
   deterministically: a state change in a probe one sentence explains (a `prop:` of the node holding health, state
-  or phase, `damage_taken`); a hit stop by `world` `time_scale` or `frozen`, never a judge (no screenshot shows
-  it); a stagger, a knock-back or an interrupted action by the animation that plays (`clip`, `anim:`), the node
-  unable to move with the move key held, then moving again, or its distance from the attacker, never a judge. What
+  or phase, `damage_taken`); a hit stop by `frozen` of the one struck, or by `world` `time_scale` when the ask is
+  about the whole game, never a judge (no screenshot shows it) and never paired with `paused` == 0 unless the ask
+  says so (a build may stop by pausing the tree); a stagger, a knock-back or an interrupted action by the
+  animation that plays (`clip`, `anim:`), the node unable to move with the move key held, then moving again, or its distance from the attacker, never a judge. What
   it looks like (sparks, colours, glow, readability) goes to the required visual judge on named frames across the
   contact. Names come from the start commit; `set` and `where` only on members the task does not ask to change. A
   target the build invents is pinned as the nearest body that draws near the player; where that is not surely the
-  target, list the ask as not testable. Read the fix's `inputs_missed` and `probe.log`: a stage that took nothing
-  staged nothing.
+  target, list the ask as not testable. A stage that took nothing fails every probe of its play (the task check
+  says "a stage of the play didn't land"): read the fix's `inputs_missed` and `probe.log`.
 - **Hints, never answers.** An instruction may hint, in the ticket's own words, at what a player
   must see, hear or meet, or what must exist in the world, and may say that hits go through the game's damage
   method. It never says how the build names or stores it: no class, variable, function, group, node, asset or file

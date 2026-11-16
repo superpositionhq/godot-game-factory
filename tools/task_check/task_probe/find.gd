@@ -640,11 +640,18 @@ static func _put(holder: Variant, steps: PackedStringArray, i: int, value: Varia
 		next = inner[1]
 	if holder is Object:
 		holder.set(name, next)
+		# a property that takes nothing (read-only, of another type) stays as it was: no write
+		if _same(holder.get(name), current) and not _same(next, current):
+			return [false, holder]
 	elif holder is Dictionary:
 		holder[key] = next
 	else:
 		holder[name] = next
 	return [true, holder]
+
+
+static func _same(a: Variant, b: Variant) -> bool:
+	return typeof(a) == typeof(b) and a == b
 
 
 static func _fit(value: Variant, current: Variant) -> Array:

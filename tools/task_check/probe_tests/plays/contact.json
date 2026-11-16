@@ -10,13 +10,18 @@
     {"t": 0.6, "set": "armour", "on": {"name": "Foe"}, "value": 1},
     {"t": 0.6, "set": "health", "on": {"name": "Foe"}, "value": "full"},
     {"t": 0.6, "set": "health", "on": {"name": "Nobody"}, "value": 1},
+    {"t": 0.6, "set": "locked", "on": {"name": "Foe"}, "value": 1},
     {"t": 1.0, "pin": {"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": false}]}, "hold": 1.5, "front": 2.0, "offset": [0.0, 0.0, 0.0]},
     {"t": 1.5, "key": "<Keyboard>/j", "press": true},
     {"t": 1.6, "key": "<Keyboard>/j", "press": false},
     {"t": 3.0, "damage": 1, "to": {"name": "Foe"}, "from": {"name": "Post"}},
     {"t": 3.5, "damage": 15, "to": {"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": false}]}},
+    {"t": 4.0, "key": "<Keyboard>/o", "press": true},
+    {"t": 4.1, "key": "<Keyboard>/o", "press": false},
     {"t": 4.5, "damage": 20, "to": {"name": "Foe"}},
     {"t": 4.6, "damage": 7, "to": {"name": "Guard"}},
+    {"t": 4.7, "damage": 2, "to": {"name": "Dummy"}},
+    {"t": 4.8, "damage": 2, "to": {"name": "Lamp"}},
     {"t": 5.0, "damage": 5, "to": {"player": true}},
     {"t": 5.5, "key": "<Keyboard>/p", "press": true},
     {"t": 5.6, "key": "<Keyboard>/p", "press": false},
@@ -33,6 +38,7 @@
     {"id": "corpse", "kind": "objects", "select": {"name": "Corpse"}, "fields": ["prop:health", "prop:tint.r"]},
     {"id": "post", "kind": "objects", "select": {"name": "Post"}, "fields": ["damage_taken", "x", "y", "z"]},
     {"id": "player", "kind": "objects", "select": {"player": true}, "fields": ["damage_taken", "prop:health", "prop:last_source"]},
+    {"id": "dummy", "kind": "objects", "select": {"name": "Dummy"}, "fields": ["damage_taken", "prop:hits"]},
     {"id": "world", "kind": "world", "fields": ["paused", "time_scale"]}
   ]
 }
