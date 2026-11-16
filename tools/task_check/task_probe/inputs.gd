@@ -1,0 +1,570 @@
+extends RefCounted
+## A play's scripted inputs (contract section 4), sent at their times as the engine's own input events through
+## Input.parse_input_event, so the game's _input, its controls and its input actions take them as a player's: keys,
+## mouse buttons, mouse movement and the wheel, a gamepad's buttons and axes, widget clicks, touches (a tap, a long
+## press, a drag, several fingers at once) and the phone's back button; and the grader's own stages: cursor moves,
+## teleports of the player (held there for a while when asked), waits in real time, named screenshots, scene loads and
+## view turns.
+
+const Find := preload("find.gd")
+const UiScan := preload("ui_scan.gd")
+
+## Input System key names (as the other factories' plays write them) that aren't the engine's own names
+const KEYS := {
+	"enter": KEY_ENTER, "backquote": KEY_QUOTELEFT, "quote": KEY_APOSTROPHE, "semicolon": KEY_SEMICOLON, "comma": KEY_COMMA,
+	"period": KEY_PERIOD, "slash": KEY_SLASH, "backslash": KEY_BACKSLASH, "leftbracket": KEY_BRACKETLEFT,
+	"rightbracket": KEY_BRACKETRIGHT, "minus": KEY_MINUS, "equals": KEY_EQUAL, "leftshift": KEY_SHIFT, "rightshift": KEY_SHIFT,
+	"leftalt": KEY_ALT, "rightalt": KEY_ALT, "leftctrl": KEY_CTRL, "rightctrl": KEY_CTRL, "leftmeta": KEY_META,
+	"rightmeta": KEY_META, "contextmenu": KEY_MENU, "leftarrow": KEY_LEFT, "rightarrow": KEY_RIGHT, "uparrow": KEY_UP,
+	"downarrow": KEY_DOWN, "numpadenter": KEY_KP_ENTER, "numpaddivide": KEY_KP_DIVIDE, "numpadmultiply": KEY_KP_MULTIPLY,
+	"numpadplus": KEY_KP_ADD, "numpadminus": KEY_KP_SUBTRACT, "numpadperiod": KEY_KP_PERIOD, "numpad0": KEY_KP_0,
+	"numpad1": KEY_KP_1, "numpad2": KEY_KP_2, "numpad3": KEY_KP_3, "numpad4": KEY_KP_4, "numpad5": KEY_KP_5,
+	"numpad6": KEY_KP_6, "numpad7": KEY_KP_7, "numpad8": KEY_KP_8, "numpad9": KEY_KP_9, "printscreen": KEY_PRINT,
+}
+const MOUSE_BUTTONS := {
+	"leftbutton": MOUSE_BUTTON_LEFT, "rightbutton": MOUSE_BUTTON_RIGHT, "middlebutton": MOUSE_BUTTON_MIDDLE,
+	"forwardbutton": MOUSE_BUTTON_XBUTTON2, "backbutton": MOUSE_BUTTON_XBUTTON1,
+}
+const PAD_BUTTONS := {
+	"buttonsouth": JOY_BUTTON_A, "buttoneast": JOY_BUTTON_B, "buttonwest": JOY_BUTTON_X, "buttonnorth": JOY_BUTTON_Y,
+	"leftshoulder": JOY_BUTTON_LEFT_SHOULDER, "rightshoulder": JOY_BUTTON_RIGHT_SHOULDER, "start": JOY_BUTTON_START,
+	"select": JOY_BUTTON_BACK, "leftstickpress": JOY_BUTTON_LEFT_STICK, "rightstickpress": JOY_BUTTON_RIGHT_STICK,
+	"dpad/up": JOY_BUTTON_DPAD_UP, "dpad/down": JOY_BUTTON_DPAD_DOWN, "dpad/left": JOY_BUTTON_DPAD_LEFT,
+	"dpad/right": JOY_BUTTON_DPAD_RIGHT,
+}
+## a stick's y is up-positive in a play, as the other factories write it; the engine's is down-positive
+const PAD_AXES := {
+	"leftstick/x": [JOY_AXIS_LEFT_X, 1.0], "leftstick/y": [JOY_AXIS_LEFT_Y, -1.0], "rightstick/x": [JOY_AXIS_RIGHT_X, 1.0],
+	"rightstick/y": [JOY_AXIS_RIGHT_Y, -1.0], "lefttrigger": [JOY_AXIS_TRIGGER_LEFT, 1.0],
+	"righttrigger": [JOY_AXIS_TRIGGER_RIGHT, 1.0],
+}
+const BACK := "Android_Back"
+
+var probe: Node
+var rows: Array[Dictionary] = []
+var sent := 0
+var waiting := false  ## a wait input holds the play's clock
+var missed: Array = []  ## probe.json "inputs_missed": [{t, kind, target, why}]
+
+var _next := 0
+var _cursor := Vector2.ZERO
+var _cursor_set := false
+var _buttons := 0  # the mouse buttons held, as a mask
+var _parsed := false  # an event was handed to the engine in this frame
+var _touching: Array[Dictionary] = []  # fingers on the screen
+var _clicks: Array[Dictionary] = []  # widget clicks under way
+var _hold_at := Vector3.ZERO
+var _hold_until := -1.0
+var _wait_for := 0.0
+var _wait_frames := 0
+var _wait_start := 0
+
+
+func _init(owner: Node, spec: Variant) -> void:
+	probe = owner
+	if spec is Array:
+		for item: Variant in spec:
+			if item is Dictionary and _kind(item) != "":
+				rows.append(item)
+	# by time, rows of one time in the order the task wrote them (a stable sort; rows are few)
+	for i in range(1, rows.size()):
+		var row := rows[i]
+		var j := i - 1
+		while j >= 0 and _at(rows[j]) > _at(row):
+			rows[j + 1] = rows[j]
+			j -= 1
+		rows[j + 1] = row
+
+
+static func _at(row: Dictionary) -> float:
+	return Find.num(row, "t")
+
+
+static func _kind(row: Dictionary) -> String:
+	## what a row asks for, tried in this order; "" for a row that is none of them (it is left out)
+	if Find.text(row, "widget") != "" and Find.flag(row, "click"):
+		return "click"
+	if row.has("tap"):
+		return "tap"
+	if row.has("drag"):
+		return "drag"
+	if Find.numbers(row.get("cursor"), 2).size() == 2:
+		return "cursor"
+	if not Find.obj(row, "teleport_to").is_empty():
+		return "teleport_to"
+	if Find.numbers(row.get("teleport"), 3).size() == 3:
+		return "teleport"
+	if row.get("shot") is String:
+		return "shot"
+	if row.get("scene") is String:
+		return "scene"
+	if Find.numbers(row.get("view"), 2).size() == 2:
+		return "view"
+	if Find.has_num(row, "wait"):
+		return "wait"
+	return "key" if row.get("key") is String else ""
+
+
+# ---------------------------------------------------------------- the play's frames
+
+
+func send(elapsed: float) -> void:
+	## every input due at play time `elapsed`, then the part due by now of what is under way (a finger's path, a
+	## click's release); stops at a wait (the inputs after it wait for its end)
+	_step(elapsed)
+	while not waiting and _next < rows.size() and _at(rows[_next]) <= elapsed + 1e-9:
+		var row := rows[_next]
+		_next += 1
+		_send_one(row, elapsed)
+		sent += 1
+	_flush()
+
+
+func wait_tick() -> void:
+	## one frame of a wait: the game runs paced to real time; the wait is over when its seconds of both real and game
+	## time have passed
+	_wait_frames += 1
+	var game := _wait_frames / float(probe.fps)
+	var real := (Time.get_ticks_msec() - _wait_start) / 1000.0
+	if game < _wait_for or real < _wait_for:
+		return
+	waiting = false
+	probe.pace(false)
+	probe.note("the wait is over (%.1f s of game time, %.1f s of real time)" % [game, real])
+
+
+func hold(elapsed: float) -> void:
+	## a held player goes back to its spot, still
+	if elapsed >= _hold_until:
+		return
+	var player: Node = probe.player()
+	var at: Variant = Find.place(player) if player != null else null
+	if at == null:
+		return
+	if (at as Vector3).distance_squared_to(_hold_at) > 1e-6:
+		_place(player, _hold_at, null)
+	else:
+		_still(player)
+
+
+func finish() -> void:
+	## the play is over: no finger and no button stays down
+	for touch in _touching:
+		if touch["down"]:
+			_touch_event(touch["finger"], touch["last"], false)
+	_touching.clear()
+	_flush()
+
+
+func _flush() -> void:
+	# the engine hands buffered events to the game when its next frame starts; flushed here, the game's _input runs
+	# now, before its scripts' _process of this frame
+	if _parsed:
+		Input.flush_buffered_events()
+	_parsed = false
+
+
+func _parse(event: InputEvent) -> void:
+	Input.parse_input_event(event)
+	_parsed = true
+
+
+func _miss(row: Dictionary, kind: String, target: String, why: String) -> void:
+	missed.append({"t": _at(row), "kind": kind, "target": target, "why": why})
+	probe.note("missed: %s %s at %.2f s: %s" % [kind, target, _at(row), why])
+
+
+func _send_one(row: Dictionary, elapsed: float) -> void:
+	match _kind(row):
+		"click":
+			_click(row, elapsed)
+		"tap", "drag":
+			_touch(row, elapsed)
+		"cursor":
+			var xy := Find.numbers(row.get("cursor"), 2)
+			_move_cursor(UiScan.fraction(xy[0], xy[1]), Vector2.ZERO)
+			probe.note("cursor to (%.3f, %.3f)" % [clampf(xy[0], 0.0, 1.0), clampf(xy[1], 0.0, 1.0)])
+		"teleport_to":
+			_teleport_to(row, elapsed)
+		"teleport":
+			var player: Node = probe.player()
+			if player == null or Find.place(player) == null:
+				probe.note("teleport skipped (no player)")
+			else:
+				_place(player, Find.vec3(row.get("teleport")), Find.num(row, "yaw") if Find.has_num(row, "yaw") else null)
+				_start_hold(row, player, elapsed)
+		"shot":
+			if not probe.shot(Find.text(row, "shot")):
+				_miss(row, "shot", Find.text(row, "shot"), "its name isn't a letter or _ first, then letters, digits, _")
+		"scene":
+			if not probe.load_scene(Find.text(row, "scene")):
+				_miss(row, "scene", Find.text(row, "scene"), "the project has no such scene")
+		"view":
+			_view(row)
+		"wait":
+			waiting = true
+			_wait_for = clampf(Find.num(row, "wait"), 0.0, 600.0)
+			_wait_frames = 0
+			_wait_start = Time.get_ticks_msec()
+			probe.pace(true)
+			probe.note("the play's clock holds at %.2f s for %.1f s of real time" % [elapsed, _wait_for])
+		"key":
+			if Find.has_num(row, "axis"):
+				_control(Find.text(row, "key"), Find.num(row, "axis"), true)
+			else:
+				_control(Find.text(row, "key"), 1.0 if row.get("press", true) else 0.0, false)
+
+
+func _step(elapsed: float) -> void:
+	# fingers on the screen: the part due by now (one that went down in this frame was sent its press already)
+	var down: Array[Dictionary] = []
+	for touch in _touching:
+		_move_touch(touch, elapsed)
+		if not touch["finished"]:
+			down.append(touch)
+	_touching = down
+	# widget clicks: the release a frame after the press, then whether the button took it
+	var open: Array[Dictionary] = []
+	for click in _clicks:
+		click["frames"] += 1
+		if click["frames"] == 1:
+			_button(MOUSE_BUTTON_LEFT, false)
+		if click["frames"] < 3:
+			open.append(click)
+		elif click["watched"] and not click["taken"][0]:
+			_miss(click["row"], "click", click["label"], "the click at its centre didn't press it (another control is over it, or it takes no click)")
+	_clicks = open
+
+
+# ---------------------------------------------------------------- keys, buttons, axes, the cursor
+
+
+func _where() -> Vector2:
+	if not _cursor_set:
+		_cursor = UiScan.fraction(0.5, 0.5)  # the pointer starts at the frame's centre
+		_cursor_set = true
+	return _cursor
+
+
+func _move_cursor(to: Vector2, relative: Vector2) -> void:
+	var from := _where()
+	_cursor = to
+	var motion := InputEventMouseMotion.new()
+	motion.position = to
+	motion.global_position = to
+	motion.relative = relative if relative != Vector2.ZERO else to - from
+	motion.screen_relative = motion.relative
+	motion.button_mask = _buttons
+	_parse(motion)
+
+
+func _button(index: MouseButton, down: bool, factor: float = 1.0) -> void:
+	var bit := 1 << (index - 1)
+	if index <= MOUSE_BUTTON_MIDDLE or index >= MOUSE_BUTTON_XBUTTON1:
+		_buttons = (_buttons | bit) if down else (_buttons & ~bit)
+	var event := InputEventMouseButton.new()
+	event.button_index = index
+	event.pressed = down
+	event.factor = factor
+	event.position = _where()
+	event.global_position = _where()
+	event.button_mask = _buttons
+	_parse(event)
+
+
+func _key(code: Key, down: bool) -> void:
+	var event := InputEventKey.new()
+	event.keycode = code
+	event.physical_keycode = code
+	event.key_label = code
+	if code >= KEY_SPACE and code <= KEY_ASCIITILDE:
+		event.unicode = String.chr(code).to_lower().unicode_at(0)
+	event.pressed = down
+	_parse(event)
+
+
+func _control(path: String, value: float, is_axis: bool) -> void:
+	## a control's value: a key or a button pressed or released, or an axis set
+	if path == BACK:
+		# as a phone's back button reaches a game: the window's request (which quits a game that left
+		# quit_on_go_back on, as on a phone), its notification down the tree, and the key
+		if value != 0.0:
+			var root: Window = probe.get_tree().root
+			root.go_back_requested.emit()
+			if probe.is_inside_tree():
+				root.propagate_notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+		_key(KEY_BACK, value != 0.0)
+		return
+	var slash := path.find("/")
+	if slash < 0:
+		probe.error("inputs: no control " + path)
+		return
+	var device := path.substr(0, slash)
+	var control := path.substr(slash + 1)
+	var lower := control.to_lower()
+	if device == "<Keyboard>":
+		var code: Key = KEYS.get(lower, KEY_NONE)
+		if code == KEY_NONE:
+			code = OS.find_keycode_from_string(control)
+		if code == KEY_NONE:
+			probe.error("inputs: the keyboard has no key " + control)
+			return
+		_key(code, value != 0.0)
+	elif device == "<Mouse>":
+		if MOUSE_BUTTONS.has(lower):
+			_button(MOUSE_BUTTONS[lower], value != 0.0)
+		elif lower == "delta/x" or lower == "delta/y":
+			var by := Vector2(value, 0.0) if lower == "delta/x" else Vector2(0.0, value)
+			_move_cursor(_where(), by)
+		elif lower == "scroll/x" or lower == "scroll/y":
+			# a wheel turned by so many notches, each a press and a release of the wheel's own button
+			var up := MOUSE_BUTTON_WHEEL_UP if lower == "scroll/y" else MOUSE_BUTTON_WHEEL_RIGHT
+			var down := MOUSE_BUTTON_WHEEL_DOWN if lower == "scroll/y" else MOUSE_BUTTON_WHEEL_LEFT
+			for i in clampi(roundi(absf(value)), 1, 20) if value != 0.0 else 0:
+				_button(up if value > 0.0 else down, true)
+				_button(up if value > 0.0 else down, false)
+		else:
+			probe.error("inputs: the mouse has no control " + control)
+	elif device == "<Gamepad>":
+		if PAD_BUTTONS.has(lower) and not is_axis:
+			var press := InputEventJoypadButton.new()
+			press.device = 0
+			press.button_index = PAD_BUTTONS[lower]
+			press.pressed = value != 0.0
+			press.pressure = 1.0 if value != 0.0 else 0.0
+			_parse(press)
+		elif PAD_AXES.has(lower):
+			var turn := InputEventJoypadMotion.new()
+			turn.device = 0
+			turn.axis = PAD_AXES[lower][0]
+			turn.axis_value = clampf(value * PAD_AXES[lower][1], -1.0, 1.0)
+			_parse(turn)
+		else:
+			probe.error("inputs: the gamepad has no control " + control)
+	else:
+		probe.error("inputs: no device for " + path)
+
+
+func _click(row: Dictionary, _elapsed: float) -> void:
+	## a click on a widget: the mouse moved to its centre, the left button pressed, and let go in the next frame
+	var want := Find.text(row, "widget")
+	var found: Control = null
+	for c in UiScan.controls():
+		if (String(c.name).matchn(want) or Find.is_a(c, want)) and UiScan.visible(c) and UiScan.rect(c) != null \
+				and UiScan.usable(c) != 0.0 and c.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+			found = c
+			break
+	if found == null:
+		_miss(row, "click", want, "no visible control that takes a click matches it")
+		return
+	var label := "%s (%s)" % [found.name, Find.class_of(found)]
+	var taken := [false]
+	var watched := found is BaseButton
+	if watched:
+		var mark := func() -> void: taken[0] = true
+		(found as BaseButton).pressed.connect(mark, CONNECT_ONE_SHOT)
+	_move_cursor(UiScan.centre(found), Vector2.ZERO)
+	_button(MOUSE_BUTTON_LEFT, true)
+	_clicks.append({"row": row, "label": label, "frames": 0, "watched": watched, "taken": taken})
+	probe.note("clicked " + label)
+
+
+# ---------------------------------------------------------------- touches
+
+
+func _spot(value: Variant) -> Variant:
+	## where a touch's spot is, as an input event names it: a point of the frame [fx, fy], or a widget's centre
+	var xy := Find.numbers(value, 2)
+	if xy.size() == 2:
+		return UiScan.fraction(xy[0], xy[1])
+	if value is Dictionary:
+		var found := UiScan.named(Find.text(value, "widget"))
+		if found != null:
+			return UiScan.centre(found)
+	return null
+
+
+static func _spot_name(value: Variant) -> String:
+	if value is Dictionary:
+		return Find.text(value, "widget")
+	var xy := Find.numbers(value, 2)
+	return "%.3f, %.3f" % [xy[0], xy[1]] if xy.size() == 2 else str(value)
+
+
+func _touch(row: Dictionary, elapsed: float) -> void:
+	## a finger going down: its spots are found now (a widget's centre as it is laid out at this moment), then it is
+	## sent a part each frame until it lifts
+	var drag := row.has("drag")
+	var kind := "drag" if drag else "tap"
+	var spots: Array = row.get("drag") if drag and row.get("drag") is Array else [row.get("tap")]
+	var finger := roundi(Find.num(row, "finger"))
+	if spots.size() < (2 if drag else 1) or spots.size() > 16:
+		_miss(row, kind, "its spots", "a drag has 2 to 16 spots")
+		return
+	if finger < 0 or finger > 9:
+		_miss(row, kind, "finger %d" % finger, "a finger is 0 to 9")
+		return
+	for touch in _touching:
+		if touch["finger"] == finger and not touch["finished"]:
+			_miss(row, kind, _spot_name(spots[0]), "finger %d is still down from an earlier touch" % finger)
+			return
+	var points: Array[Vector2] = []
+	for spot: Variant in spots:
+		var at: Variant = _spot(spot)
+		if at == null:
+			_miss(row, kind, _spot_name(spot), "no visible control matches it" if spot is Dictionary else "not a point of the frame")
+			return
+		points.append(at)
+	var touch := {
+		"kind": kind, "finger": finger, "points": points, "start": elapsed, "last": points[0], "down": true, "finished": false,
+		"over": clampf(Find.num(row, "over"), 0.0, 120.0) if drag else 0.0, "hold": clampf(Find.num(row, "hold"), 0.0, 120.0),
+	}
+	_touching.append(touch)
+	_touch_event(finger, points[0], true)
+	probe.note("%s finger %d down at (%.0f, %.0f)" % [kind, finger, points[0].x, points[0].y])
+
+
+func _move_touch(touch: Dictionary, elapsed: float) -> void:
+	## one finger's part due by now: a move when its place changed, up once its path and its hold are over (never in
+	## the frame it went down, so a tap is a press in one frame and a release in the next)
+	var since: float = elapsed - touch["start"]
+	var points: Array[Vector2] = touch["points"]
+	var over: float = touch["over"]
+	var to := points[points.size() - 1]
+	if points.size() > 1 and over > 0.0 and since < over:
+		var along := clampf(since / over, 0.0, 1.0) * (points.size() - 1)
+		var i := mini(floori(along), points.size() - 2)
+		to = points[i].lerp(points[i + 1], along - i)
+	var last: Vector2 = touch["last"]
+	if not to.is_equal_approx(last):
+		var move := InputEventScreenDrag.new()
+		move.index = touch["finger"]
+		move.position = to
+		move.relative = to - last
+		move.screen_relative = to - last
+		move.velocity = (to - last) * probe.fps
+		move.screen_velocity = move.velocity
+		_parse(move)
+		touch["last"] = to
+	if since >= (over if points.size() > 1 else 0.0) + touch["hold"] - 1e-9:
+		_touch_event(touch["finger"], to, false)
+		touch["finished"] = true
+		probe.note("%s finger %d up at (%.0f, %.0f) after %.2f s" % [touch["kind"], touch["finger"], to.x, to.y, since])
+
+
+func _touch_event(finger: int, at: Vector2, down: bool) -> void:
+	var event := InputEventScreenTouch.new()
+	event.index = finger
+	event.position = at
+	event.pressed = down
+	_parse(event)
+
+
+# ---------------------------------------------------------------- teleports
+
+
+func _start_hold(row: Dictionary, player: Node, elapsed: float) -> void:
+	var seconds := clampf(Find.num(row, "hold"), 0.0, 600.0)
+	if seconds <= 0.0:
+		return
+	_hold_at = Find.place(player)
+	_hold_until = elapsed + seconds
+	probe.note("holding the player at (%.2f, %.2f, %.2f) for %.1f s" % [_hold_at.x, _hold_at.y, _hold_at.z, seconds])
+
+
+func _teleport_to(row: Dictionary, elapsed: float) -> void:
+	var player: Node = probe.player()
+	var here: Variant = Find.place(player) if player != null else null
+	if here == null:
+		probe.note("teleport_to skipped (no player)")
+		return
+	var select := Find.obj(row, "teleport_to")
+	Find.check(select, "inputs: teleport_to")
+	var target: Node = null
+	var best := INF
+	for n in Find.objects(select):
+		var at: Variant = Find.place(n)
+		if at == null or n == player or player.is_ancestor_of(n):
+			continue
+		var d := (at as Vector3).distance_squared_to(here)
+		if d < best:
+			best = d
+			target = n
+	if target == null:
+		probe.note("teleport_to skipped (no object matches)")
+		return
+	var there: Vector3 = Find.place(target)
+	var flat := target is Node2D or target is Control  # a 2D game has no level line: the side is in its plane
+	var side: Vector3 = (here as Vector3) - there
+	if not flat:
+		side.y = 0.0
+	if side.length_squared() < 1e-6 and target is Node3D:
+		side = (target as Node3D).global_basis.z  # the player is right above it: the side its back is to
+		side.y = 0.0
+	side = (Vector3.LEFT if flat else Vector3.BACK) if side.length_squared() < 1e-6 else side.normalized()
+	var spot := there + side * clampf(Find.num(row, "distance", 2.0), 0.0, 1000.0) + Find.vec3(row.get("offset"))
+	var face := there
+	var faced: Variant = Find.point(Find.obj(row, "face")) if not Find.obj(row, "face").is_empty() else null
+	if faced != null:
+		face = faced
+	var look := face - spot
+	var yaw: Variant = null
+	# nothing to face within a centimetre on the level: it keeps its own yaw
+	if not flat and look.x * look.x + look.z * look.z > 1e-4:
+		yaw = rad_to_deg(atan2(-look.x, -look.z))
+	_place(player, spot, yaw)
+	var now: Vector3 = Find.place(player)
+	probe.note("teleported next to %s: asked (%.2f, %.2f, %.2f) yaw %s, now at (%.2f, %.2f, %.2f)" % [
+		target.name, spot.x, spot.y, spot.z, "%.1f" % yaw if yaw != null else "kept", now.x, now.y, now.z])
+	_start_hold(row, player, elapsed)
+
+
+func _view(row: Dictionary) -> void:
+	## the player turns to the yaw and the camera to the pitch and yaw, once: a camera rig that sets its own rotation
+	## every frame may turn it back
+	var pitch_yaw := Find.numbers(row.get("view"), 2)
+	var pitch := clampf(pitch_yaw[0], -89.0, 89.0)
+	var yaw: float = pitch_yaw[1]
+	var player: Node = probe.player()
+	if player is Node3D:
+		var turned := (player as Node3D).global_rotation_degrees
+		(player as Node3D).global_rotation_degrees = Vector3(turned.x, yaw, turned.z)
+	var view: Node = probe.view()
+	if view is Camera3D:
+		(view as Camera3D).global_rotation_degrees = Vector3(pitch, yaw, 0.0)
+	probe.note("view turned to pitch %.1f yaw %.1f%s" % [pitch, yaw, "" if view is Camera3D else " (no 3D camera)"])
+
+
+static func _place(player: Node, position: Vector3, yaw: Variant) -> void:
+	## the player at `position`, facing `yaw` when given, standing still
+	if player is Node3D:
+		var body := player as Node3D
+		body.global_position = position
+		if yaw != null:
+			var turned := body.global_rotation_degrees
+			body.global_rotation_degrees = Vector3(turned.x, yaw, turned.z)
+		if body is RigidBody3D:  # a rigid body's place is the physics server's: tell it too
+			PhysicsServer3D.body_set_state((body as RigidBody3D).get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, body.global_transform)
+		body.reset_physics_interpolation()
+	elif player is Node2D:
+		var flat := player as Node2D
+		flat.global_position = Vector2(position.x, position.y)
+		if flat is RigidBody2D:
+			PhysicsServer2D.body_set_state((flat as RigidBody2D).get_rid(), PhysicsServer2D.BODY_STATE_TRANSFORM, flat.global_transform)
+		flat.reset_physics_interpolation()
+	elif player is Control:
+		(player as Control).global_position = Vector2(position.x, position.y)
+	_still(player)
+
+
+static func _still(player: Node) -> void:
+	if player is CharacterBody3D:
+		(player as CharacterBody3D).velocity = Vector3.ZERO
+	elif player is RigidBody3D:
+		(player as RigidBody3D).linear_velocity = Vector3.ZERO
+		(player as RigidBody3D).angular_velocity = Vector3.ZERO
+	elif player is CharacterBody2D:
+		(player as CharacterBody2D).velocity = Vector2.ZERO
+	elif player is RigidBody2D:
+		(player as RigidBody2D).linear_velocity = Vector2.ZERO
+		(player as RigidBody2D).angular_velocity = 0.0

@@ -1,0 +1,15 @@
+{
+  "seconds": 5,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/Second.tscn",
+  "inputs": [
+    {"t": 3.0, "scene": "res://scenes/Main.tscn"},
+    {"t": 4.0, "scene": "res://scenes/None.tscn"}
+  ],
+  "queries": [
+    {"id": "texts", "kind": "ui", "select": {"kind": "text"}, "fields": ["text"]},
+    {"id": "walker", "kind": "objects", "select": {"name": "Walker"}, "fields": ["roll", "speed", "x"]},
+    {"id": "cam", "kind": "camera", "fields": ["player_on_screen"]}
+  ]
+}

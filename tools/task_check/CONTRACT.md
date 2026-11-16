@@ -1,0 +1,577 @@
+# Godot task verifier: engineering contract
+
+The task verifier of godot-game-factory: the checker (`tools/task-check.py`, `tools/task-try.py`,
+`tools/task_check/*.py`), the validator (`tools/validate-game.py`), the task schema
+(`docs/schemas/game-task.schema.json`) and the probe, the GDScript addon `tools/task_check/task_probe/` that the
+checker adds to its copy of a game. A change to any of them is checked against this file. It holds the terms and units
+(section 1), the task format and the rules beyond the schema (section 2), how the probe reads each measure (section 3),
+the plays and inputs (section 4), the files the probe and the checker exchange (section 5) and the probe addon
+(section 6).
+
+The users' documents describe the same behaviour for their readers and must agree with this file:
+`docs/task-probes.md` (what each measure means, for a task's author), `docs/task-check.md` and `docs/task-try.md`. What
+a field means is there; this file holds what an implementer needs beyond it.
+
+## 1. Terms and units
+
+| Term | Meaning |
+|---|---|
+| object | a Node. Its **parts** are itself and the nodes below it |
+| shown | in the tree and not hidden: the nearest node at or above it that can be hidden (a `CanvasItem`, a `Node3D`) reads `is_visible_in_tree()`, and no `CanvasLayer` above it is hidden (`Find.shown`). A node that isn't shown is **inactive**: a select leaves it out unless it says `"inactive": true` |
+| player | the first node the task's `player` select matches (when it matches nothing there is no player: no fallback), else the first shown node, in tree order, of the group `player` (then `Player`), else the first shown `CharacterBody3D`, else the first shown `CharacterBody2D`, else the player camera (next row); looked up again before the game's scripts and after them (`task_probe.gd` `player`, `_find_player`) |
+| player camera | the window's current `Camera3D` (`Viewport.get_camera_3d`), else its current `Camera2D` (`task_probe.gd` `view`, looked up once a pass) |
+| scene | the scene a play opens and the game's arguments: `play_scene` (`res://scenes/X.tscn`) and `play_args` (`["-scenario", "2"]`, after `--` on the engine's command line) |
+| class | what a select's `component` names: an engine class (`MeshInstance3D`; the classes it inherits match, `Node3D` takes every 3D node), a script's `class_name`, or a script's file name without its extension (`coin` for `coin.gd`); a script that extends another matches the other's too (`Find.is_a`). A name no node can be of (no engine class, no `class_name`, no script file of the project) matches nothing and says so once (`<kind> <id>: no component type <name>`) |
+| tag | a group (`Node.is_in_group`) |
+| widget | a `Control` node of the game's window |
+| frame | what the game's window shows, at the play's exact size (section 4). A rectangle or a point of it is in fractions 0-1 from its top left, y down |
+| units | m and m/s for a 3D node. A 2D node (a `Node2D`, a `Control`) reads its global position in the engine's 2D units, y down, with z 0, and its rotation as `roll`. Limits: a near's radius up to 100,000 (its `y_min`/`y_max` within +-100,000), a teleport's `distance` and a camera point's `forward` up to 1000 |
+| axes and angles | Y up, -Z forward. `pitch`, `yaw`, `roll` are a node's `global_rotation_degrees` x, y and z, normalised to (-180, 180]: yaw 0 looks along -Z and a positive yaw turns left (counter-clockwise seen from above); a positive `pitch` looks up |
+| build | the scratch copy made ready to play: the engine's import, then every script loaded (section 5). There is no player build: a play runs the copy from source with the editor binary |
+| play | the copy run with the editor binary and the probe, started by the checker on a Windows desktop of its own (`desk.py`): nothing on the user's screen, no keyboard or cursor taken. Its frame is 960x540 for a desktop game and the phone's size for a mobile game (1920x1080 landscape, 1080x1920 portrait: the copy's `Platform.json`) |
+| engine | Godot 4.7: `project.godot` `config/features` holds `"4.7"`; task `"engine": "godot-4.7"` |
+| machine | `GGF_ROOT`, `ggfroot` (`machine/lib/ggfroot.py`: `root()`, `godot_exe(console=True)`, `check_free(path, what)`), `godot-heavy.ps1` (`machine/tools/`, run as `<root>\tools\godot-heavy.ps1`) |
+
+Forward vector from a camera row: `[-cos(pitch) * sin(yaw), sin(pitch), -cos(pitch) * cos(yaw)]` (degrees in; the
+probe's own `{"camera": true}` point uses the camera's -Z axis, the same direction). "Height" is `y` (index 2 of a
+`[t, x, y, z]` row).
+
+## 2. The task format (`game-task/1`)
+
+The task format is `docs/schemas/game-task.schema.json`. This section gives what of it an implementer needs beside the
+code, the validator's rules beyond the schema (`tools/validate-game.py`) and the task check's own rules (`verdict.py`,
+`probes.py`).
+
+The task:
+
+- `engine`: const and default `"godot-4.7"`.
+- `play_scene` (string or null; `^res://[A-Za-z0-9_ /.()-]+\.(tscn|scn)$`, at most 300 characters) and `play_args` (at
+  most 16 strings; default `[]`).
+- `player` (optional): an object select that names the player (section 1) for every play of the task. It stays in the
+  agent's half of a split task (`tools/split-tasks.py`: it names an object; it isn't an answer).
+- Every check names its `kind`: required, with no default, since a check that gave only its `name` would fit several
+  shapes at once (`build`, `boot`, `package`).
+
+Plays and inputs:
+
+- A task play: `name`, `seconds`, `every`, `inputs`, `scene` and `args`. `scene` and `args` have no default: a play's
+  own key, when it is there, takes the place of the task's `play_scene` / `play_args` for that play (`"scene": null`
+  opens the project's main scene).
+- Play arguments (`play_args`, a play's `args`): each `^-?[A-Za-z0-9_.:=,/-]{1,60}$`, at most 16. They follow `--` and
+  the probe's own `-taskProbe <spec>` on the command line, so the engine never reads one as its own flag: the game
+  reads them with `OS.get_cmdline_user_args()`. The validator refuses the probe's own (any flag starting with
+  `taskprobe`, any case) and, in a mobile game's tasks, a flag that would choose the renderer or the frame's size
+  (`--rendering-method`, `--rendering-driver`, `--resolution`, `-size`).
+- Inputs (section 4): `key` (key and axis rows) is a control path,
+  `^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$`, or the bare key `Android_Back` (a key row only); a widget click's
+  `widget` is a wildcard on a name, or a class name (`^[A-Za-z0-9_.*?() -]{1,120}$`); a touch's spot is `[fx, fy]` or
+  `{"widget": "<name>"}` (`^[A-Za-z0-9_*?]{1,120}$`); `teleport_to`'s `distance` defaults to 2 m.
+- Touches (`tap`, `drag`): one finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and
+  every touch is over by the play's end (the validator's `TOUCH_GAP`).
+
+Selects and points:
+
+- `component` in every select (object select, `has`, components, widgets) and in `spawns`: a class name,
+  `^[A-Za-z_][A-Za-z0-9_]{0,120}$` (what it matches: section 1).
+- Object select (`Select`): `component` (the node's own class), `tag`, `name` (a wildcard on the node's whole name,
+  any case), `near`, `has`, `where`, `player` (true), `inactive` (true lets nodes that aren't shown match). `has`:
+  `component`, `visible`, `near`, `simulating` (at least one key; `visible`, `simulating` only `true`). `where`: 1 to
+  4 conditions `{"prop": <path>, "op": "==|!=|>|>=|<|<=", "value": <number, boolean or string>}`, every one must hold.
+- Component select: `component` or `effect` or both, `name`, `owner` (an object select), `near`, `mesh`, `visible`,
+  `inactive`.
+- Widget select: `component`, `name`, `text` (a regular expression on its text), `visible`.
+- UI select: `kind` (`text`, `box`, `image`), `text`, `rect`.
+- Audio select: `sound` (a wildcard on the stream's name), `sound_class` (a wildcard on the bus's name), `owner`.
+- A name a wildcard reads (`name`, `mesh`, `sound`, `sound_class`) may hold parentheses and spaces:
+  `^[A-Za-z0-9_.*?() -]{1,120}$`.
+- Points: `{"xyz": [x, y, z]}`, `{"player": true, "offset": [x, y, z]}`, `{"camera": true, "forward": m}`,
+  `{"object": <object select>, "offset": [x, y, z]}`. `near`: `{"point", "radius", "y_min", "y_max", "y_relative"}`.
+
+Measures:
+
+- Probe kinds: `player`, `camera`, `objects`, `components`, `widgets`, `ui`, `screen`, `spawns`, `log`, `audio`,
+  `render`. A check's `play` is `look`, `drive` or a task play.
+- `objects` fields: the schema's pattern lists them. A Part name (`rel_yaw:`, `world_yaw:`, `world_pitch:`,
+  `world_roll:`, `forward:`) is a node's name, `[A-Za-z0-9_][A-Za-z0-9_ ()-]{0,63}`; an `anim:` parameter may hold
+  dots and slashes (`anim:conditions/jump`, `anim:Blend2/blend_amount`).
+- `components` fields include `prop:<path>` (on the node itself); the measure takes `match` (a `prop:` string).
+- `spawns`: `{"probe": "spawns", "component": "<class>", "field": "spawned|destroyed"}`.
+- `audio` fields: `count`, `audible`, `volume`, `max_volume`, `level`, `started`.
+- `render`: `{"probe": "render", "field": "draw_calls|triangles|texture_mb"}`.
+
+The validator's rules beyond the schema include:
+
+- a screen rect has x0 < x1 and y0 < y1; a player measure's `dist` has its `to`; a measure sets `to_angle` or
+  `to_axis`, not both, and `window` or `at`, not both;
+- every regular expression of a measure compiles (`match`, a log's `pattern`, a select's `text`), so none can stop the
+  task check;
+- the task's `player` select names no `player` and no point on the player (it says which node the player is);
+- a project path (the task's `play_scene`, a task play's `scene`) has no `.` or `..` part and no empty one;
+- a warning, never an error, when a `teleport_to`, an object point or an `"of": "first"` measure takes its one object
+  by a wildcard name and nothing else: a spawner, a pool or a parent named like the things fits too.
+
+Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's
+`NEVER_LITERAL`): objects `spin`; components `intensity`, `extent_*`, `spin`; `screen` (all); audio `volume`,
+`max_volume`, `level`. A `render` field takes a literal: a budget is a number of its own.
+
+Five of the task check's rules, each closing a case that would otherwise read wrongly:
+
+- a still-works probe is excused only when its start play has no samples ("no samples in the window": the play
+  crashed, ended early or wrote no probe file); one that finds nothing to measure in a start that ran counts against
+  the task (`verdict.verdict`);
+- a check without a reference needs a threshold for every required probe, still-works ones too: an uncalibrated one is
+  a reason, "<name> has no threshold: <detail>" (`verdict.verdict`);
+- a calibrated threshold anchored on the reference alone (the start measured nothing) needs a reference other than 0
+  (`verdict.make_threshold`);
+- "no value in the window (nothing it selects was measured); the probe said: <error>" quotes only an error about that
+  measure's own query (a `query_errors` line starting `<kind> <id>:`, `<kind> <id> (` or `<kind>: `), never another
+  query's (`probes._own_errors`);
+- a sample without the player (a `[t]` track row) or without a camera row has no value for the player's and the
+  camera's own fields, so a play that ran but never found them fails "no value in the window", not "no samples"
+  (`probes.series`).
+
+A `file_exists` glob leaves out the engine's and the checker's folders (`.godot`, `Build`, `Logs`, `android`, `.git`;
+`check.SKIP`).
+
+## 3. Measures
+
+What each field means, for a task's author, is `docs/task-probes.md` section 2, and this section doesn't repeat it.
+It says, kind by kind, where the probe reads the measure (the script, its constants) and what it writes for the logs
+beyond the fields. The reduction (`window`, `at`, `agg`, `of`, `match`, `to_angle`, `to_axis`; every match counted
+past the 200 rows through the sample's `total` and `full`) is the checker's (`probes.py`).
+
+- **Selects and rows** (`find.gd`, `query.gd` `write_rows`). Matches come in tree order, as the engine lists the tree
+  (`Node.find_children`, depth first): the root's children in order, so the autoloads first, then the current scene;
+  the same in every play. The nodes are listed once a pass (`Find.all_nodes`, kept by the probe's `stamp`), so a search
+  an input makes never serves the samples. The probe's own nodes (the autoload and what is under it) are never
+  selected (`Find.is_own`). An object select's `component` is the node's own class; a `has` takes the node and every
+  node below it (the shown ones; all of them with `inactive`). Points nest as deep as `Find.MAX_DEPTH` (3: two object
+  selects inside a select's points, the second without a point of its own); a point tries its forms in this order:
+  `xyz`, `player`, `camera`, `object`. Every match is read; `write_rows` keeps the first 200 as rows and, when more
+  matched, writes `total` and `full`, an entry for every field asked for, in the order asked. A select that matches
+  nothing writes an empty `rows` (no `total`, no error): the checker reads a `count` of 0 and no value for any other
+  field. Every row has `name` (the node's) and `class`, for the logs: its script's `class_name`, else its script's
+  file name without the extension, else its engine class (`Find.class_of`); a components row also has `owner`, its
+  parent's name. A field with no value is left out of its row.
+- **prop:** (`Find.prop`, `Find.read`, `Find.plain`): a path of members, each a node's or a resource's property or a
+  variable of its script (`name in object`, then `Object.get`), a dictionary's entry by its key (a string, a
+  StringName or a whole number), a vector's, colour's, rectangle's or transform's part by its own name (`.x`, `.r`,
+  `.origin`), `[i]` an element of an array. On an object, `prop:<Class>.<member>` reads the node itself when it is of
+  that class, else the first node below it that is; a path that names no class the node is or holds is read on the
+  node itself; `prop:<Class>` alone is 1 when the node is or holds one, no value when not. A path of more than 16
+  steps reads nothing. The value as the checker takes it (`Find.plain`): numbers and booleans as numbers, a string (a
+  StringName, a NodePath) as a string, an object 1 when set and still alive and 0 when not (`null` is 0), an array, a
+  packed array or a dictionary its size; anything else (a vector or a colour without its part) no value. A step that
+  stops at `null` before the path's end has no value.
+- **player**, **camera**: the checker computes every field but two from the track rows `[t, x, y, z]` (the player's
+  place, `Find.place`; `[t]` without a player) and the camera rows `[t, x, y, z, pitch, yaw, fov]` of the player
+  camera the probe writes every sample (`probes.series`). `fov` is a `Camera3D`'s field of view in degrees (the
+  vertical one with the engine's default `keep_aspect`), 0 for an orthogonal or a frustum camera. A `Camera2D`'s row
+  is its screen's centre (`get_screen_center_position`) with z, pitch, yaw and fov 0. A player `dist` to an
+  `{"object": ...}` point reads an `objects` query of that select's `x`, `y`, `z`. `occluded` and `player_on_screen`
+  come from a `camera` query (`queries/camera.gd`; its value repeats the row's fields): a ray of the 3D physics space
+  (`direct_space_state.intersect_ray`, bodies only, areas never) from the camera to the player's centre, the player's
+  bodies and those under the camera skipped (up to 32 of them); the centre projected into the frame, in front of the
+  camera. With a `Camera2D`: `occluded` 0, and `player_on_screen` 1 when the centre is inside the rectangle the
+  camera shows. The player's centre is the centre of the box around what it draws (`Find.box`), else its place.
+- **objects** (`queries/objects.gd`):
+  - `extent_*`: half the world-aligned box around what the node and the nodes below it draw, the shown ones
+    (`Find.box`, `Find.own_box`): a `VisualInstance3D`'s `get_aabb()` in the world (a light aside), a 2D node's
+    `get_rect()` (a sprite), a `Control`'s rectangle. No value when it draws nothing;
+  - `hidden`: 1 when it isn't shown, or it has nodes that draw and none of them is shown; `collision`: 1 when a
+    `PhysicsBody3D` or `PhysicsBody2D` in it (an area never) has a `CollisionShape` or `CollisionPolygon` that isn't
+    disabled, 0 when it isn't shown; `simulating`: a `RigidBody3D` or `RigidBody2D` in it that isn't frozen;
+  - `speed` (`motion.gd`): the node's own velocity when it reports one that isn't zero (a `CharacterBody`'s
+    `velocity`, a rigid body's `linear_velocity` when it isn't frozen), else its displacement since the query's
+    previous sample over the game time between them, a wait's frames counted;
+  - `spin` (`motion.gd`): each node a sample read is followed frame by frame until the next sample (the angle between
+    its rotations of two frames, summed), so a part turning many times a second still reads; an object reads the
+    fastest of itself and the nodes below it that draw (64 at most); a first sample has a rigid body's own angular
+    speed, or no value;
+  - a **Part** (`rel_yaw:`, `world_yaw:`/`world_pitch:`/`world_roll:`, `forward:`): `Find.part`, the node itself or a
+    node below it of exactly that name, else the first of them of that class. `forward:` is the node's -Z axis in
+    the world (a 2D node's +X); `rel_yaw:` the part's yaw less the object's (in 2D, their rolls);
+  - `anim:<Parameter>` and `clip`: `anim:` reads `parameters/<Parameter>` of the first `AnimationTree` in the object
+    (a number or a boolean; anything else no value); `clip` is the current animation of the first `AnimationPlayer` in
+    it that is playing, else of the first playing `AnimatedSprite2D` or `AnimatedSprite3D`, else the current state
+    of an active `AnimationTree` whose root is a state machine (`parameters/playback`).
+- **components** (`queries/components.gd`): the nodes of the class, or with `effect` alone every particle node
+  (`GPUParticles3D`, `CPUParticles3D`, `GPUParticles2D`, `CPUParticles2D`); `effect: true` keeps those that are
+  emitting and shown. `mesh` reads a `MeshInstance3D`'s, a `MeshInstance2D`'s or a `MultiMeshInstance3D`'s mesh by
+  its resource name, else its file's name without the extension (`Find.resource_name`; a mesh saved inside a scene
+  has neither). A field reads the node itself: `extent_*` its own box (`Find.own_box`, a `CollisionShape`'s shape
+  too); `simulating` a rigid body that isn't frozen, or a shape of one; `intensity` a `Light3D`'s `light_energy` or
+  a `Light2D`'s `energy`, `on` that it is shown and its energy is above 0 (a `Light2D` also enabled); `active` shown
+  and, by its class, emitting, playing, not disabled or on.
+- **widgets** (`queries/widgets.gd`, `ui_scan.gd`): every `Control` of the game's window (`UiScan.controls`: a
+  `Control` in a `SubViewport` is not the window's), hidden ones included. `component` is the Control's class; with a
+  `name`, the class of a Control above it matches too (the row keeps its own class). A rectangle is the Control's
+  `size` through `get_global_transform_with_canvas()` (its canvas layer and the 2D camera applied), over the frame's
+  own size (`Viewport.get_visible_rect`), so it is in fractions of the frame whatever stretches the frame to the
+  window. `visible` (`UiScan.visible`): `is_visible_in_tree()`, the `modulate` alphas down to it above 0.004
+  (`Find.ALPHA_FLOOR`), and inside the frame (a Control of no size counts as inside). How text is read:
+  task-probes.md 2.6.
+- **ui** (`queries/ui.gd`, `ui_scan.gd`): the elements on screen at the sample, a row for each thing a drawn Control
+  draws (`UiScan.kinds`, in this order: `box`, `image`, `text`). Drawn (`UiScan.drawn`): visible as above, its own
+  `self_modulate` alpha counted too, of some size, inside the frame, and inside every Control above it that clips its
+  contents. Rows carry `source` (`control`) and `kind`. What a script draws itself (`_draw`, a `draw_string`) is no
+  element: the engine keeps no list of it. `signature`, `number` and `clock` are computed by the checker from the rows
+  (`probes.ui_signature`, `ui_number`, `ui_clock`).
+- **screen** (`queries/screen.gd`): the frame as displayed, read back once it is drawn (`RenderingServer`'s
+  `frame_post_draw`, the root viewport's texture), every UI on it included, over `rect`: whole pixels, rounded out.
+  A rect of more than 65,536 pixels is read on an even lattice of its pixels (every n-th each way, the same ones in
+  every play). The value: `luminance`, `luma`, `pixels` (how many were read), `size`. A play that draws no frame
+  (`--headless`) has a null value.
+- **spawns** (`queries/spawns.gd`): every frame of the play, a wait's frames included, the shown nodes of the class
+  are compared with the frame before: one there now and not then is spawned (added to the tree, shown, or in a scene
+  changed to during the play), one gone is destroyed (freed, taken out of the tree or hidden), so a pooled node reused
+  by hiding and showing counts each time; one that comes and goes within one frame isn't seen. The counts are
+  cumulative from the clock's start (what is there then isn't counted) and the checker differences them per sample
+  (`probes.series`).
+- **audio** (`queries/audio.gd`): every `AudioStreamPlayer`, `AudioStreamPlayer2D` and `AudioStreamPlayer3D` whose
+  `playing` is true (and matching the select), in tree order, at its volume at the listener: `db_to_linear(volume_db)`,
+  times for a 3D one its attenuation at the distance to the current `AudioListener3D`, else to the current
+  `Camera3D` (by its `attenuation_model` over `unit_size`, capped at `max_db`, times `1 - distance / max_distance`
+  when it has a max distance, 0 beyond it), and for a 2D one `(1 - distance / max_distance) ^ attenuation` from the
+  middle of the screen. Bus volumes are left out. `level` and `peak` are the RMS and the peak of the Master bus since
+  the previous sample, from an `AudioEffectCapture` the probe adds to that bus when a play has an audio query
+  (drained every frame, shared by every audio query); null when no audio was mixed since. `started` counts the
+  matching players that weren't playing in the frame before and are now, since the previous sample (a player started
+  again while it plays isn't seen). The value also holds `loudest` (the loudest player's stream name) and `listener`
+  (its node's name). A play that measures audio is paced to real time (the spec's `sound`); no play is heard, since
+  the checker starts every play with `--audio-driver Dummy`, under which the engine still mixes.
+- **render** (`queries/render.gd`): `RenderingServer.get_rendering_info` read every frame for the frame drawn before
+  it, `RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME` and `RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME`, the highest since
+  the previous sample kept (null before any frame); `RENDERING_INFO_TEXTURE_MEM_USED` at the sample, in MiB.
+  Measured on the factory PC (Vulkan, both renderers): the totals are the 3D scene's draws, its shadow
+  passes' and the 2D canvas's summed, so the UI counts (a box 12 primitives and 1 draw call; a label of 13 glyphs and
+  a rectangle 28 primitives and 2 draw calls); the texture memory holds the engine's own render targets and default
+  textures, 10 to 19 MiB before a game adds anything; a `--headless` play reads 0.
+- **log**: the lines of the play's log (`--log-file`, kept as `play.log`) that match, read by the checker.
+
+## 4. Plays and inputs
+
+The checker's plays (`check.PLAYS`, `check.DRIVE`): `look`, 20 s idle, 6 screenshots; `drive`, 22 s, 8 screenshots:
+`<Keyboard>/w` 1-6 s, `<Keyboard>/d` 6-8 s, `<Keyboard>/w` 8-13 s with `<Keyboard>/space` 9-9.3 s, `<Keyboard>/a`
+13-15 s, `<Keyboard>/w` 15-21 s; a mobile game's drive is the same route by touch (`check.MOBILE_DRIVE`: a finger
+down at `[0.15, 0.75]` dragged up, right, up, left, up at those times, and a second finger's tap at `[0.85, 0.75]`
+at 9 s). A task play: 2 screenshots. A boot check: `seconds` idle, 2 screenshots. Samples every 0.5 s (a task play's
+`every`, 0.1-1.0). `play_args` apply to every play; a task play's `args` key replaces them, its `scene` key the
+`play_scene` (`tasks.place`).
+
+The frame (`task_probe.gd` `_fit_frame`, `_read_frame`; the spec's `size`). The game is always rendered at the
+project's own size (`display/window/size/viewport_width` and `viewport_height`), whatever the window is: the root
+window's `content_scale_mode` is set to `VIEWPORT`, its `content_scale_size` to the project's size and its
+`content_scale_aspect` to `KEEP`, so the root viewport's texture is exactly that size, a portrait frame taller than
+the screen is still drawn whole, and the UI is laid out as the game shows it (a `content_scale_size` other than the
+project's would lay the 2D canvas out for that other size). The probe sets this again every 16 frames. A frame that
+is read (a screenshot, a `screen` sample) is scaled to the spec's `size` (`Image.resize`, Lanczos) when the two
+differ: a desktop game of 1920x1080 is rendered at 1920x1080 and read at 960x540; a mobile game's spec is its own
+size, so nothing is scaled. Points and rectangles are fractions of the frame, so they are the same either way;
+`render` counts what was drawn at the project's size. A spec size of another shape than the project's is a
+`query_errors` line, and the frames are stretched to it. Without a `size` the probe changes nothing. Measured on the
+factory PC, on `desk.py`'s desktop: screenshots of exactly 960x540 (from a 1920x1080 project) and of exactly
+1080x1920 on a 1920x1080 screen.
+
+The play's clock (`task_probe.gd`) is frames at a fixed rate: play time is frames / 30 (the spec's `fps`). The engine
+steps the game by 1/30 s a frame because the checker starts it with `--fixed-fps 30` (an engine flag: no script can
+set it, and `OS.get_cmdline_args()` doesn't show it), and the probe keeps `Engine.physics_jitter_fix` at 0, without
+which the engine lets a frame's step drift by up to half a physics tick. A play started without the flag is said in
+`query_errors` (`the game isn't run with --fixed-fps 30 ...`). Under `--fixed-fps` the engine caps no frame rate, so
+a play runs as fast as the machine renders; where it must keep real time (a play that measures audio, the spec's
+`sound`; a `wait`; a scene change) the probe waits out the rest of each 1/30 s itself (`_wait_for_clock`). The clock
+starts when the play's scene is the current scene (after 600 frames without it, a `query_errors` line, and it starts
+in the scene that plays), holds during a `wait` and while there is no current scene (a change of scene; for at most
+300 frames), and counts on when the game pauses the tree or sets `Engine.time_scale` 0 (the probe's nodes process
+always). The queries' `frame` runs in every frame, a wait's too (`speed`, `spin`, `spawns`, `render`, `audio`).
+
+The scene. The checker passes the play's scene to the engine as its scene argument, so the project's main scene
+never loads. A spec whose `scene` is not the scene that runs (a play started without that argument) is changed to on
+the first frame (`change_scene_to_file`, deferred): the main scene's nodes have then had `_ready`. A `scene` the
+project lacks: a `query_errors` line, and the game's own scene plays.
+
+Saved data. Every play starts from clean saved data: `seeds.add_probe` gives the copy a user data folder of its own
+(`application/config/use_custom_user_dir`, `custom_user_dir_name` `TaskProbe.<12 hex>`), and the probe empties
+`user://` when the game starts, in its `_init`, before any other autoload wakes (`_forget_saves`: only when the name
+is exactly `TaskProbe.` and 12 hex digits and the folder is that name's; the engine's own `logs`, `shader_cache` and
+`vulkan` folders are kept; anything else keeps its saved data and `probe.log` says why). The checker deletes the
+folder with the copy (section 5).
+
+A frame has two passes, each raising the probe's `stamp`: before the game's scripts (the autoload, process priority
+-2^30: a held player put back, the inputs) and after them (its child `Late`, priority 2^30: a held player put back
+again, the samples, the screenshots, the end). Physics ticks of a frame run before both. What is looked up once a
+pass (the player, the camera, the list of nodes) is kept by the stamp. The frame as drawn (a screenshot, a `screen`
+sample) is read at `RenderingServer.frame_post_draw` of the same frame.
+
+Inputs (`inputs.gd`) reach the game as the engine's own input events through `Input.parse_input_event`, and the
+probe flushes them at once (`Input.flush_buffered_events`), so the game's `_input`, its Controls and its input
+actions take an input in the frame of its time, before its scripts' `_process` of that frame (its `_physics_process`
+of that frame has run). Rows of one time go in the order the task wrote them. A row is tried as a widget click
+(`click` true and a `widget`), a `tap`, a `drag`, a cursor move, a teleport_to, a teleport, a shot, a scene load, a
+view turn, a wait, then a key or axis, in that order; a row that is none of them is left out and not counted in
+`inputs_sent`, and a row without `t` is sent at 0. An unknown control is a `query_errors` line (`inputs: the keyboard
+has no key <x>`, `inputs: the mouse has no control <x>`, `inputs: the gamepad has no control <x>`, `inputs: no
+control <path>`, `inputs: no device for <path>`), never a stop. An input that didn't land is a row of `inputs_missed`
+(section 5).
+
+- key: `{"t", "key": "<Keyboard>/w", "press": true|false}`. `<Keyboard>/`: an `InputEventKey` with `keycode`,
+  `physical_keycode` and `key_label` set (an action bound either way matches), by the key's Input System name as the
+  other factories' plays write it (`inputs.gd` `KEYS`: `enter`, `leftShift`, `upArrow`, `numpad1`, ...) or the
+  engine's own name (`OS.find_keycode_from_string`: `w`, `space`, `escape`, `f2`, `up`, `shift`), any case; left and
+  right modifiers are one key. `<Mouse>/`: `leftButton`, `rightButton`, `middleButton`, `forwardButton`, `backButton`,
+  an `InputEventMouseButton` at the cursor. `<Gamepad>/`: `buttonSouth` (the engine's `JOY_BUTTON_A`), `buttonEast`,
+  `buttonWest`, `buttonNorth`, `leftShoulder`, `rightShoulder`, `start`, `select`, `leftStickPress`,
+  `rightStickPress`, `dpad/up` and the other three, an `InputEventJoypadButton` of device 0. `Android_Back`: a press
+  emits the root window's `go_back_requested` and sends `NOTIFICATION_WM_GO_BACK_REQUEST` down the tree, as a phone's
+  back button does (so a game that left `application/config/quit_on_go_back` on quits, as on a phone), then the key
+  `KEY_BACK`; a release is the key's release.
+- axis: `{"t", "key": "<Mouse>/delta/x", "axis": 4.0}`. `<Mouse>/delta/x|y`: one `InputEventMouseMotion` whose
+  `relative` is that many pixels (y down, the engine's own). `<Mouse>/scroll/y|x`: that many notches of the wheel
+  (rounded, 1 to 20), each a press and a release of `MOUSE_BUTTON_WHEEL_UP` (a positive value) or `WHEEL_DOWN`
+  (`WHEEL_RIGHT`, `WHEEL_LEFT`). `<Gamepad>/leftStick/x|y`, `rightStick/x|y`, `leftTrigger`, `rightTrigger`: an
+  `InputEventJoypadMotion`, -1 to 1, which keeps its value until set again; a stick's y is up-positive in a play, as
+  the other factories write it (the engine's `JOY_AXIS_LEFT_Y` gets the value negated).
+- widget click: `{"t", "widget": "RetryButton", "click": true}`: the first Control in tree order that is visible (the
+  `widgets` state), of some size, not disabled and not ignoring the mouse, whose name (a wildcard) or class matches.
+  The mouse moves to its centre, the left button goes down, and up in the next frame: real events, so a Control drawn
+  over it takes them instead. For a `BaseButton` the probe listens for its `pressed` signal: when it hasn't fired two
+  frames after the release, the click is a row of `inputs_missed`. `probe.log` names the widget clicked and its class
+  (`clicked PushButton (Button)`).
+- cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
+  point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
+  An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
+  holds whatever stretches the frame to the window (`UiScan.to_window`).
+- touches: `{"t", "tap": <spot>, "hold": s, "finger": n}` and `{"t", "drag": [<spot>, ...], "over": s, "hold": s,
+  "finger": n}` (`_touch`, `_move_touch`). The spots are resolved when the finger goes down: `[fx, fy]`, or
+  `{"widget": name}`, the centre of the first visible Control of some size whose name (a wildcard) or class matches
+  (`UiScan.named`). The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
+  `InputEventScreenDrag` events (a drag's path walked evenly over `over` seconds, at once without it), and lifts once
+  its path and its `hold` are over, never in the frame it went down. Fingers 0 to 9 may be down together. With
+  `input_devices/pointing/emulate_mouse_from_touch` on (the engine's default, and a mobile game's setting) the engine
+  makes mouse events of the first finger down alone, so a `Button` node presses for that finger only; a Control that
+  reads `InputEventScreenTouch` itself (`_gui_input`) takes any finger. At the play's end every finger still down is
+  lifted. Misses: a spot whose widget isn't on screen (`no visible control matches it`), a finger still down from an
+  earlier touch, a finger outside 0-9, a drag without 2 to 16 spots.
+- teleport: `{"t", "teleport": [x, y, z], "yaw": deg, "hold": s}`; teleport_to: `{"t", "teleport_to": <object select>,
+  "distance": 2.0, "offset": [x, y, z], "face": <Point>, "hold": s}`. The probe sets the player's `global_position`
+  (a 2D player's x and y), with no free-spot search and no snap to the ground, tells the physics server for a rigid
+  body, resets the node's physics interpolation and stills its velocity (`_place`, `_still`). `yaw` turns a 3D
+  player (the checker writes 0 when unset). teleport_to takes the match nearest the player, the player and the nodes
+  below it left out; the spot is `distance` from the target along the level line toward the player (when the player
+  is right above it, on the side the target's back is to, its +Z; a 2D target: along the line toward the player in
+  the plane), plus `offset`; it faces `face`, else the target (it keeps its yaw when what it faces is within a
+  centimetre on the level; a 2D player isn't turned). `hold`: for that many seconds of play time the player is put
+  back at the spot and stilled before the game's scripts and again after them, through waits.
+  `probe.log` says where each went (`teleported next to <name>: asked (...) yaw ..., now at (...)`, `teleport_to
+  skipped (no object matches)`).
+- shot: `{"t", "shot": "<name>"}`: `shot_<name>.png` of that frame. scene: `{"t", "scene": "res://..."}`:
+  `change_scene_to_file`; a scene the project lacks is a `query_errors` line and a miss. view: `{"t", "view": [pitch,
+  yaw]}`: a 3D player's yaw and the `Camera3D`'s rotation set once (pitch clamped to +-89).
+- wait: `{"t", "wait": s}`: the play's clock holds while the game runs paced to real time, until `wait` seconds of
+  both real and game time have passed; the inputs after it wait for its end. The frame it starts in takes its sample
+  first.
+
+## 5. Files the probe and the checker exchange
+
+The checker hands the game one play spec; the game writes `probe.json` (`godot-probe/1`), `probe.log` and the
+screenshots. The checker's files of a copy are under `<copy>/Logs/TaskProbe/` (`godot.LOGS`; it holds a `.gdignore`,
+so the engine imports nothing there), each made fresh before its job.
+
+**The play spec** (`<copy>/Logs/TaskProbe/play_spec.json`, written by `godot.Project.play`, read by `task_probe.gd`
+`_init`). A task play with three queries as `probes.plan` makes them:
+
+```json
+{"format": "godot-probe-play/1", "out": "C:/tc/38e8bcd7/ff49e5194fe4/Logs/TaskProbe/play", "size": [960, 540],
+ "seconds": 8, "shots": 2, "every": 0.5, "scene": "res://scenes/Yard.tscn", "sound": false, "player": null,
+ "inputs": [{"t": 2.0, "wait": 2.0}, {"t": 4.0, "key": "<Keyboard>/space", "press": true},
+            {"t": 4.3, "key": "<Keyboard>/space", "press": false},
+            {"t": 5.0, "tap": {"widget": "FireButton"}, "finger": 0}],
+ "queries": {"format": "game-probe-queries/1", "every": 0.5, "queries": [
+   {"id": "q0515f1b44e", "kind": "ui", "select": {"kind": "text", "rect": [0.0, 0.0, 0.4, 0.09]},
+    "fields": ["h", "text", "w", "x", "y"]},
+   {"id": "q2af780091d", "kind": "objects", "select": {"name": "Lamp_3"}, "fields": ["prop:lit"]},
+   {"id": "qe2fd69dd75", "kind": "widgets", "select": {"component": "ProgressBar", "name": "FuelBar"},
+    "fields": ["percent"]}]}}
+```
+
+- What varies: `out` (the copy's), `size` (the size frames are read at: 960x540, or a mobile game's phone size), the play's `seconds`,
+  `shots`, `every`, `scene` (null: the project's main scene), the task's `player` select (null: the probe finds the
+  player, section 1), its `inputs` with the checker's defaults filled in (`tasks.inputs`), `sound` (true when a query
+  is `audio`) and the queries.
+- The probe reads `out` (default: `user://TaskProbe`), `size` (two numbers of 16 or more; without it the probe leaves the frame as the game has it), `seconds` (clamped to 1-600; default 20), `every` (0.1-1.0; 0.5), `shots` (0-64; 4),
+  `fps` (10-240; 30: the rate the clock counts frames at, the one the command line's `--fixed-fps` gives), `scene`,
+  `sound`, `player` (its own `player` key ignored), `inputs` and `queries.queries`; the queries' `every` rides along
+  unread. A play without queries has an empty list.
+- A query holds `id`, `kind`, its kind's keys and `fields`: `objects`, `components`, `widgets`, `ui` take `select` and
+  `fields`; `camera` and `render` `fields`; `spawns` `component`; `screen` `rect`; `audio` `select` (`probes.needs`).
+  `fields` is the sorted union of what the play's probes read of it (`[]` for a count). Its id is `"q"` and the first
+  10 hex digits of the sha256 of `json.dumps(<the query without its id and fields>, sort_keys=True)`
+  (`probes.query_id`), so probes reading other fields of one selection share it; the queries are merged per play and
+  sorted by id (`probes.plan`). The probe takes any id (the probe tests name theirs) and at most 256 queries.
+
+**probe.json** (written by the probe into `out` when the play ends, UTF-8 without a BOM, compact; read by
+`godot.Project.play`, then `probes.py`). The start of a play's file, spaced out here:
+
+```json
+{"format": "godot-probe/1", "ended": "time", "seconds": 8.5, "scene": "res://scenes/Yard.tscn",
+ "player": "Keeper", "inputs_sent": 4, "inputs_missed": [], "screenshots": ["shot_00.png", "shot_01.png"],
+ "track": [[0.03333333333333333, 3.8, 0.08, -14.0], [0.5, 3.8, 0.08, -14.0]],
+ "camera": [[0.03333333333333333, 10.3, 3.28, -14.0, -10.46, 90.0, 55.0], [0.5, 10.3, 3.28, -14.0, -10.46, 90.0, 55.0]],
+ "measures": {
+  "q0515f1b44e": [{"t": 0.03333333333333333, "rows": [{"name": "ScoreText", "class": "Label", "source": "control",
+                   "kind": "text", "h": 0.0648, "text": "SCORE 100", "w": 0.2708, "x": 0.0208, "y": 0.0278}]}],
+  "q2af780091d": [{"t": 0.03333333333333333, "rows": [{"name": "Lamp_3", "class": "Lamp", "prop:lit": 1.0}]}],
+  "qe2fd69dd75": [{"t": 0.03333333333333333, "rows": [{"name": "FuelBar", "class": "ProgressBar",
+                   "percent": 0.15}]}]}}
+```
+
+- `ended`: `time` (the clock passed its seconds + 0.5) or `shutdown` (the game quit first: the probe's node left the
+  tree). `seconds`: the play time at the end, its seconds + 0.5 plus the frames (at most 5) a last sample or
+  screenshot waits for its frame. `scene`: the current scene's path at the end; `player`: the player's name then, or
+  null.
+- `screenshots`: the PNG files written, in the order taken, each exactly the spec's `size`, of the frame as
+  displayed, UI included, without alpha (RGB8): `shot_00.png` and on at the middle of each of `shots` equal parts of
+  the play, and `shot_<name>.png` for a `shot` input. Only files written are listed: a play that draws no frame
+  (`--headless`) lists none.
+- `inputs_sent`: how many input rows were sent. `inputs_missed` (always there): a row `{"t", "kind", "target", "why"}`
+  for each input that didn't land: `tap` and `drag` (a spot whose widget isn't on screen, a finger still down, a bad
+  finger or path), `click` (no visible control that takes a click matches, or a button that didn't press), `shot` (a
+  bad name), `scene` (a scene the project lacks).
+- Samples fall on frames: the first at 1/30 s (the clock's first frame), then every `every` s, on the frame that
+  reaches it. Every sample adds a `track` row, `[t, x, y, z]` (the player's place) or `[t]` while there is no player
+  (no value there for the checker), and a `camera` row `[t, x, y, z, pitch, yaw, fov]` when there is a player camera
+  (a sample without one has no value for the camera's fields).
+- `measures` (only when the spec has queries): each query's id and its samples, one per sample time, each with its `t`:
+  `rows` for `objects`, `components`, `widgets` and `ui` (at most 200; when more matched, also `total`, how many, and
+  `full`, an entry for every field asked for, in the order asked: its `n`, `nonzero`, `sum`, `min` and `max` over
+  every match's number, `n` 0 and `min` and `max` null for a field no match has a number for), or `value`, an object
+  or null, for the others. A `screen` sample whose frame never came has a null value.
+- `query_errors` (only when there was one): each line once, at most 50, then `<n> more in probe.log`. A query's own:
+  `<kind> <id>: <message>` (`components q3c1d2e4f5a: no component type Lantren`, `objects <id>: no field glow`,
+  `components <id>: the select names no component and no effect`, `widgets <id>: the text regex ( doesn't compile`,
+  `ui <id>: no element kind <k> (text, box, image)`, `spawns <id>: no component named`). The loop's own: `the queries
+  are not a JSON object`, `queries format '<f>' is not game-probe-queries/1`, `the queries have no queries array`, `a
+  query is not an object`, `a query has a missing or repeated id '<id>'`, `more than 256 queries: '<id>' and later
+  ones dropped`, `query '<id>': unknown kind '<kind>' (null values)` (such a query is sampled with a null `value`);
+  and `the play's scene <scene> isn't in the project: the game's own main scene is played`, `the play's scene <scene>
+  didn't become the current scene: playing <path>`, `the scene <path> isn't in the project: no load`, `the game isn't
+  run with --fixed-fps <n> ...`, `the frame asked for is <W>x<H> and the project's is <w>x<h>, of another shape:
+  frames are stretched to fit`, `the play's last frames weren't drawn ...: <n> screenshot(s) and <n> sample(s) are without their frame`,
+  `a shot named '<name>' isn't taken: ...`, `a screenshot couldn't be written: <file>`, `inputs: ...`.
+- Numbers are written so that each reads back as the same double (`JSON.stringify` with full precision); NaN and
+  infinities are written null. Keys keep the order above.
+- GDScript has no exceptions: a script error inside the probe stops that one call and the engine writes it into the
+  game's log as `SCRIPT ERROR` with a path under `res://addons/task_probe/`. The probe's code checks every value it
+  reads for that reason; such a line in `play.log` is the probe's bug, never the game's.
+
+**probe.log** (beside it in `out`): the probe's own lines, each with the play time and the real time since the game
+started: the start, the clock's start, waits, teleports, holds, clicks, cursor moves, touches going down and lifting (where, in the window's own units),
+misses (`missed: ...`), errors (`error: ...`), saved data kept, and the end. The game's own log is `play.log`. One of
+the probe tests' plays:
+
+```
+0.00 [0.2 s] play: 5.0 s, every 0.50 s, 0 shot(s), 2 query(ies), scene (the game's own), frame 960x540
+0.00 [0.2 s] the play's clock starts in res://scenes/Main.tscn
+0.50 [0.2 s] tap finger 0 down at (1710, 920)
+0.53 [0.2 s] tap finger 0 up at (1710, 920) after 0.03 s
+3.80 [0.2 s] missed: tap Nope at 3.80 s: no visible control matches it
+5.50 [0.2 s] the play ended: time
+```
+
+**The play's command line** (`godot.Project.play`; one command, in the copy):
+
+```
+python tools\task_check\desk.py <godot console exe> --path <copy> --log-file <copy>\Logs\TaskProbe\play.log
+    --fixed-fps 30 --disable-vsync --audio-driver Dummy [<scene>] -- -taskProbe <copy>\Logs\TaskProbe\play_spec.json
+    <play args...>
+```
+
+It runs with the checker's own Python and the machine's pinned Godot (`ggfroot.godot_exe(console=True)`), through
+`godot-heavy.ps1 -Label "task-check play <commit[:12]>" -Gpu` when the machine has the limiter (a GPU slot), with a
+timeout of `--timeout` plus the play's waits, counted from when the job starts. The engine's own flags come before
+`--`: `--fixed-fps 30` (the clock's step, section 4), `--disable-vsync` (no wait for the screen), `--audio-driver
+Dummy` (no play is heard; the mix is still measured), `<scene>` (the play's scene, when it has one). What follows
+`--` is the game's: the probe's `-taskProbe <spec>` (any case), then the task's play arguments. The checker never
+passes `--rendering-method` or a window size: a game is drawn with the renderer its project names, at its project's
+own size. `desk.py` starts the game on a Windows desktop of its own (`WinSta0\TaskProbe`, made when it isn't there),
+in a job object that kills it and everything it started when `desk.py` goes, and exits with the game's exit code: 0
+when the play ended (once probe.json, the screenshots and probe.log are written and closed, the probe asks the engine
+to quit with code 0), 2 when the play spec can't be read (missing, not a JSON object, another `format`: `TaskProbe:
+the play spec <file> couldn't be read: <why>` in `play.log`, and the game quits at once). A game that quits by itself
+first ends the play there with its own exit code (`ended` `shutdown`). What the play wrote into `out` is read back,
+then the folder deleted; the checker keeps those files and the play's spec as the play's evidence, since only the
+spec says which query id is which select.
+
+**The build** (`godot.Project.build`; two commands, in the copy):
+
+```
+<godot console exe> --headless --path <copy> --log-file <copy>\Logs\TaskProbe\build.log --import
+<godot console exe> --headless --path <copy> --log-file <copy>\Logs\TaskProbe\scripts.log
+    --script <copy>\Logs\TaskProbe\scripts.gd
+```
+
+The import writes `.godot/` (emptied first); the scripts pass loads every `.gd` file of the project in the folders
+the engine reads, since the import alone parses only the scripts it opens. The build passed when both exit 0 and
+neither log has a script error (`godot.SCRIPT_ERROR`, `LOAD_ERROR`: `SCRIPT ERROR`, `Parse Error`, `Failed to load
+script`; the engine exits 0 from an import that logged one). One that fails with no word about the game is tried
+once more; stopped again, it is the machine's error and the task reads ERROR, never a verdict (`check.Side.build`).
+
+**The scratch copy** (`seeds.py`): `<scratch>/<run tag>/<commit[:12]>`, where `--scratch` defaults to the machine
+root's `.task-check` when it is on the repo's drive, else a `.task-check` beside the repo's parent folder
+(`cli.default_scratch`; never inside the repo).
+
+- The commit as committed, read from the repo's git objects and its local Git LFS store (`seeds.materialize`): each LFS
+  file a hardlink of its object on the repo's volume, else a copy. Never written: `Tasks/`, `History/`, `Dataset/`,
+  `Dataset.zip` at the root, in any case.
+- The probe added (`seeds.add_probe`): the addon's folder as `addons/task_probe/`, and three lines in the copy's
+  `project.godot`: `TaskProbe="*res://addons/task_probe/task_probe.gd"` first in `[autoload]` (so its `_ready` and
+  its frame come before the game's own autoloads'), and `config/use_custom_user_dir=true` with
+  `config/custom_user_dir_name="TaskProbe.<the first 12 hex digits of the sha256 of the copy's folder, lower-cased>"`
+  in `[application]` (`seeds.saves_company`).
+- Refused (`seeds.WrongEngine`, the task INVALID) when `project.godot`'s `config/features` doesn't name 4.7.
+- Deleted with what its plays left outside it (`seeds.forget_saves`, names of the form `TaskProbe.<12 hex>` alone):
+  the copy's user data folder, `%APPDATA%\TaskProbe.<hash>`.
+
+**Results**: `task-check/1` (`<out>/<task>.json`), `task-check-progress/1` (`progress.json`) and `task-try/1`
+(`check.check_task`, `cli.write_progress`, `trial.try_task`).
+
+A crash in a play: the game's log matches `godot.FATAL`. A script error the game survives is not a crash:
+`log_absent` checks for those.
+
+## 6. The probe addon (`tools/task_check/task_probe/` -> `addons/task_probe/`)
+
+GDScript, no editor plugin, no `class_name` of its own (a game's names stay the game's): each script reaches the
+others by `preload`. The checker copies the folder into the copy as it is (section 5); it holds no `.uid` and no
+`.import` files, which the engine makes in the copy. A game's export presets leave `addons/task_probe/*` out. The
+autoload does nothing unless the game's user arguments have `-taskProbe`: its `_init` returns at once and its `_ready`
+stops its processing.
+
+| File | What it holds |
+|---|---|
+| `task_probe.gd` | the autoload: the spec, the frame, the play loop's first half (before the game's scripts), the samples, the screenshots, the end |
+| `probe_late.gd` | the loop's late half, a child node that runs after the game's scripts |
+| `inputs.gd` | the scripted inputs |
+| `find.gd` | selects, points, classes, `prop:` paths and the readers several kinds share |
+| `ui_scan.gd` | the UI as widgets, ui, a widget click and a touch read it |
+| `motion.gd` | speed and spin between samples |
+| `query.gd` | a query's base and the rows of a sample |
+| `queries/objects.gd` | `objects` |
+| `queries/components.gd` | `components` |
+| `queries/camera.gd` | `camera` |
+| `queries/widgets.gd` | `widgets` |
+| `queries/ui.gd` | `ui` |
+| `queries/screen.gd` | `screen` |
+| `queries/spawns.gd` | `spawns` |
+| `queries/audio.gd` | `audio` |
+| `queries/render.gd` | `render` |
+
+- Each query kind is one script, `queries/<kind>.gd`, extending `query.gd` and loaded by its kind's name when a play
+  starts, so a new kind touches no other file.
+- A query never stops the play: anything unknown (a class, a member, a widget, a kind) gives empty rows or null values
+  and a `query_errors` line.
+- `probe_tests/` (beside the addon; never copied into a game): the probe's regression run on the real engine.
+  `run.py <work folder>` copies its small game (`probe_tests/project/`), adds the addon as the checker does, imports
+  it and runs each play (`plays/<name>.json`: section 5's spec without `format`, `out` and `size`, each query with an
+  id of its own), checks every value (`tests.py`) and prints a pass/fail table (`probe_tests/README.md`). Headless
+  it covers everything but pixels; `--rendered` runs the plays that need a drawn frame, at a desktop game's size and
+  at a portrait phone's.

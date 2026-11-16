@@ -1,0 +1,17 @@
+{
+  "seconds": 3,
+  "shots": 2,
+  "every": 0.5,
+  "inputs": [
+    {"t": 0.5, "tap": {"widget": "TapButton"}, "finger": 0},
+    {"t": 1.0, "drag": [{"widget": "MoveStick"}, [0.135, 0.6]], "finger": 0, "over": 0.2, "hold": 1.0},
+    {"t": 2.5, "shot": "moved"}
+  ],
+  "queries": [
+    {"id": "texts", "kind": "ui", "select": {"kind": "text"}, "fields": ["text"]},
+    {"id": "drawn", "kind": "render", "fields": ["draw_calls", "texture_mb", "triangles"]},
+    {"id": "bright", "kind": "screen", "rect": [0.0, 0.0, 1.0, 1.0]},
+    {"id": "button", "kind": "widgets", "select": {"name": "TapButton"}, "fields": ["h", "w", "x", "y"]},
+    {"id": "cam", "kind": "camera", "fields": ["occluded", "player_on_screen"]}
+  ]
+}

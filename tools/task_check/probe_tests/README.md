@@ -1,0 +1,88 @@
+# The probe's tests on the real engine
+
+`tools/task_check/task_probe/` runs inside a running game, so only the engine can tell whether a measure reads what it
+says. These tests play a small game with the addon the way the task checker plays one, and check every value. A field
+that no play here checks is not tested.
+
+## Running them
+
+```
+python tools/task_check/probe_tests/run.py <work folder> [--godot EXE] [--rendered] [--desk] [--play NAME ...] [--once] [-v]
+```
+
+`<work folder>` is a scratch folder the run may fill and empty: it copies the game there, never plays it in place.
+The engine is `--godot`, else `GODOT_EDITOR`, else the machine's pinned Godot (`machine/lib/ggfroot.py`).
+
+The run:
+
+1. copies `project/` to `<work folder>/desktop` and adds the probe as the checker adds it (`seeds.add_probe`): the
+   addon as `addons/task_probe/`, its autoload first in `project.godot`, a user data folder of the copy's own;
+2. imports the copy (`--headless --import`), which must log no script error;
+3. runs each play as the checker runs one (`--fixed-fps 30 --disable-vsync --audio-driver Dummy`, the spec after
+   `-- -taskProbe`), headless;
+4. checks what each play wrote, plays `touch` and `second` a second time (the second must write the same probe.json
+   as the first), prints one line per play and exits with 0 when everything passed.
+
+```
+probe tests in /w/probe (addon: .../tools/task_check/task_probe)
+ok    import (desktop)  2 s
+PASS  desktop.keys         91 checks  7 s
+PASS  desktop.touch        20 checks  same twice  0 s
+FAIL  desktop.second       17 checks, 1 failed  0 s
+      FAIL its speed: got 80.0, want 100.0 +- 0.5
+...
+```
+
+`--play` runs some plays, `--once` leaves out the second play, `-v` prints every check. What each play wrote is kept in
+`<work folder>/<variant>/Logs/ProbeTests/<play>/` (probe.json, probe.log, the screenshots, the game's log, the spec).
+
+Headless, the engine runs the scene tree, the scripts, the input events, the physics and the audio mix, but draws
+nothing: a headless play writes no screenshot, a `screen` sample has no value and `render` reads 0. `--rendered` runs
+the plays that need a drawn frame instead (`frame`), in a window, twice over: as a desktop game (`desktop`: a
+1920x1080 project read at 960x540) and as a portrait phone game (`portrait`: a 1080x1920 project on the Mobile
+renderer played at 1080x1920, whatever the screen). It needs a GPU and a desktop; `--desk` starts each play on a
+Windows desktop of its own (`../desk.py`), as the checker does, so nothing shows on the screen.
+
+## The game (`project/`)
+
+One scene, `scenes/Main.tscn`, with something for every measure and input, and `scenes/Second.tscn`, a 2D scene.
+
+| Node | What it is for |
+|---|---|
+| `Player` (`game/player.gd`, group `player`) | a `CharacterBody3D` that moves 4 m/s on W/A/S/D (input actions) and where the virtual stick is pushed |
+| `Camera`, `Sun`, `Lamp` | the camera (at 0, 6, 8, pitched -30), a light that is on and one of energy 0 |
+| `Crates/Crate1..3` (group `crate`) | three boxes, the second scaled, the third hidden |
+| `Spinner` (`game/spinner.gd`, `class_name Spinner`) | a box that turns 90 degrees a second |
+| `Ball` | a rigid body |
+| `Sparks`, `Spent` | a particle effect that emits and one that doesn't |
+| `Many` | 250 nodes of the group `many`, made at the start: more than a sample keeps rows of |
+| `Coins` (`game/main.gd`, `game/coin.gd`) | a coin made every second, three kept: a script without a `class_name` |
+| `Music`, `Jump` | a looping sound (a stream named in code) and a placed one-shot sound Space plays |
+| `HUD/CountLabel`, `ZoomLabel`, `BackLabel`, `KeyLabel`, `VisitsLabel` | what a tap, the wheel, the back button, a key or a gamepad button did; how many times the game started on its saved data |
+| `HUD/Health`, `HUD/Secret` | a bar at 75%; a hidden panel Escape shows |
+| `HUD/TapButton` | a `Button`: it counts presses (the mouse, or the first finger) |
+| `HUD/FireButton` (`game/fire.gd`) | a panel that reads touch events itself: it counts any finger |
+| `HUD/MoveStick` (`game/stick.gd`) | a virtual stick |
+
+`main.gd` also quits the game at the time `-quitAt <seconds>` names (the `shutdown` play).
+
+## The plays (`plays/<name>.json`, checked in `tests.py`)
+
+A play file is a spec as the checker writes it (CONTRACT.md section 5) without `format`, `out` and `size`, each query
+with an id of its own.
+
+| Play | What it proves |
+|---|---|
+| `keys` | keys through an input action, the wheel, a widget click, the cursor and the left button, a gamepad button, a teleport with a hold, `teleport_to`, a view turn; every kind's fields on the scene above: object selects (group, name, class, `near`, `has`, `where`, `inactive`), `prop:` paths, parts, speed and spin, extents, 200 rows of 250 with `total` and `full`, components (class, `effect`, `mesh`, lights), spawns, the camera, widgets, ui, audio (count, volume at the listener, level, `started`, selects by name, bus and owner), render's keys; the saved data cleared; an unknown key and a click that finds nothing |
+| `touch` | a tap on a named Control, a drag that holds the stick over, a second finger's tap meanwhile, `Android_Back`, a Control by its class, and the misses: a widget that isn't there, a finger still down |
+| `second` | the spec's `scene` opened, a 2D player and a 2D camera, a `scene` input, a scene the project lacks |
+| `errors` | every `query_errors` line a bad query gives, the task's `player` select, a row that is no input |
+| `refuse` | a spec of another format: exit code 2, nothing written |
+| `idle` | without `-taskProbe` the addon does nothing |
+| `shutdown` | a game that quits by itself: `ended` `shutdown`, the samples kept |
+| `wait` | a `wait` takes its real time and the clock holds |
+| `frame` (`--rendered`) | screenshots of exactly the frame's size without alpha, a tap on a named Control landing, `screen` and `render` with values, at 960x540 and at 1080x1920 |
+
+Not covered by a play: `clip` and `anim:`, a 2D game's `extent_*`, `rel_yaw:` and audio fall-off, `has` `visible`,
+`facing_vs_velocity`, a widget's `percent` of a slider and its `brush`, a mouse `delta`, a gamepad axis, `face` of a
+`teleport_to`.

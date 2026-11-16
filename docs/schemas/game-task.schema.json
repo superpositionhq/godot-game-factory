@@ -1,0 +1,3669 @@
+{
+  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express.",
+  "$defs": {
+    "AtCamera": {
+      "additionalProperties": false,
+      "description": "The player's camera, `forward` m along its view.",
+      "properties": {
+        "camera": {
+          "const": true,
+          "title": "Camera",
+          "type": "boolean"
+        },
+        "forward": {
+          "default": 0.0,
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Forward",
+          "type": "number"
+        }
+      },
+      "required": [
+        "camera"
+      ],
+      "title": "AtCamera",
+      "type": "object"
+    },
+    "AtObject": {
+      "additionalProperties": false,
+      "description": "The first object `object` selects, plus `offset` (m).",
+      "properties": {
+        "object": {
+          "$ref": "#/$defs/Select"
+        },
+        "offset": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Offset",
+          "type": "array"
+        }
+      },
+      "required": [
+        "object"
+      ],
+      "title": "AtObject",
+      "type": "object"
+    },
+    "AtPlayer": {
+      "additionalProperties": false,
+      "description": "The player's position, plus `offset` (m).",
+      "properties": {
+        "offset": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Offset",
+          "type": "array"
+        },
+        "player": {
+          "const": true,
+          "title": "Player",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "player"
+      ],
+      "title": "AtPlayer",
+      "type": "object"
+    },
+    "AtXYZ": {
+      "additionalProperties": false,
+      "description": "A fixed point in the world (m).",
+      "properties": {
+        "xyz": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Xyz",
+          "type": "array"
+        }
+      },
+      "required": [
+        "xyz"
+      ],
+      "title": "AtXYZ",
+      "type": "object"
+    },
+    "AudioMeasure": {
+      "additionalProperties": false,
+      "description": "What the player hears (docs/task-probes.md, section 2.16): the AudioStreamPlayer, AudioStreamPlayer2D and\nAudioStreamPlayer3D nodes playing that `select` matches, each at its volume at the listener (its own volume\ntimes, for a placed one, its attenuation at the listener's distance; bus volumes left out): `count` (how\nmany), `audible` (how many at 0.001, -60 dB, or louder), `volume` (their sum), `max_volume` (the loudest);\n`level` (the RMS of the Master bus's mixed output since the previous sample, buses and effects included);\n`started` (how many players began to play since the previous sample: read it with `agg` `sum`). A play with an\naudio measure runs paced to real time; no play is heard. The volumes' and the level's threshold is calibrated\nor relative to the start, never a literal (tools/validate-game.py).",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "count",
+            "audible",
+            "volume",
+            "max_volume",
+            "level",
+            "started"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "probe": {
+          "const": "audio",
+          "title": "Probe",
+          "type": "string"
+        },
+        "select": {
+          "$ref": "#/$defs/AudioSelect"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "AudioMeasure",
+      "type": "object"
+    },
+    "AudioSelect": {
+      "additionalProperties": false,
+      "description": "The players playing (docs/task-probes.md, section 2.16): by their stream's name (`sound`, a wildcard on the\nstream resource's name: its file's name without the extension), the bus they play on (`sound_class`, a\nwildcard on the bus's name), and an owner the `owner` select matches (the player is that node or under it);\nnone: every player playing.",
+      "properties": {
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Select"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sound": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sound"
+        },
+        "sound_class": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sound Class"
+        }
+      },
+      "title": "AudioSelect",
+      "type": "object"
+    },
+    "Axis": {
+      "additionalProperties": false,
+      "description": "An axis event (<Mouse>/delta/x, <Gamepad>/leftStick/x) with its value, e.g. mouse look; <Mouse>/delta/* is\none mouse movement and <Mouse>/scroll/* so many notches of the wheel, any other axis keeps its value until\nset again.",
+      "properties": {
+        "axis": {
+          "maximum": 1000,
+          "minimum": -1000,
+          "title": "Axis",
+          "type": "number"
+        },
+        "key": {
+          "pattern": "^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "key",
+        "axis"
+      ],
+      "title": "Axis",
+      "type": "object"
+    },
+    "Boot": {
+      "additionalProperties": false,
+      "description": "The game starts (run from the project at the play's frame size, on a desktop of its own) and runs\n`seconds` with no crash and no fatal error in its log.",
+      "properties": {
+        "kind": {
+          "const": "boot",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "seconds": {
+          "default": 60,
+          "maximum": 600,
+          "minimum": 5,
+          "title": "Seconds",
+          "type": "integer"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "Boot",
+      "type": "object"
+    },
+    "Build": {
+      "additionalProperties": false,
+      "description": "The project imports and every script loads, with no script error in the engine's log.\n`fails_at_start`: the task's start doesn't (a script that doesn't parse), and making it load is the task;\nthe start is never played, so nothing in the task may need it played (docs/task-probes.md, section\n3.1; tools/validate-game.py).",
+      "properties": {
+        "fails_at_start": {
+          "default": false,
+          "title": "Fails At Start",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "build",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "Build",
+      "type": "object"
+    },
+    "Calibrate": {
+      "additionalProperties": false,
+      "description": "Threshold s + f * (r - s): the start (s) and the developers' fix (r) measured in the grading environment.",
+      "properties": {
+        "calibrate": {
+          "exclusiveMaximum": 1,
+          "exclusiveMinimum": 0,
+          "title": "Calibrate",
+          "type": "number"
+        },
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!="
+          ],
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "calibrate"
+      ],
+      "title": "Calibrate",
+      "type": "object"
+    },
+    "CameraMeasure": {
+      "additionalProperties": false,
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "distance",
+            "height",
+            "pitch",
+            "yaw",
+            "fov",
+            "occluded",
+            "player_on_screen"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "probe": {
+          "const": "camera",
+          "title": "Probe",
+          "type": "string"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "CameraMeasure",
+      "type": "object"
+    },
+    "Click": {
+      "additionalProperties": false,
+      "description": "A click on the first visible Control that takes one (not disabled) whose name (a wildcard) or class\nmatches, as a player's click presses it: the mouse at its centre, the left button down and up.",
+      "properties": {
+        "click": {
+          "const": true,
+          "title": "Click",
+          "type": "boolean"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "widget": {
+          "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+          "title": "Widget",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "widget",
+        "click"
+      ],
+      "title": "Click",
+      "type": "object"
+    },
+    "CodeJudge": {
+      "additionalProperties": false,
+      "description": "A code reviewer's question over the run's own change (its diff from the start, text files) beside the game's\nreal change for the same problem (the seed's `reference`, a bug's fix from the game's history), which the agent\nnever sees. `focus`: globs of the project files the question is about (game/*, steps/make_data.gd), at most 8; their diffs are shown first on both sides, so a long change still shows them.",
+      "properties": {
+        "focus": {
+          "items": {
+            "pattern": "^([A-Za-z0-9_*-][A-Za-z0-9_.*?-]{0,63}/){0,8}[A-Za-z0-9_*-][A-Za-z0-9_.*?-]{0,63}$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Focus",
+          "type": "array"
+        },
+        "kind": {
+          "const": "code_judge",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 1200,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "rubric": {
+          "items": {
+            "$ref": "#/$defs/RubricItem"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Rubric",
+          "type": "array"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "question",
+        "rubric"
+      ],
+      "title": "CodeJudge",
+      "type": "object"
+    },
+    "ComponentSelect": {
+      "additionalProperties": false,
+      "description": "Nodes of a class (`component`: GPUParticles3D, AudioStreamPlayer3D, MeshInstance3D, Light3D, a game's own\nscript; the classes it inherits match), optionally under a node the `owner` select matches, by its name\n(`name`, a wildcard), near a point, of a mesh (`mesh`, a wildcard on its mesh resource's name), and\n`visible`: only those shown (as the `visible` field reads them); `effect`: only live particle effects (a\nGPUParticles or CPUParticles node, 3D or 2D, that is emitting), with or without `component`; `inactive`:\nhidden nodes too, else only those that are shown (docs/task-probes.md, section 2.5).",
+      "properties": {
+        "component": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component"
+        },
+        "effect": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effect"
+        },
+        "inactive": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inactive"
+        },
+        "mesh": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mesh"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "near": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Near"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Select"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "visible": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible"
+        }
+      },
+      "title": "ComponentSelect",
+      "type": "object"
+    },
+    "ComponentsMeasure": {
+      "additionalProperties": false,
+      "description": "Nodes of a class, the parts of the scene (docs/task-probes.md, section 2.5): `x`, `y`, `z` and `speed` (m/s:\nits own velocity, a CharacterBody's or a RigidBody's, when it isn't zero, else how far it moved since the\nprevious sample); `extent_x|y|z` (the world-aligned half-size of what it draws or collides with);\n`simulating` (a rigid body that isn't frozen, or a collision shape of one); `intensity` and `on` (a light's\nenergy; it lights the scene: shown, of an energy above 0); `active` (shown and doing what it does: particles\nemitting, a sound or an animation playing, a collision shape on, a light on) and `visible` (shown); `spin`\n(deg/s: how fast it turns in the world, from its rotation every frame; docs/task-probes.md, section 2.5);\n`world_yaw` and `world_pitch` (degrees in (-180, 180]: its own rotation in the world, angles like `yaw`, so\n`to_angle` and `to_axis` apply; objects' `world_yaw:<Part>` for a node selected by where or what it is rather\nthan by a name); `prop:<path>` (a property of the node or a variable of its script; strings through\n`match`). `intensity`, `extent_*` and `spin` depend on what a build chose, so their threshold is calibrated\nor relative to the start, never a literal (tools/validate-game.py).",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "pattern": "^(count|active|visible|x|y|z|speed|extent_x|extent_y|extent_z|simulating|intensity|on|spin|world_yaw|world_pitch|prop:[A-Za-z_][A-Za-z0-9_]{0,63}(\\[\\d{1,3}\\])?(\\.[A-Za-z_][A-Za-z0-9_]{0,63}(\\[\\d{1,3}\\])?){0,5})$",
+          "title": "Field",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match"
+        },
+        "of": {
+          "default": "count",
+          "enum": [
+            "count",
+            "any",
+            "all",
+            "min",
+            "max",
+            "mean",
+            "sum",
+            "first"
+          ],
+          "title": "Of",
+          "type": "string"
+        },
+        "probe": {
+          "const": "components",
+          "title": "Probe",
+          "type": "string"
+        },
+        "select": {
+          "$ref": "#/$defs/ComponentSelect"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "select",
+        "field"
+      ],
+      "title": "ComponentsMeasure",
+      "type": "object"
+    },
+    "Cursor": {
+      "additionalProperties": false,
+      "description": "The mouse moved to a point of the frame (fractions 0-1, y down from the top); a following\n<Mouse>/leftButton press and release clicks there.",
+      "properties": {
+        "cursor": {
+          "items": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Cursor",
+          "type": "array"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "cursor"
+      ],
+      "title": "Cursor",
+      "type": "object"
+    },
+    "Drag": {
+      "additionalProperties": false,
+      "description": "A finger put down at the first spot of `drag`, moved through the others evenly over `over` seconds (at\nonce without it), kept at the last for `hold` seconds, then lifted: a swipe, a slider, a virtual stick\npushed over and held there. `finger` as a tap's; two drags of different fingers at the same time are\na pinch. One finger's touches are at least 0.1 s apart, from one's lift to the next one's start. A\ndrag with a spot whose widget isn't on screen is a miss the play reports.",
+      "properties": {
+        "drag": {
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/OnWidget"
+              }
+            ]
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "Drag",
+          "type": "array"
+        },
+        "finger": {
+          "anyOf": [
+            {
+              "exclusiveMaximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finger"
+        },
+        "hold": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hold"
+        },
+        "over": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Over"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "drag"
+      ],
+      "title": "Drag",
+      "type": "object"
+    },
+    "FileExists": {
+      "additionalProperties": false,
+      "description": "At least `min_count` project files match `glob` (relative to the project; e.g. scenes/*.tscn).",
+      "properties": {
+        "glob": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Glob",
+          "type": "string"
+        },
+        "kind": {
+          "const": "file_exists",
+          "title": "Kind",
+          "type": "string"
+        },
+        "min_count": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Min Count",
+          "type": "integer"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "glob"
+      ],
+      "title": "FileExists",
+      "type": "object"
+    },
+    "Has": {
+      "additionalProperties": false,
+      "description": "A part the object carries (docs/task-probes.md, section 2.4): it matches when the node itself or a node\nbelow it matches every key given: `component` (its class, as a select names one), `visible` (a node that\ndraws and is shown), `near` (the part's own place within `radius` m of a point), `simulating` (a\nRigidBody3D or RigidBody2D that isn't frozen, or a collision shape of one): an object a player can shove\n(docs/task-probes.md, section 2.4).",
+      "minProperties": 1,
+      "properties": {
+        "component": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component"
+        },
+        "near": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Near"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "simulating": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Simulating"
+        },
+        "visible": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible"
+        }
+      },
+      "title": "Has",
+      "type": "object"
+    },
+    "Judge": {
+      "additionalProperties": false,
+      "description": "The game judge's question over evidence the grader takes itself (screenshots and gameplay frames of a scripted\nplay, and the brief), item by item; never the agent's own words. `before`: the grader also plays the game as it\nwas at the start, and the judge compares (a seeded task that changes how the game looks or plays). `route`: a\nproject file in which the agent leaves inputs that play its game through (the probe's [{t, key, press}] with\ncontrol paths, e.g. Tests/win_route.json); the grader plays it in its own clean copy as one more play, and the judge is told when\nthe file is missing or isn't a route. `plays`: the task's own scripted plays the screenshots are taken in (a\nprobe's TaskPlay: its scene, args and inputs), instead of the grader's idle look and its drive, which every task\nshares and which never press a task's own keys or leave a game's title screen; each is played on every side the\ncheck shows (the developer's game, the start on a `before` check, the reference on a `reference` check). `shots`:\nhow many screenshots of each of its plays it is shown (5 unless said), spread evenly over the play, so a short play\nwith many is a run of frames a quarter of a second apart in which motion shows (an ease or a cut, feet that slide, a\ntrail); its plays times its shots are a judge's 20 at most.",
+      "properties": {
+        "before": {
+          "default": false,
+          "title": "Before",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "judge",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "plays": {
+          "items": {
+            "$ref": "#/$defs/TaskPlay"
+          },
+          "maxItems": 4,
+          "title": "Plays",
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 1200,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "reference": {
+          "default": false,
+          "title": "Reference",
+          "type": "boolean"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}/){0,6}[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "rubric": {
+          "items": {
+            "$ref": "#/$defs/RubricItem"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Rubric",
+          "type": "array"
+        },
+        "shots": {
+          "default": 5,
+          "maximum": 20,
+          "minimum": 2,
+          "title": "Shots",
+          "type": "integer"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "question",
+        "rubric"
+      ],
+      "title": "Judge",
+      "type": "object"
+    },
+    "Key": {
+      "additionalProperties": false,
+      "description": "A key pressed or released, by its control path on <Keyboard>, <Mouse> or <Gamepad> (<Keyboard>/w,\n<Keyboard>/space, <Mouse>/leftButton, <Gamepad>/buttonSouth), or Android_Back, a phone's back button.",
+      "properties": {
+        "key": {
+          "pattern": "^(<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}|Android_Back)$",
+          "title": "Key",
+          "type": "string"
+        },
+        "press": {
+          "title": "Press",
+          "type": "boolean"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "key",
+        "press"
+      ],
+      "title": "Key",
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_minutes": {
+          "default": 240,
+          "maximum": 1440,
+          "minimum": 1,
+          "title": "Max Minutes",
+          "type": "integer"
+        },
+        "max_turns": {
+          "default": 200,
+          "maximum": 2000,
+          "minimum": 1,
+          "title": "Max Turns",
+          "type": "integer"
+        },
+        "max_usd": {
+          "default": 40.0,
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "title": "Max Usd",
+          "type": "number"
+        },
+        "tool_timeout_seconds": {
+          "default": 600,
+          "maximum": 3600,
+          "minimum": 10,
+          "title": "Tool Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "Limits",
+      "type": "object"
+    },
+    "LogAbsent": {
+      "additionalProperties": false,
+      "description": "No line of the game's log during a boot matches `pattern` (a regular expression).",
+      "properties": {
+        "kind": {
+          "const": "log_absent",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "pattern": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Pattern",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "pattern"
+      ],
+      "title": "LogAbsent",
+      "type": "object"
+    },
+    "LogMeasure": {
+      "additionalProperties": false,
+      "description": "Lines of the play's log matching `pattern`.",
+      "properties": {
+        "field": {
+          "const": "count",
+          "default": "count",
+          "title": "Field",
+          "type": "string"
+        },
+        "pattern": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Pattern",
+          "type": "string"
+        },
+        "probe": {
+          "const": "log",
+          "title": "Probe",
+          "type": "string"
+        }
+      },
+      "required": [
+        "probe",
+        "pattern"
+      ],
+      "title": "LogMeasure",
+      "type": "object"
+    },
+    "Milestone": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "boot": "#/$defs/Boot",
+                "build": "#/$defs/Build",
+                "code_judge": "#/$defs/CodeJudge",
+                "file_exists": "#/$defs/FileExists",
+                "judge": "#/$defs/Judge",
+                "log_absent": "#/$defs/LogAbsent",
+                "package": "#/$defs/Package",
+                "probe": "#/$defs/Probe"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Build"
+              },
+              {
+                "$ref": "#/$defs/Boot"
+              },
+              {
+                "$ref": "#/$defs/LogAbsent"
+              },
+              {
+                "$ref": "#/$defs/FileExists"
+              },
+              {
+                "$ref": "#/$defs/Package"
+              },
+              {
+                "$ref": "#/$defs/Judge"
+              },
+              {
+                "$ref": "#/$defs/CodeJudge"
+              },
+              {
+                "$ref": "#/$defs/Probe"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Checks",
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,32}$",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "checks"
+      ],
+      "title": "Milestone",
+      "type": "object"
+    },
+    "Near": {
+      "additionalProperties": false,
+      "description": "Within `radius` m of `point`; `y_min`/`y_max` (m) also keep it within a height band: world y, or offsets from\nthe point's y with `y_relative` (docs/task-probes.md, section 2.13).",
+      "properties": {
+        "point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AtXYZ"
+            },
+            {
+              "$ref": "#/$defs/AtPlayer"
+            },
+            {
+              "$ref": "#/$defs/AtCamera"
+            },
+            {
+              "$ref": "#/$defs/AtObject"
+            }
+          ],
+          "title": "Point"
+        },
+        "radius": {
+          "exclusiveMinimum": 0,
+          "maximum": 100000,
+          "title": "Radius",
+          "type": "number"
+        },
+        "y_max": {
+          "anyOf": [
+            {
+              "maximum": 100000,
+              "minimum": -100000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Y Max"
+        },
+        "y_min": {
+          "anyOf": [
+            {
+              "maximum": 100000,
+              "minimum": -100000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Y Min"
+        },
+        "y_relative": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Y Relative"
+        }
+      },
+      "required": [
+        "point",
+        "radius"
+      ],
+      "title": "Near",
+      "type": "object"
+    },
+    "ObjectsMeasure": {
+      "additionalProperties": false,
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "pattern": "^(count|x|y|z|yaw|pitch|roll|scale|extent_x|extent_y|extent_z|active|hidden|collision|speed|spin|simulating|prop:[A-Za-z_][A-Za-z0-9_]{0,63}(\\[\\d{1,3}\\])?(\\.[A-Za-z_][A-Za-z0-9_]{0,63}(\\[\\d{1,3}\\])?){0,5}|facing_vs_velocity|rel_yaw:[A-Za-z0-9_][A-Za-z0-9_ ()-]{0,63}|anim:[A-Za-z0-9_][A-Za-z0-9_ ./()-]{0,63}|clip|world_yaw:[A-Za-z0-9_][A-Za-z0-9_ ()-]{0,63}|world_pitch:[A-Za-z0-9_][A-Za-z0-9_ ()-]{0,63}|world_roll:[A-Za-z0-9_][A-Za-z0-9_ ()-]{0,63}|forward:[A-Za-z0-9_][A-Za-z0-9_ ()-]{0,63}\\.[xyz])$",
+          "title": "Field",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match"
+        },
+        "of": {
+          "default": "count",
+          "enum": [
+            "count",
+            "any",
+            "all",
+            "min",
+            "max",
+            "mean",
+            "sum",
+            "first"
+          ],
+          "title": "Of",
+          "type": "string"
+        },
+        "probe": {
+          "const": "objects",
+          "title": "Probe",
+          "type": "string"
+        },
+        "select": {
+          "$ref": "#/$defs/Select"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "select",
+        "field"
+      ],
+      "title": "ObjectsMeasure",
+      "type": "object"
+    },
+    "OnWidget": {
+      "additionalProperties": false,
+      "description": "The centre of the first visible Control of that node name (a wildcard) or class, whatever its kind (a\nbutton, a stick, a panel).",
+      "properties": {
+        "widget": {
+          "pattern": "^[A-Za-z0-9_*?]{1,120}$",
+          "title": "Widget",
+          "type": "string"
+        }
+      },
+      "required": [
+        "widget"
+      ],
+      "title": "OnWidget",
+      "type": "object"
+    },
+    "Package": {
+      "additionalProperties": false,
+      "description": "The game's release export builds (its Windows Desktop preset, as a release would), and the exported game\nboots.",
+      "properties": {
+        "kind": {
+          "const": "package",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "Package",
+      "type": "object"
+    },
+    "PlayerMeasure": {
+      "additionalProperties": false,
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "x",
+            "y",
+            "z",
+            "speed",
+            "moved",
+            "dist"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "probe": {
+          "const": "player",
+          "title": "Probe",
+          "type": "string"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AtXYZ"
+            },
+            {
+              "$ref": "#/$defs/AtPlayer"
+            },
+            {
+              "$ref": "#/$defs/AtCamera"
+            },
+            {
+              "$ref": "#/$defs/AtObject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "PlayerMeasure",
+      "type": "object"
+    },
+    "Probe": {
+      "additionalProperties": false,
+      "description": "A deterministic check (docs/task-probes.md): `measure` taken where `play` says, reduced to one number, compared with\n`expect`. `describe` is the assertion in plain English, shown in the grade.",
+      "properties": {
+        "describe": {
+          "maxLength": 400,
+          "minLength": 1,
+          "title": "Describe",
+          "type": "string"
+        },
+        "expect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Value"
+            },
+            {
+              "$ref": "#/$defs/Calibrate"
+            },
+            {
+              "$ref": "#/$defs/StartTimes"
+            },
+            {
+              "$ref": "#/$defs/StartPlus"
+            }
+          ],
+          "title": "Expect"
+        },
+        "kind": {
+          "const": "probe",
+          "title": "Kind",
+          "type": "string"
+        },
+        "measure": {
+          "discriminator": {
+            "mapping": {
+              "audio": "#/$defs/AudioMeasure",
+              "camera": "#/$defs/CameraMeasure",
+              "components": "#/$defs/ComponentsMeasure",
+              "log": "#/$defs/LogMeasure",
+              "objects": "#/$defs/ObjectsMeasure",
+              "player": "#/$defs/PlayerMeasure",
+              "render": "#/$defs/RenderMeasure",
+              "screen": "#/$defs/ScreenMeasure",
+              "spawns": "#/$defs/SpawnsMeasure",
+              "ui": "#/$defs/UiMeasure",
+              "widgets": "#/$defs/WidgetsMeasure"
+            },
+            "propertyName": "probe"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PlayerMeasure"
+            },
+            {
+              "$ref": "#/$defs/CameraMeasure"
+            },
+            {
+              "$ref": "#/$defs/ObjectsMeasure"
+            },
+            {
+              "$ref": "#/$defs/WidgetsMeasure"
+            },
+            {
+              "$ref": "#/$defs/ComponentsMeasure"
+            },
+            {
+              "$ref": "#/$defs/ScreenMeasure"
+            },
+            {
+              "$ref": "#/$defs/SpawnsMeasure"
+            },
+            {
+              "$ref": "#/$defs/LogMeasure"
+            },
+            {
+              "$ref": "#/$defs/AudioMeasure"
+            },
+            {
+              "$ref": "#/$defs/UiMeasure"
+            },
+            {
+              "$ref": "#/$defs/RenderMeasure"
+            }
+          ],
+          "title": "Measure"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,48}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs",
+          "type": "array"
+        },
+        "play": {
+          "anyOf": [
+            {
+              "enum": [
+                "look",
+                "drive"
+              ],
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/TaskPlay"
+            }
+          ],
+          "title": "Play"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "describe",
+        "play",
+        "measure",
+        "expect"
+      ],
+      "title": "Probe",
+      "type": "object"
+    },
+    "RenderMeasure": {
+      "additionalProperties": false,
+      "description": "What the renderer drew (docs/task-probes.md, section 2.21): `draw_calls` and `triangles`, the engine's\ncounts of a frame (the 3D scene, its shadow passes and the 2D canvas, the UI's draws among them), the\nhighest over the frames since the previous sample; `texture_mb`, the texture memory in use at the\nsample (MiB). A budget's readings: a literal threshold is allowed, since a budget is a number of its\nown (a mobile game's 700 draw calls).",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "draw_calls",
+            "triangles",
+            "texture_mb"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "probe": {
+          "const": "render",
+          "title": "Probe",
+          "type": "string"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "RenderMeasure",
+      "type": "object"
+    },
+    "RubricItem": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Criterion",
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[a-z0-9_]{1,40}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "weight": {
+          "default": 1,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "criterion"
+      ],
+      "title": "RubricItem",
+      "type": "object"
+    },
+    "SceneLoad": {
+      "additionalProperties": false,
+      "description": "At `t` the play changes to another scene of the project, as the game's own change of scene does; the play's\nclock stands still while it changes (docs/task-probes.md, section 1.1). With shots and teleports, one launch\nvisits several places and pictures each.",
+      "properties": {
+        "scene": {
+          "maxLength": 300,
+          "pattern": "^res://[A-Za-z0-9_ /.()-]+\\.(tscn|scn)$",
+          "title": "Scene",
+          "type": "string"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "scene"
+      ],
+      "title": "SceneLoad",
+      "type": "object"
+    },
+    "ScreenMeasure": {
+      "additionalProperties": false,
+      "description": "The frame the player sees (docs/task-probes.md, section 2.15): mean luminance of the frame as displayed, UI\nincluded (keep the rect off the HUD), over `rect` [x0, y0, x1, y1] in fractions of the frame, y down (default\nthe whole frame). It moves between machines, so its threshold is calibrated or relative to the start, never a\nliteral (tools/validate-game.py).",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "luminance",
+            "luma"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "probe": {
+          "const": "screen",
+          "title": "Probe",
+          "type": "string"
+        },
+        "rect": {
+          "items": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Rect",
+          "type": "array"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "ScreenMeasure",
+      "type": "object"
+    },
+    "Seed": {
+      "additionalProperties": false,
+      "description": "Where a seeded task starts: one of the studio's games at `commit`. `game` is its slug: the game's repository\n(godot-game-<slug>) and its folder under the machine's games root.\n`reference`: a later commit of that game whose change solves the task (a bug's fix), for calibrated probes, the code judge and the task check.\n`history`: which history the two commits are from: \"private\", the game's own repository (its clone,\nGitHub, a mirror), or \"dataset\", the rewritten history a Dataset.zip delivers (History/), whose\ncommit ids differ; the game's commit map translates either way.",
+      "properties": {
+        "commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Commit",
+          "type": "string"
+        },
+        "game": {
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+          "title": "Game",
+          "type": "string"
+        },
+        "history": {
+          "default": "private",
+          "enum": [
+            "private",
+            "dataset"
+          ],
+          "title": "History",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "bug_fix",
+            "feature",
+            "change",
+            "correction"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference"
+        }
+      },
+      "required": [
+        "game",
+        "commit",
+        "kind"
+      ],
+      "title": "Seed",
+      "type": "object"
+    },
+    "Select": {
+      "additionalProperties": false,
+      "description": "Nodes that match every key given: `component` (the node's own class: an engine class or one it inherits,\nits script's class_name, or its script's file name without the extension), `tag` (a group it is in),\n`name` (a wildcard on its name), `near` (within `radius` m of a point), `player` (the player), `has` (a\npart it carries that matches every key given there: a node with a drawn mesh near a point, one with a\nrigid body), `where` (properties of the node compared with values: every one must hold), `inactive`\n(hidden nodes match too; without it only nodes that are shown do).",
+      "properties": {
+        "component": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component"
+        },
+        "has": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Has"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "inactive": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inactive"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "near": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Near"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "player": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Player"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_. -]{1,80}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
+        },
+        "where": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Where"
+              },
+              "maxItems": 4,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Where"
+        }
+      },
+      "title": "Select",
+      "type": "object"
+    },
+    "Shot": {
+      "additionalProperties": false,
+      "description": "A screenshot at `t` with the UI, as the player sees it, named `shot` (shot_<name>.png beside the evenly spaced\nones): the grader's own picture of a moment, for a judge and for whoever reviews a run (docs/task-probes.md, section 1.1).\nNever a pass or fail by itself.",
+      "properties": {
+        "shot": {
+          "pattern": "^[a-z_][a-z0-9_]{0,31}$",
+          "title": "Shot",
+          "type": "string"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "shot"
+      ],
+      "title": "Shot",
+      "type": "object"
+    },
+    "SpawnsMeasure": {
+      "additionalProperties": false,
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "component": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,120}$",
+          "title": "Component",
+          "type": "string"
+        },
+        "field": {
+          "enum": [
+            "spawned",
+            "destroyed"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "probe": {
+          "const": "spawns",
+          "title": "Probe",
+          "type": "string"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "component",
+        "field"
+      ],
+      "title": "SpawnsMeasure",
+      "type": "object"
+    },
+    "StartPlus": {
+      "additionalProperties": false,
+      "description": "Threshold s + d: the start (s) measured in the grading environment (a task with no developers' fix).",
+      "properties": {
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!="
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "start_plus": {
+          "title": "Start Plus",
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "start_plus"
+      ],
+      "title": "StartPlus",
+      "type": "object"
+    },
+    "StartTimes": {
+      "additionalProperties": false,
+      "description": "Threshold s * f: the start (s) measured in the grading environment (a task with no developers' fix).",
+      "properties": {
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!="
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "start_times": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "title": "Start Times",
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "start_times"
+      ],
+      "title": "StartTimes",
+      "type": "object"
+    },
+    "Tap": {
+      "additionalProperties": false,
+      "description": "A finger put down at `tap` (a point of the frame in fractions, or `{\"widget\": name}`: that Control's\ncentre) and lifted: the next frame, or after `hold` seconds (a long press, a button held). `finger`:\nwhich finger (0-9, 0 unless said); taps and drags of different fingers may overlap in time (two\nthumbs). A tap whose widget isn't on screen is a miss the play reports.",
+      "properties": {
+        "finger": {
+          "anyOf": [
+            {
+              "exclusiveMaximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finger"
+        },
+        "hold": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hold"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "tap": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "$ref": "#/$defs/OnWidget"
+            }
+          ],
+          "title": "Tap"
+        }
+      },
+      "required": [
+        "t",
+        "tap"
+      ],
+      "title": "Tap",
+      "type": "object"
+    },
+    "TaskPlay": {
+      "additionalProperties": false,
+      "description": "A task-defined scripted play: `inputs` (keys, axes, widget clicks, cursor moves, teleports, waits, touches)\nsent at their times during `seconds`; its own `scene` instead of the task's play_scene (null: the project's\nmain scene) and `args` on its command line instead of the task's play_args (a flag, -name, then its values,\nbut never the grader's own: the engine flags in docs/task-probes.md section 1.1, -taskProbe*), each only when\nthe play has the key; and samples every `every` seconds (default 0.5).",
+      "properties": {
+        "args": {
+          "items": {
+            "pattern": "^-?[A-Za-z0-9_.:=,/-]{1,60}$",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Args",
+          "type": "array"
+        },
+        "every": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Every"
+        },
+        "inputs": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Key"
+              },
+              {
+                "$ref": "#/$defs/Axis"
+              },
+              {
+                "$ref": "#/$defs/Click"
+              },
+              {
+                "$ref": "#/$defs/Cursor"
+              },
+              {
+                "$ref": "#/$defs/Teleport"
+              },
+              {
+                "$ref": "#/$defs/TeleportTo"
+              },
+              {
+                "$ref": "#/$defs/Wait"
+              },
+              {
+                "$ref": "#/$defs/Shot"
+              },
+              {
+                "$ref": "#/$defs/SceneLoad"
+              },
+              {
+                "$ref": "#/$defs/View"
+              },
+              {
+                "$ref": "#/$defs/Tap"
+              },
+              {
+                "$ref": "#/$defs/Drag"
+              }
+            ]
+          },
+          "maxItems": 400,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[a-z0-9_]{1,32}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "scene": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "pattern": "^res://[A-Za-z0-9_ /.()-]+\\.(tscn|scn)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Scene"
+        },
+        "seconds": {
+          "maximum": 120,
+          "minimum": 5,
+          "title": "Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "seconds"
+      ],
+      "title": "TaskPlay",
+      "type": "object"
+    },
+    "Teleport": {
+      "additionalProperties": false,
+      "description": "The player placed at `teleport` (m) facing `yaw`: the grader's own way to reach a test spot; `hold`: for that\nmany seconds of play the player is put back there after every frame's game logic, for a game that sets its\nplayer's place every frame (docs/task-probes.md, section 1.1).",
+      "properties": {
+        "hold": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hold"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "teleport": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Teleport",
+          "type": "array"
+        },
+        "yaw": {
+          "default": 0.0,
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Yaw",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "teleport"
+      ],
+      "title": "Teleport",
+      "type": "object"
+    },
+    "TeleportTo": {
+      "additionalProperties": false,
+      "description": "The player placed next to the object `teleport_to` selects nearest to it (docs/task-probes.md, section 1.1): `distance` m from\nit on the player's side, level with it, plus `offset` (m), facing `face` (a point) or else that object; for a spot\na build chose itself (an ore it placed). Nothing happens when no object matches. `hold`: as a teleport's, the\nplayer kept at that spot for that many seconds of play (docs/task-probes.md, section 1.1).",
+      "properties": {
+        "distance": {
+          "default": 2.0,
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Distance",
+          "type": "number"
+        },
+        "face": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AtXYZ"
+            },
+            {
+              "$ref": "#/$defs/AtPlayer"
+            },
+            {
+              "$ref": "#/$defs/AtCamera"
+            },
+            {
+              "$ref": "#/$defs/AtObject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face"
+        },
+        "hold": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hold"
+        },
+        "offset": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Offset",
+          "type": "array"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "teleport_to": {
+          "$ref": "#/$defs/Select"
+        }
+      },
+      "required": [
+        "t",
+        "teleport_to"
+      ],
+      "title": "TeleportTo",
+      "type": "object"
+    },
+    "UiMeasure": {
+      "additionalProperties": false,
+      "description": "What the UI shows on screen (docs/task-probes.md, section 2.18): the elements on screen at each sample, one\nfor each thing a drawn Control draws (its text, its picture, its box), only what is drawn (a hidden,\ntransparent or clipped-away Control is not; text in the 3D scene is not UI). `count` (one per element),\n`text` (with `match`), `x`, `y`, `w`, `h` (its rectangle in fractions of the frame, y down); `of` combines the\nelements `select` picks. `signature`: one value a sample for everything the select picks (kinds, texts,\nrectangles), read with `agg` `changes` (how many samples show something other than the one before: a readout\nthat updates), `any`, `all` or `count` (samples showing anything); `of` is ignored (docs/task-probes.md,\nsection 2.18). `number`: the first number its text elements show, in reading order; `clock`: the first time\nthey show (h:mm:ss, m:ss, or else a number, as seconds); read with `rises`, `falls`, `changes` or `range` for\nwhich way it moved, `of` ignored (docs/task-probes.md, section 2.18). The way to check what a HUD shows.",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "count",
+            "text",
+            "x",
+            "y",
+            "w",
+            "h",
+            "signature",
+            "number",
+            "clock"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match"
+        },
+        "of": {
+          "default": "count",
+          "enum": [
+            "count",
+            "any",
+            "all",
+            "min",
+            "max",
+            "mean",
+            "sum",
+            "first"
+          ],
+          "title": "Of",
+          "type": "string"
+        },
+        "probe": {
+          "const": "ui",
+          "title": "Probe",
+          "type": "string"
+        },
+        "select": {
+          "$ref": "#/$defs/UiSelect"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "UiMeasure",
+      "type": "object"
+    },
+    "UiSelect": {
+      "additionalProperties": false,
+      "description": "Which of the UI elements on screen (docs/task-probes.md, section 2.18): `kind` (text, box, image), `text` (a\nregular expression the element's text must match; text elements only) and `rect` [x0, y0, x1, y1] in\nfractions of the frame, y down from the top (the element's centre inside); none: every element on screen.",
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "text",
+                "box",
+                "image"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "rect": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rect"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "title": "UiSelect",
+      "type": "object"
+    },
+    "Value": {
+      "additionalProperties": false,
+      "description": "A literal threshold, for facts that don't depend on the scene (counts, booleans).",
+      "properties": {
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!="
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "value"
+      ],
+      "title": "Value",
+      "type": "object"
+    },
+    "View": {
+      "additionalProperties": false,
+      "description": "At `t` the player turns to the yaw and the camera to `view` [pitch, yaw] in degrees (pitch -89 to 89, a\npositive one looks up), for a shot that faces a given way (docs/task-probes.md, section 1.1).",
+      "properties": {
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "view": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "View",
+          "type": "array"
+        }
+      },
+      "required": [
+        "t",
+        "view"
+      ],
+      "title": "View",
+      "type": "object"
+    },
+    "Wait": {
+      "additionalProperties": false,
+      "description": "At `t` the play's clock holds for `wait` seconds of real time while the game runs on, paced to real time (each\nframe waits for the wall clock to catch up with the game's own time), for what runs on the wall clock (a menu that\npages on real time). No samples, inputs or screenshots meanwhile; then the play goes on from `t` (docs/task-probes.md, section 1.1).",
+      "properties": {
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "wait": {
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Wait",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "wait"
+      ],
+      "title": "Wait",
+      "type": "object"
+    },
+    "Where": {
+      "additionalProperties": false,
+      "description": "A property of the node (the path a prop: field reads) compared with a value: a number, a boolean (1\nor 0) or a string; a node whose property doesn't resolve doesn't match.",
+      "properties": {
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!="
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "prop": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}(\\[\\d{1,3}\\])?(\\.[A-Za-z_][A-Za-z0-9_]{0,63}(\\[\\d{1,3}\\])?){0,5}$",
+          "title": "Prop",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "prop",
+        "op",
+        "value"
+      ],
+      "title": "Where",
+      "type": "object"
+    },
+    "WidgetSelect": {
+      "additionalProperties": false,
+      "description": "Widgets: the Control nodes of the game's window, by their class (`component`: Button, Label, ProgressBar,\nTextureRect, a game's own script) and/or name (a wildcard on the node's name); `text`: a regular expression\nthe widget's text must match; `visible`: only the widgets shown (as the `visible` field reads them: never a\nhidden or transparent one, nor one under such a parent), so a select counts what is on screen.",
+      "properties": {
+        "component": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "visible": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible"
+        }
+      },
+      "title": "WidgetSelect",
+      "type": "object"
+    },
+    "WidgetsMeasure": {
+      "additionalProperties": false,
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "count",
+            "visible",
+            "text",
+            "percent",
+            "value",
+            "interactable",
+            "has_brush",
+            "brush",
+            "x",
+            "y",
+            "w",
+            "h"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "match": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match"
+        },
+        "of": {
+          "default": "count",
+          "enum": [
+            "count",
+            "any",
+            "all",
+            "min",
+            "max",
+            "mean",
+            "sum",
+            "first"
+          ],
+          "title": "Of",
+          "type": "string"
+        },
+        "probe": {
+          "const": "widgets",
+          "title": "Probe",
+          "type": "string"
+        },
+        "select": {
+          "$ref": "#/$defs/WidgetSelect"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "select",
+        "field"
+      ],
+      "title": "WidgetsMeasure",
+      "type": "object"
+    }
+  },
+  "$id": "game-task/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "asset_packs": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Asset Packs",
+      "type": "array"
+    },
+    "difficulty": {
+      "default": "medium",
+      "enum": [
+        "calibration",
+        "easy",
+        "medium",
+        "hard"
+      ],
+      "title": "Difficulty",
+      "type": "string"
+    },
+    "engine": {
+      "const": "godot-4.7",
+      "default": "godot-4.7",
+      "title": "Engine",
+      "type": "string"
+    },
+    "instruction": {
+      "maxLength": 20000,
+      "minLength": 1,
+      "title": "Instruction",
+      "type": "string"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "milestones": {
+      "items": {
+        "$ref": "#/$defs/Milestone"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Milestones",
+      "type": "array"
+    },
+    "name": {
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "title": "Name",
+      "type": "string"
+    },
+    "play_args": {
+      "default": [],
+      "description": "The game's command-line arguments for every play of the task (-scenario 2: [\"-scenario\", \"2\"]; they follow\n`--` on the engine's command line); never the grader's own flags (TaskPlay).",
+      "items": {
+        "pattern": "^-?[A-Za-z0-9_.:=,/-]{1,60}$",
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Play Args",
+      "type": "array"
+    },
+    "play_scene": {
+      "anyOf": [
+        {
+          "maxLength": 300,
+          "pattern": "^res://[A-Za-z0-9_ /.()-]+\\.(tscn|scn)$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The scene every play of the task opens (null: the project's main scene).",
+      "title": "Play Scene"
+    },
+    "player": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Select"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The player object for every play of the task (CameraMeasure, PlayerMeasure, `player` points and selects),\nwhen the default finds the wrong one."
+    },
+    "seed": {
+      "$ref": "#/$defs/Seed"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Tags",
+      "type": "array"
+    },
+    "title": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "title",
+    "instruction",
+    "seed",
+    "milestones"
+  ],
+  "title": "game-task/1",
+  "type": "object"
+}
