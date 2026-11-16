@@ -66,7 +66,7 @@ def make_inputs(tmp, recorded=True, orientation=None):
             response=f'{ref}\nsee C:\\Users\\{ACCOUNT}\\GodotWork\\godot-game-factory\\tools ' + 'QUJD' * 100),
         row(schema='agent-action/v0', time=before, project=SLUG, session_id=S2, agent='codex', event='PostToolUse', cwd=cwd,
             tool='apply_patch', tool_use_id='t2', input={'command': '*** Begin Patch'}, response='ok: runs/pilot-2c-opus-siege/summary.json'),
-        # a tool call's whole output (far past the 8,000 characters rows held before), a name deep inside it; and one cut at the cap
+        # a tool call's whole output, a name deep inside it; and one cut at the cap
         row(schema='agent-action/v0', time=before, project=SLUG, session_id=S2, agent='codex', event='PostToolUse', cwd=cwd,
             tool='Bash', tool_use_id='t4', input={'command': 'type build.log'},
             response='compiling\n' * 3000 + f'saved to C:\\Users\\{ACCOUNT}\\GodotWork\\out.txt for jane.tester@corp.example'),

@@ -2665,8 +2665,7 @@ def dataset_readme(c, repo):
                      ('`messages.jsonl` holds every prompt the person typed (`role` "user") and every reply the model wrote (`role` "assistant") and, where the sessions were recorded with them, the reasoning summaries the agent saved (`role` "thinking"); '
                       if 'messages.jsonl' in c['sessions'] else '') +
                      ('`actions.jsonl` holds every tool call with its input and its result (`response`: the whole text up to 1,000,000 characters; a longer one '
-                      'is cut there, and its row says `response_truncated` true and `response_chars`, its length before the cut; rows recorded '
-                      'before whole results were kept hold the first 8,000 characters). ' if 'actions.jsonl' in c['sessions'] else '') +
+                      'is cut there, and its row says `response_truncated` true and `response_chars`, its length before the cut). ' if 'actions.jsonl' in c['sessions'] else '') +
                      '`session_id` (session_NN) and `time` tie the rows of one session together.')
     a.append('- `Brief/` — the original brief the game was built from (`Brief/brief.md`) and its design doc with story bible and status (`Brief/design.md`).')
     if not repo:

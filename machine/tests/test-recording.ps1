@@ -67,7 +67,7 @@ try {
   $t0 = [DateTime]::UtcNow   # rows older than their transcript file are a fork's copied context: stamp them after it
   $sid = [Guid]::NewGuid().ToString()
   $tr = Join-Path $fakeHome ".claude\projects\p\$sid.jsonl"
-  $big = ('line of build output' + "`n") * 1000 + 'END-OF-OUTPUT'   # 21,013 characters: rows held 8,000 before
+  $big = ('line of build output' + "`n") * 1000 + 'END-OF-OUTPUT'   # 21,013 characters
   $lines = @(
     (Line ([ordered]@{ type = 'user'; sessionId = $sid; uuid = 'u-1'; timestamp = (T 1); cwd = $cwd; message = [ordered]@{ role = 'user'; content = 'Make the door open.' } })),
     (Line ([ordered]@{ type = 'assistant'; sessionId = $sid; uuid = 'a-1'; timestamp = (T 2); cwd = $cwd; message = [ordered]@{ role = 'assistant'; model = 'model-x'; content = @([ordered]@{ type = 'thinking'; thinking = 'The door needs a hinge first.'; signature = 'c2lnbmF0dXJl' }) } })),
