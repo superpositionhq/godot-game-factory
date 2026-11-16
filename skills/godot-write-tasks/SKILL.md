@@ -91,20 +91,21 @@ medium only when its thread is.
 
 A thread qualifies only when all of these hold (the validator enforces the numbers, section 6):
 
-1. **Many edits.** From `seed.commit` to `seed.reference`, at least 4 commits change the game itself (what a build of
-   the game takes: `project.godot`, `scenes/`, `game/`, `assets/`, `addons/` and the like; not `steps/`, `Scripts/`,
-   `Docs/`, `Brief/`, `Dataset/`, `.md` files, `workflow.jsonl` or the manifests), and the reference changes at least
-   5 game files against the start (a generator step under `steps/` is the creation's record and a `.import` or
-   `.uid` follows its file: neither is a game file), with at least 100 code lines added plus removed (GDScript,
-   shaders, scripts such as `.ps1` or `.py`, generator steps included; not under `Dataset/`, `Docs/` or a
-   `third_party/` folder, so store packs' own code doesn't count). Status, docs and `workflow.jsonl` commits don't
-   count. Assets and binary files don't count as code lines (scenes and resources neither, even though they are
-   text).
-2. **Several systems.** The change spans at least two of: GDScript code (`.gd`), shaders (`.gdshader`), config
-   (`project.godot`, `export_presets.cfg`), scenes (`.tscn`), resources and data (`.tres`, `.json`, `.csv`, `.txt`),
-   other assets (models, textures, sounds, fonts). The validator counts them over the game files of item 1 (so a
-   generator step is no system), by path and extension. A long thread confined to one function is a short task in
-   disguise.
+1. **Many edits.** From `seed.commit` to `seed.reference`, at least 4 commits change the game itself (`scenes/`,
+   `game/`, `assets/`, `project.godot` and the game's own addons under `addons/`; not the AutoPlay drop-in, `steps/`,
+   `Scripts/`, `Docs/`, `Brief/`, `Dataset/`, `export_presets.cfg`, `workflow.jsonl` or the manifests), and the
+   reference changes at least 5 game files against the start (a generator step under `steps/` is the creation's
+   record and a `.import` or `.uid` follows its file: neither is a game file), with at least 100 code lines added
+   plus removed (any code file of the repo: GDScript, shaders (`.gdshader`, `.gdshaderinc`), scripts such as `.ps1`
+   or `.py`, generator steps included; not under `Dataset/`, `Docs/` or a store pack's folder, so store packs' own
+   code doesn't count). Status, docs and `workflow.jsonl` commits don't count. Assets and binary files don't count as
+   code lines (scenes and resources neither, even though they are text).
+2. **Several systems.** The change spans at least two of: config (`project.godot`), an addon (anything under
+   `addons/`), GDScript code (`.gd`), scenes (`.tscn`, `.scn`), materials (shaders `.gdshader` and `.gdshaderinc`,
+   `.material`, and textures: `.png`, `.jpg`, `.svg`, `.webp`, `.tga`, `.bmp`, `.exr`, `.hdr`, `.dds`, `.ktx`), data
+   (`.tres`, `.res`, `.json`, `.csv`, `.txt`, `.cfg`), other assets (anything else: models, sounds, fonts). The
+   validator counts them over the game files of item 1 (so a generator step is no system), by path and extension. A
+   long thread confined to one function is a short task in disguise.
 3. **Several outcomes.** At least 3 required outcome probes, one per issue the thread settled, so partial work earns
    partial credit (a compound ticket). A thread that settled only one observable thing is rarely long enough.
 4. **The first attempt didn't hold, or the cause is far from the symptom.** The thread had a fix that was undone,
