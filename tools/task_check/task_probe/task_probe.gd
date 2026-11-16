@@ -101,7 +101,11 @@ func _init() -> void:
 	else:
 		_spec = parsed
 		_out = Find.text(_spec, "out")
-		_kept = _forget_saves()
+		# a play that runs after others starts on what they saved (the spec's `keep_saves`); any other starts clean
+		if Find.flag(_spec, "keep_saves"):
+			_kept = "the saved data is kept: the play runs after the plays that left it"
+		else:
+			_kept = _forget_saves()
 
 
 func _ready() -> void:
@@ -582,6 +586,9 @@ func _finish(reason: String, quit: bool = true) -> void:
 		_log.close()
 		_log = null
 	if quit:
+		# the play ends as a window closed by its player does: the game is told first (what it saves on
+		# NOTIFICATION_WM_CLOSE_REQUEST is there for a play that runs after this one), then the tree exits
+		get_tree().root.propagate_notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
 		get_tree().quit(0)
 
 

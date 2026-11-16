@@ -25,7 +25,8 @@ func _ready() -> void:
 	var saved := FileAccess.open("user://visits.txt", FileAccess.WRITE)
 	saved.store_string(str(visits))
 	saved.close()
-	$HUD/VisitsLabel.text = "VISITS %d" % visits
+	# and whether the game was told it was closing the time before (it saves that only then)
+	$HUD/VisitsLabel.text = "VISITS %d%s" % [visits, " CLOSED" if FileAccess.file_exists("user://closed.txt") else ""]
 	for i in 250:  # more nodes than a sample keeps rows of
 		var one := Node3D.new()
 		one.position.x = i
@@ -46,6 +47,10 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST and is_node_ready():
 		backs += 1
 		$HUD/BackLabel.text = "BACK %d" % backs
+	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
+		var saved := FileAccess.open("user://closed.txt", FileAccess.WRITE)
+		saved.store_string("closed")
+		saved.close()
 
 
 func _input(event: InputEvent) -> void:

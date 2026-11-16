@@ -417,6 +417,22 @@ def check_wait(c, found):
     c.true("probe.log says so", b"the wait is over" in found["files"].get("probe.log", b""))
 
 
+def check_kept(c, found):
+    if not ended(c, found, 2.5):
+        return
+    c.true("a play that keeps the saved data finds what the play before it saved (the game's second start on it), "
+           "what it saved when it was told to close too", "VISITS 2 CLOSED" in texts(found, "texts", 1.0),
+           texts(found, "texts", 1.0))
+    c.true("probe.log says so", b"the saved data is kept: the play runs after the plays that left it" in found["files"].get("probe.log", b""))
+
+
+def check_fresh(c, found):
+    if not ended(c, found, 2.5):
+        return
+    c.true("a play that doesn't starts clean, whatever the play before it saved", "VISITS 1" in texts(found, "texts", 1.0),
+           texts(found, "texts", 1.0))
+
+
 def check_frame(c, found):
     if not ended(c, found, 3.5):
         return
@@ -452,5 +468,7 @@ PLAYS = {
     "idle": {"check": check_idle, "spec": "wait", "flag": False, "engine_args": ["--quit-after", "30"]},
     "shutdown": {"check": check_shutdown, "args": ["-quitAt", "2"]},
     "wait": {"check": check_wait},
+    "kept": {"check": check_kept, "first": "wait"},
+    "fresh": {"check": check_fresh, "first": "wait"},
     "frame": {"check": check_frame, "rendered": True},
 }

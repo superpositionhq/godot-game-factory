@@ -107,6 +107,14 @@ the task play's own `scene` and `args`), with the task probe sampling every 0.5 
 is played once per side, with the measures of every probe that names it. A play with an `audio` measure is paced to
 real time and every other play runs as fast as the machine renders.
 
+Plays run in the order the task's checks first ask for them, except that a task play with `after` runs once every
+play it names has run on the same side, a failed one too, and starts on the saved data they left
+([task-probes.md](task-probes.md), section 1.1). Every other play starts clean: the checker deletes the copy's user
+data folder before it, and the probe empties `user://` as the game starts. When another play ran between a play and
+the plays it names, those are played again first for their saves (`playing play_<name> again` in the log; their
+files are kept as `play_<name>_again`, their checks keep their first play's result, and a replay that ended
+otherwise than the first is noted in the detail of the reader's checks).
+
 **The frame.** A desktop game is played at 960x540. A mobile game (its copy has a `Platform.json`) is played at the
 phone's size, 1920x1080 or 1080x1920, by touch ([task-probes.md](task-probes.md), section 1.1), with the renderer its
 project names (the Mobile renderer). The size is the frame's, whatever the window is (a portrait frame is taller than the screen):

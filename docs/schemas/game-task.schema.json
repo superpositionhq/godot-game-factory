@@ -1,5 +1,5 @@
 {
-  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale, whether it went on and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`). An audio measure may read the sounds that start (`started_audible`, `sounds`, `repeats`) and select by a place (`near`).",
+  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale, whether it went on and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`). An audio measure may read the sounds that start (`started_audible`, `sounds`, `repeats`) and select by a place (`near`). A task play may name the task plays that run before it on the same side (`after`), for a play that reads what another saves.",
   "$defs": {
     "AtCamera": {
       "additionalProperties": false,
@@ -2924,8 +2924,26 @@
     },
     "TaskPlay": {
       "additionalProperties": false,
-      "description": "A task-defined scripted play: `inputs` (keys, axes, widget clicks, cursor moves, teleports, waits, touches, the stages of a contact)\nsent at their times during `seconds`; its own `scene` instead of the task's play_scene (null: the project's\nmain scene) and `args` on its command line instead of the task's play_args (a flag, -name, then its values,\nbut never the grader's own: the engine flags in docs/task-probes.md section 1.1, -taskProbe*), each only when\nthe play has the key; and samples every `every` seconds (default 0.5).",
+      "description": "A task-defined scripted play: `inputs` (keys, axes, widget clicks, cursor moves, teleports, waits, touches, the stages of a contact)\nsent at their times during `seconds`; its own `scene` instead of the task's play_scene (null: the project's\nmain scene) and `args` on its command line instead of the task's play_args (a flag, -name, then its values,\nbut never the grader's own: the engine flags in docs/task-probes.md section 1.1, -taskProbe*), each only when\nthe play has the key; and samples every `every` seconds (default 0.5).\n`after`: the task plays (probe or judge plays of the task) that run and end on the same side before it starts,\nfor a play that reads what another writes (a save); one that failed still counts as run. It starts on the saved data\nthose plays and the plays they name left, and on nothing else's; every other play starts clean.",
       "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[a-z0-9_]{1,32}$",
+                "type": "string"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After"
+        },
         "args": {
           "items": {
             "pattern": "^-?[A-Za-z0-9_.:=,/-]{1,60}$",

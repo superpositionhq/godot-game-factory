@@ -390,12 +390,14 @@ class Project:
         return Result(code, cut(head + output), round(seconds + spent[0], 3), timed_out,
                       round(waited + spent[1], 3), cause, stopped)
 
-    def play(self, seconds, shots, timeout, scene=None, inputs=None, queries=None, args=(), every=None, player=None):
+    def play(self, seconds, shots, timeout, scene=None, inputs=None, queries=None, args=(), every=None, player=None,
+             keep_saves=False):
         """The game run from source for `seconds` of game time through the probe: on its own desktop, a frame of
         960x540 (a mobile game: the phone's size), a fixed 30 fps, `shots` screenshots, `inputs` sent at their times,
         `queries` (probes.query_file) sampled every `every` s, `scene` opened (None: the project's main scene),
         `player` (an object select, or None: the probe finds the player) as the player, `args` after the spec on the
-        command line; a Played. The play starts from clean saved data (seeds.forget_saves)."""
+        command line; a Played. The play starts from clean saved data (seeds.forget_saves), unless `keep_saves`: then
+        what the play before it on this copy saved is there (a task play run after others, check.Side)."""
         logs = self.logs()
         out = logs / "play"
         seeds.remove(out)  # what an earlier play wrote is never this one's
@@ -408,11 +410,14 @@ class Project:
                 "sound": probes.hears(queries),
                 "player": player, "inputs": list(inputs or []),
                 "queries": queries or {"format": probes.QUERIES_FORMAT, "every": every, "queries": []}}
+        if keep_saves:  # the probe empties user:// when the game starts, unless the spec says this
+            spec["keep_saves"] = True
         if mobile:  # a phone's play: <Keyboard>/escape is its back button (a desktop game's spec has no such key)
             spec["touch"] = True
         asked = _fresh(logs / SPEC)  # beside the play's folder, so it isn't one of the files the play wrote
         asked.write_text(json.dumps(spec, indent=2), encoding="utf-8")
-        seeds.forget_saves(self.folder)
+        if not keep_saves:
+            seeds.forget_saves(self.folder)
         argv = [sys.executable, DESK, self.machine.editor, "--path", self.folder, "--log-file", log_path, *PLAY_FLAGS,
                 *([scene] if scene else []), "--", "-taskProbe", asked, *args]
         found = self.machine.job(f"task-check play {self.label}", argv, self.folder, timeout, gpu=True)

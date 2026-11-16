@@ -21,7 +21,9 @@ The plays a probe names: "look", the idle play (20 s, no input, 6 screenshots); 
 the same route by touch, MOBILE_DRIVE); a task play (its own seconds, inputs, scene, args and sampling; 2 screenshots,
 or the most a judge check showing it asks). Each is played once per side, with the probe's queries for every probe it
 serves, on the task's play_scene and play_args unless a task play names its own, with the task's `player` as the
-player. A boot check plays boot_<seconds>s (2 screenshots, no queries). Every task's boot is a 60 s idle play and
+player. A task play that names `after` is played once the plays it names have run on that side, a failed one too,
+and starts on the saved data they left; every other play starts clean (Side._task_play). A boot check plays
+boot_<seconds>s (2 screenshots, no queries). Every task's boot is a 60 s idle play and
 "look" is the first 20 s of the same idle game, so when no look probe reads the log, a side that boots (the reference;
 a start is never booted) plays one 60 s idle play with look's queries for both (Side.idle): the boot check reads it
 whole, and look reads its first 20 s only (first_seconds), one game launch instead of two. Judges and packaging never
@@ -200,6 +202,8 @@ class Side:
         self.player = tasks.player(task)
         self._build = None
         self.played = {}  # play name -> godot.Played
+        self.saves = []  # the plays whose saved data the copy holds now: the last that started clean, and those after it
+        self.replays = {}  # play name -> what differed when it was played again for its saves (replay_note)
 
     # -- the build ---------------------------------------------------------------------------------------------------
 
@@ -245,25 +249,41 @@ class Side:
         for f, data in files.items():
             (folder / f).write_bytes(data)
 
-    def _play(self, name, seconds, shots, inputs=None, play=None, queries=None, every=None, waits=0.0):
+    def _play(self, name, seconds, shots, inputs=None, play=None, queries=None, every=None, waits=0.0, again=False):
         """A play, once per name, on the scene and args `play` (a task play, or None for the checker's own) opens;
-        `waits`: the real seconds its waits add (a task play's), which its timeout gets on top."""
-        if name not in self.played:
-            self.log(f"  {self.name}: playing {name} ({seconds} s" + (f", {waits:g} s waiting" if waits else "") + ")")
+        `waits`: the real seconds its waits add (a task play's), which its timeout gets on top. A task play that
+        names `after` starts on the saved data of the plays before it; every other play starts clean (the probe
+        clears the copy's saved data). `again`: played once more for the saved data it leaves; its checks keep reading
+        its first play, its files are kept as <name>_again, and what differed from the first is noted (replay_note)."""
+        if name not in self.played or again:
+            keeps = bool(play and play.get("after"))
+            self.log(f"  {self.name}: playing {name} " + ("again " if again else "")
+                     + f"({seconds} s" + (f", {waits:g} s waiting" if waits else "") + ")")
             scene, args = tasks.place(self.task, play)
+            before, self.saves = self.saves, []  # a play that raises leaves no saves known
             found = self.project.play(seconds, shots, self.timeout + math.ceil(waits), scene=scene, inputs=inputs,
-                                      queries=queries, args=args, every=every, player=self.player)
-            self.played[name] = found
+                                      queries=queries, args=args, every=every, player=self.player, keep_saves=keeps)
+            self.saves = before + [name] if keeps else [name]
             waited = getattr(found, "waited", 0.0)
-            self.log(f"  {self.name}: played {name} in {found.seconds:.0f} s"
-                     + (f" ({waited:.0f} s of it waiting for a machine slot)" if waited >= 1 else ""))
+            ended = found.probe.get("ended") if isinstance(found.probe, dict) else None
+            self.log(f"  {self.name}: played {name} " + ("again " if again else "") + f"in {found.seconds:.0f} s"
+                     + (f" ({waited:.0f} s of it waiting for a machine slot)" if waited >= 1 else "")
+                     + (f": exit {found.exit_code}{', timed out' if found.timed_out else ''}, ended {ended}"
+                        if again else ""))
             if self.evidence is not None:
                 # the play's spec too: probe.json keys its measures by query id, and only the spec says which id is
                 # which select (two components queries of one play, both empty, couldn't be told apart)
                 spec = self.project.read(f"{godot.LOGS}/{godot.SPEC}")
-                self._keep(name, {**found.files, "play.log": found.log.encode("utf-8"),
-                                  "output.txt": found.output.encode("utf-8"),
-                                  **({godot.SPEC: spec} if spec is not None else {})})
+                self._keep(name + ("_again" if again else ""),
+                           {**found.files, "play.log": found.log.encode("utf-8"),
+                            "output.txt": found.output.encode("utf-8"),
+                            **({godot.SPEC: spec} if spec is not None else {})})
+            if again:
+                differs = replay_note(name, self.played[name], found)
+                if differs:
+                    self.replays[name] = differs
+                return found
+            self.played[name] = found
         return self.played[name]
 
     def judge_plays(self, check):
@@ -313,9 +333,37 @@ class Side:
                 return godot.Played(p.exit_code, p.timed_out, p.output, p.seconds, first_seconds(p.probe, seconds),
                                     p.log, p.files)
             return self._play(name, seconds, shots, inputs, queries=queries)
+        return self._task_play(play)
+
+    def _task_play(self, play):
+        """A task play, after the plays its `after` names (docs/task-probes.md 1.1): each of them played on this copy
+        first, in order, and ended, a failed one too, so the copy's saved data is what they left and nothing else's.
+        When another play ran since (it cleared the saved data), they are played again for what they save, their
+        results dropped."""
+        name = f"play_{play['name']}"
+        if name in self.played:
+            return self.played[name]
+        named = tasks.task_plays(self.task)
+        before = tasks.chain(self.task, play["name"])
+        if before and self.saves != [f"play_{n}" for n in before]:
+            for n in before:  # from the first, which starts clean: each on what those before it left
+                self._run(named[n], again=f"play_{n}" in self.played)
+        return self._run(play)
+
+    def replayed(self, play):
+        """What to say in the detail of a check that reads task play `play`: the plays of its chain that, played again
+        for their saves, didn't end as their first play did (the saves it read may not be those their checks saw)."""
+        if not isinstance(play, dict):
+            return ""
+        notes = [self.replays[f"play_{n}"] for n in tasks.chain(self.task, play["name"]) if f"play_{n}" in self.replays]
+        return "; note: " + "; ".join(notes) if notes else ""
+
+    def _run(self, play, again=False):
+        name = play["name"]
+        queries = probes.query_file(self.plan.get(name, []), play["every"])
         shots = judges.play_shots(self.task).get(name, 2)  # as the grader plays it: a judge showing it asks more
         return self._play(f"play_{name}", play["seconds"], shots, play["inputs"] or None, play=play, queries=queries,
-                          every=every, waits=tasks.waited(play))
+                          every=play["every"], waits=tasks.waited(play), again=again)
 
     def boots(self):
         """The boot plays this task's checks run (seconds): its boot checks, and 60 s for a log_absent check."""
@@ -419,6 +467,8 @@ class Grade:
             else:
                 try:
                     ok, detail = self.check(check)
+                    if check["kind"] == "probe":
+                        detail = str(detail) + self.side.replayed(check["play"])
                 except godot.MachineError:
                     raise  # the machine can't run Godot (its limiter, no desktop): no verdict on the game
                 except (OSError, RuntimeError, ValueError) as exc:
@@ -428,6 +478,30 @@ class Grade:
                          "required": check["required"], "weight": check["weight"], "detail": str(detail)[:700],
                          "group": group})
         return {"checks": rows, "probes": self.measured}
+
+
+def _how(played):
+    """How a play ended, for comparing two plays of one play: (how it ended, timed out, the inputs that missed)."""
+    probe = played.probe if isinstance(played.probe, dict) else {}
+    missed = [(m.get("t"), m.get("kind"), m.get("target")) for m in probe.get("inputs_missed") or []
+              if isinstance(m, dict)]
+    return probe.get("ended"), bool(played.timed_out), missed
+
+
+def replay_note(name, first, again):
+    """What differed when play `name` was played again for its saved data, in words, or None: how it ended, whether it
+    timed out, which inputs missed."""
+    a, b = _how(first), _how(again)
+    if a == b:
+        return None
+    said = []
+    if a[0] != b[0]:
+        said.append(f"it ended {b[0]} (first: {a[0]})")
+    if a[1] != b[1]:
+        said.append("it timed out" if b[1] else "it did not time out as the first did")
+    if a[2] != b[2]:
+        said.append(f"{len(b[2])} input(s) missed (first: {len(a[2])})")
+    return f"{name}, played again for its saved data, did not go as its first play: " + ", ".join(said)
 
 
 def valid_name(name):

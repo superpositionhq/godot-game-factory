@@ -54,9 +54,12 @@ The task:
 
 Plays and inputs:
 
-- A task play: `name`, `seconds`, `every`, `inputs`, `scene` and `args`. `scene` and `args` have no default: a play's
-  own key, when it is there, takes the place of the task's `play_scene` / `play_args` for that play (`"scene": null`
-  opens the project's main scene).
+- A task play: `name`, `seconds`, `every`, `inputs`, `scene`, `args` and `after`. `scene` and `args` have no default:
+  a play's own key, when it is there, takes the place of the task's `play_scene` / `play_args` for that play
+  (`"scene": null` opens the project's main scene). `after`: 1 to 8 names of task plays of the task (a probe's play, a
+  judge's own plays); the validator refuses a name that is none (`look` and `drive` are none), a name twice, the play
+  itself, a cycle, and two names of which neither runs after the other through its own `after`
+  (`play_after_errors`).
 - Play arguments (`play_args`, a play's `args`): each `^-?[A-Za-z0-9_.:=,/-]{1,60}$`, at most 16. They follow `--` and
   the probe's own `-taskProbe <spec>` on the command line, so the engine never reads one as its own flag: the game
   reads them with `OS.get_cmdline_user_args()`. The validator refuses the probe's own (any flag starting with
@@ -355,7 +358,20 @@ Saved data. Every play starts from clean saved data: `seeds.add_probe` gives the
 `user://` when the game starts, in its `_init`, before any other autoload wakes (`_forget_saves`: only when the name
 is exactly `TaskProbe.` and 12 hex digits and the folder is that name's; the engine's own `logs`, `shader_cache` and
 `vulkan` folders are kept; anything else keeps its saved data and `probe.log` says why). The checker deletes the
-folder with the copy (section 5).
+folder before every play too (`godot.Project.play`, `seeds.forget_saves`) and with the copy (section 5).
+
+Plays after others (`check.Side._task_play`, `tasks.chain`). A play's start depends on its own `after` alone. One
+that names none always starts clean. One that names some starts on exactly the saves of its chain: the plays it
+names and the plays those name, each after its own, in order (a play named twice runs once, where it is first
+needed), a failed one counting as run. The side keeps which plays' saves the copy holds now (`Side.saves`: the last
+play that started clean and those played after it with `keep_saves`); when they aren't exactly the chain, the chain
+is played again from its first play, which starts clean (`_run(again=True)` for one played before: its first result
+stays the one its checks read, its files are kept as `<name>_again`, and `replay_note` says in the detail of the
+reader's checks when it ended otherwise, timed out otherwise or missed other inputs than the first). A play with
+`after` is played with `keep_saves`: the checker deletes nothing before it and its spec holds `"keep_saves": true`,
+on which the probe leaves `user://` as it is (`probe.log`: `the saved data is kept: the play runs after the plays
+that left it`). When a play's time is up the probe sends `NOTIFICATION_WM_CLOSE_REQUEST` down the tree before it
+asks the engine to quit, so a game that saves when it is closed has saved for the play after it.
 
 A frame has two passes, each raising the probe's `stamp`: before the game's scripts (the autoload, process priority
 -2^30: a held player and the pinned objects put back, the inputs) and after them (its child `Late`, priority 2^30:
@@ -489,11 +505,12 @@ so the engine imports nothing there), each made fresh before its job.
 
 - What varies: `out` (the copy's), `size` (the size frames are read at: 960x540, or a mobile game's phone size,
   `[1080, 1920]` or `[1920, 1080]`: the copy has a `Platform.json`, read by `godot.Project.mobile` through the
-  validator's `read_platform`), `touch` (true, in a mobile game's spec only), the play's `seconds`,
+  validator's `read_platform`), `touch` (true, in a mobile game's spec only), `keep_saves` (true, and only there, for a
+  task play that names `after`: section 4), the play's `seconds`,
   `shots`, `every`, `scene` (null: the project's main scene), the task's `player` select (null: the probe finds the
   player, section 1), its `inputs` with the checker's defaults filled in (`tasks.inputs`), `sound` (true when a query
   is `audio`) and the queries.
-- The probe reads `out` (default: `user://TaskProbe`), `size` (two numbers of 16 or more; without it the probe leaves the frame as the game has it), `touch` (the play is a phone's: `<Keyboard>/escape` is its back button), `seconds` (clamped to 1-600; default 20), `every` (0.1-1.0; 0.5), `shots` (0-64; 4),
+- The probe reads `out` (default: `user://TaskProbe`), `size` (two numbers of 16 or more; without it the probe leaves the frame as the game has it), `touch` (the play is a phone's: `<Keyboard>/escape` is its back button), `keep_saves` (true: `user://` is left as it is), `seconds` (clamped to 1-600; default 20), `every` (0.1-1.0; 0.5), `shots` (0-64; 4),
   `fps` (10-240; 30: the rate the clock counts frames at, the one the command line's `--fixed-fps` gives), `scene`,
   `sound`, `player` (its own `player` key ignored), `inputs` and `queries.queries`; the queries' `every` rides along
   unread. A play without queries has an empty list.

@@ -90,6 +90,8 @@ with an id of its own.
 | `idle` | without `-taskProbe` the addon does nothing |
 | `shutdown` | a game that quits by itself: `ended` `shutdown`, the samples kept |
 | `wait` | a `wait` takes its real time and the clock holds |
+| `kept` | a spec that says `keep_saves`: the play starts on what the play before it saved, what it saved when it was told to close too (`wait` is played first) |
+| `fresh` | any other play starts clean, whatever the play before it saved |
 | `frame` (`--rendered`) | screenshots of exactly the frame's size without alpha, a tap on a named Control landing, `screen` and `render` with values, at 960x540 and at 1080x1920 |
 
 Not covered by a play: `clip` and `anim:`, a 2D game's `extent_*`, `rel_yaw:` and audio fall-off, a 2D player `near`

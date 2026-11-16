@@ -104,6 +104,20 @@ units, y down, as `x` and `y` with `z` 0, and its rotation as `roll`.
     Never the probe's own (any flag starting with `taskprobe`, any case), and never one that would choose the
     renderer or the frame's size (`--rendering-method`, `--rendering-driver`, `--resolution`, `-size`);
     `tools/validate-game.py` lists what it refuses.
+  - `after` (optional): the task plays that run, and end, before this one on each side:
+    `{"name": "reads_save", "seconds": 10, "after": ["writes_save"]}` (1 to 8 names). Names are task plays of the
+    same task (a probe's play or a judge's own `plays`), never `look` or `drive`, never the play itself, never a
+    cycle; `tools/validate-game.py` refuses each. **A play that reads what another play writes names it in `after`.
+    Never rely on the checker's order:** without `after`, a side's plays run in the order its checks first ask for
+    them, which is not the order the task lists them in and can change. A play that failed or was cut short still
+    counts as run: the plays after it run anyway and read whatever it left, so the failure shows in their own checks.
+    A play with `after` starts on the saved data left by the plays it names and the plays those name, in order, and
+    on nothing else's (see "Saved data" below). When it names two, one of them runs after the other through its own
+    `after` (listed in either order), or the validator refuses the task: a play without `after` clears the saved data
+    when it starts. A play ends as a window its player closes does: the game gets
+    `NOTIFICATION_WM_CLOSE_REQUEST`, then the tree exits (`_exit_tree`), so what a writer saves there is saved; what
+    it would save only later (a deferred call, a thread) may not be, so a writer is best made to save during its
+    play.
   - `inputs` (at most 400; a play with none leaves the key out), each at time `t` (seconds of play, 0-120). They reach
     the game as the engine's own input events (`InputEventKey`, `InputEventMouseButton`, `InputEventMouseMotion`,
     `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventScreenTouch`, `InputEventScreenDrag`), so the
@@ -212,14 +226,20 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
   The wall clock (`Time.get_ticks_msec()`, `Time.get_unix_time_from_system()`) doesn't follow it: a 20 s play takes
   a few seconds of it, a different number every time, so whatever a game drives by it hardly advances in a play and
   differs between two plays. Give it real time with a `wait`.
-- **Saved data.** Every play starts from clean saved data. The checker's copy of the game has a user data folder of
-  its own (`user://` is `TaskProbe.<hash>`, never the real game's), and the probe empties it when the game starts,
-  before any autoload of the game wakes.
+- **Saved data.** Every play starts from clean saved data, but a task play that names `after`: that one starts on
+  what the plays it names and the plays those name saved, in order, and only that (when another play ran since they
+  did, the checker plays them once more first, for their saves alone; their checks keep reading their first play,
+  the replay's files are kept as `<play>_again`, and a replay that ended otherwise than the first is noted in the
+  reader's checks). What is cleared is the game's `user://` folder, and nothing else: a file a game writes anywhere
+  else (beside its project, in a folder of the system's) is not. The checker's copy of the game has a user data
+  folder of its own (`user://` is `TaskProbe.<hash>`, never the real game's), which the probe empties when a play
+  starts clean, before any autoload of the game wakes. The two sides never share saved data.
 - **Focus.** The game runs on a Windows desktop of its own ([task-check.md](task-check.md), "The plays"): nothing
   shows on the user's screen, and the play takes neither the keyboard nor the cursor.
 - **No build.** The checker plays the commit from its source with the editor binary, after the engine's import and
   a pass that loads every script (task-check.md, "What it does").
-- **The end.** When the play's time is up the probe writes its files and asks the engine to quit. A game that quits
+- **The end.** When the play's time is up the probe writes its files, tells the game it is being closed
+  (`NOTIFICATION_WM_CLOSE_REQUEST`, as a player closing the window does) and asks the engine to quit. A game that quits
   by itself ends the play there (`"ended": "shutdown"` in its `probe.json`), with the samples taken until then.
 
 ### 1.2 Thresholds (`expect`)

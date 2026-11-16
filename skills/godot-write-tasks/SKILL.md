@@ -379,6 +379,13 @@ looks up and a positive yaw turns left.
   `teleport_to` the node a select matches), a wait in real time, a named screenshot (`shot`), a scene load, a view
   turn, and the stages of a contact (`pin`, `damage`, `set`: "A contact ask is staged" below, and
   docs/task-probes.md section 1.4). docs/task-probes.md has each one's form.
+- **A play that reads what another play writes names it in `after`. Never rely on the checker's order.** A task play
+  that reads a save (a level reached, a profile filled in) lists the plays that write it:
+  `"after": ["writes_save"]`, by their names. On each side they run, and end, first, and the reader starts on the
+  saved data they left; every other play starts with none. A writer that failed still counts as run, so the failure
+  shows in the reader's checks. Of two writers, one names the other in its own `after`. A writer saves during its
+  play, or when the game is closed (`NOTIFICATION_WM_CLOSE_REQUEST`, `_exit_tree`): a play ends that way
+  (docs/task-probes.md, 1.1).
 - **Touches.** `{"t": 2.0, "tap": <spot>, "hold": s, "finger": n}` puts a finger down at the spot and lifts it (after
   `hold` seconds: a long press, a button kept down); `{"t": 2.0, "drag": [<spot>, <spot>, ...], "over": s, "hold": s,
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
@@ -582,6 +589,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | a pixel threshold moved between GPUs | the frame's luminance (`screen`) only calibrated or relative to the start, never a literal |
 | a hidden panel still counted as shown | a hidden node (or one under a hidden node) matches no select unless it says `"inactive": true`; `ui` reads only what is drawn on screen, `widgets` a control's own state with `"visible": true` |
 | a sound judged by its player node existing, not by what the player hears | `audio`: the players playing at their volume at the listener, and the mix's `level`; volumes and level calibrated or relative to the start |
+| a play that reads a save ran on clean saved data and read nothing (a later level not yet unlocked, an empty profile) | the reading play names its writers in `after`; every other play starts clean (docs/task-probes.md, 1.1) |
 | a teleport to fixed coordinates missed what each build placed itself | `teleport_to` an object select (nearest match), facing it or a point |
 | a `teleport_to` by a `name` wildcard (`Coin*`) went to the `CoinSpawner` beside the player, not to a coin | a select takes every node that fits, and `teleport_to` the nearest: select the instances by their own class or whole name when the start has them too, by what they carry (`has`) when the task adds them, and read `probe.log` in the reference's play |
 | a select by class or group also matched the scene's other nodes, or named the class the reference happened to use | select by what the node carries (`has`), `near` a point, or a property (`where`) |

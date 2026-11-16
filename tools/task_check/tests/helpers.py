@@ -82,9 +82,10 @@ class FakeProject:
         self.builds += 1
         return godot.Result(self.build_exit, "SCRIPT ERROR: Parse Error" if self.build_exit else "built", 1.0)
 
-    def play(self, seconds, shots, timeout, scene=None, inputs=None, queries=None, args=(), every=None, player=None):
+    def play(self, seconds, shots, timeout, scene=None, inputs=None, queries=None, args=(), every=None, player=None,
+             keep_saves=False):
         self.plays.append({"seconds": seconds, "shots": shots, "scene": scene, "inputs": inputs, "queries": queries,
-                           "args": list(args), "every": every, "player": player})
+                           "args": list(args), "every": every, "player": player, "keep_saves": keep_saves})
         probe, log = self.answer(seconds, shots, queries) if self.answer else (None, "")
         files = {"probe.json": json.dumps(probe).encode()} if probe is not None else {}
         return godot.Played(0, False, "", 1.0, probe, log, files)

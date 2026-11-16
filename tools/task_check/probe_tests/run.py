@@ -156,6 +156,8 @@ def main():
         for name, test in tests.PLAYS.items():
             if (args.play and name not in args.play) or bool(test.get("rendered")) != args.rendered:
                 continue
+            if test.get("first"):  # the play before it on the copy, which saves what this one must find, or must not
+                play(godot, copy, test["first"], tests.PLAYS[test["first"]], variant, args.rendered, args.desk)
             found = play(godot, copy, name, test, variant, args.rendered, args.desk)
             checks = tests.Checks()
             if found["code"] is None:

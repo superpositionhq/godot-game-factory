@@ -909,6 +909,28 @@ class Units(unittest.TestCase):
         self.assertEqual(first, ['game-task.schema.json'], 'only the schema asked for is read')
         self.assertTrue(whole and kept)
         self.assertEqual(opens, 2, 'each file is read once: the schema, then the format')
+    def test_play_after(self):
+        """A task play's `after`: task plays of the task, named once, never itself, no cycle, and of two named
+        together one runs after the other, in either order."""
+        def reads(name, after=None):
+            play = {'name': name, 'seconds': 10}
+            return {'kind': 'probe', 'name': name, 'play': dict(play, after=after) if after else play}
+        ok = [reads('one'), reads('two', ['one']), reads('three', ['two', 'one'])]
+        self.assertEqual(vg.play_after_errors(ok), [])
+        for checks, said in (
+                ([reads('one', ['none'])], 'runs after none, which is no task play of the task'),
+                ([reads('one', ['look'])], 'runs after look, which is no task play of the task'),
+                ([reads('one', ['one'])], 'names itself in its after'),
+                ([reads('one'), reads('two', ['one', 'one'])], 'task play two names one twice in its after'),
+                ([reads('one', ['two']), reads('two', ['one'])], 'a cycle'),
+                ([reads('one'), reads('two'), reads('three', ['one', 'two'])], 'neither runs after the other')):
+            self.assertTrue(any(said in e for e in vg.play_after_errors(checks)), (said, vg.play_after_errors(checks)))
+        judged = [reads('reads', ['shown']), {'kind': 'judge', 'name': 'j', 'plays': [{'name': 'shown', 'seconds': 10}]}]
+        self.assertEqual(vg.play_after_errors(judged), [])   # a judge's own play
+        for bad in ([], ['Writes'], ['a'] * 9, 'writes'):
+            t = task('a' * 40, 'b' * 40)
+            t['milestones'][2]['checks'][1]['play']['after'] = bad
+            self.assertNotEqual(list(vg.check_schema(t, vg.SCHEMAS['game-task'])), [], bad)
 
     def test_touches(self):
         """A touch ends inside its play, and a finger stays up TOUCH_GAP before it goes down again; touches of
