@@ -36,9 +36,10 @@ both. The platform is chosen with the person before the project exists and never
    whose path its first such call names). Create the project with it:
    `powershell -ExecutionPolicy Bypass -File <GGF_ROOT>\godot-game-factory\templates\new-game.ps1 -Slug <slug> -Path <GGF_ROOT>\games\<slug> -Title "<Title>" -Description "<one line>"`
    with `<GGF_ROOT>` written out as the absolute path (e.g. `C:\Users\<you>\GodotWork`), never `%GGF_ROOT%` or
-   `$env:GGF_ROOT`: the hooks match the command text. new-game.ps1 refuses any other -Path (typed in Git Bash, put
-   each Windows path in single quotes: bash drops unquoted backslashes). A mobile game adds
-   `-Platform mobile -Orientation landscape` (or `portrait`), as the godot-mobile-game skill says. Calls made before
+   `$env:GGF_ROOT`: the hooks match the command text. An Android phone game adds `-Platform mobile -Orientation
+   landscape` (or `portrait`) and follows the godot-mobile-game skill; without them the game is a desktop game.
+   new-game.ps1 refuses any other -Path (typed in Git Bash, put each Windows path in single quotes: bash drops
+   unquoted backslashes). Calls made before
    this one (reading docs, drafting the design) are imported from your transcript when the session is mapped (status
    `from_transcript`). It writes the skeleton (`project.godot` with the engine version, the renderer, the exact frame
    size and the autoloads `AutoPlay` and `Scenarios`; `export_presets.cfg`; the first scene `scenes/Main.tscn`; the
@@ -333,13 +334,14 @@ release step 1, "Ensure AutoPlay"), and no game is released without it.
   scenario starts from the command line with `-scenario <n>` (1-based, the design doc's numbers: what
   `Scripts/godot.ps1 play -Scenario <n>` and `autoplay -Scenario <n>` pass and what a task's `play_args` use) and from
   AutoPlay's `start_scenario` signal (fill in `SCENES` and `NAMES` in `game/scenarios.gd`, which handles both); all
-  input is read as Godot input events ("Engine and content" above); every action is reachable by input. The game
+  input is read as Godot input events ("Engine and content" above); every action is reachable by input (hotkeys for what
+  is otherwise UI-only; in a mobile game by touch: godot-mobile-game skill, "AutoPlay on a mobile game"). The game
   calls `Scenarios.started()` when gameplay begins (it calls `AutoPlay.scenario_started(name)`) and
   `AutoPlay.finish_run(result, score)` when it ends, and has a bot, a node of the game's own, that acts **only**
   through the drop-in's input calls while `AutoPlay.is_running`, scaled by `AutoPlay.skill` and human-like (eased
   camera turns, reaction delays, no snapping camera, no jump spam). A desktop game's bot plays by keys, mouse and
-  gamepad (`hold`, `release`, `mouse_delta`, `scroll`, `set_cursor`), a mobile game's by touch only (`tap`, `drag`,
-  `back`). The bot counts its time from the `delta` of `_process`, never from the system clock: a recording is
+  gamepad (`hold`, `release`, `mouse_delta`, `scroll`, `set_cursor`), a mobile game's with fingers and the back
+  button only (`touch`, `touch_up`, and `hold` / `release` of `<Keyboard>/escape`). The bot counts its time from the `delta` of `_process`, never from the system clock: a recording is
   rendered offline, frame by frame, not in real time. And while `AutoPlay.is_active` nothing in the game pauses,
   opens a menu or mutes because the window lost focus: a recorded game's window is never the foreground one. The design doc lists scenarios 1..n (start state, win/lose).
 - Test once by hand: `Scripts/godot.ps1 build`, then `Scripts/godot.ps1 autoplay -Scenario <n>` (the bot plays the
@@ -371,8 +373,9 @@ release step 1, "Ensure AutoPlay"), and no game is released without it.
 **AutoPlay's goal is NOT to win** (rule in "AutoPlay and recordings" above): fix game bugs only, never the bot's
 results.
 
-What ships is what matters, in this order: the game plays; the game builds (the import without errors and the release
-player of its platform); the dataset holds the replay scripts and the git log. The AutoPlay bot should still play
+What ships is what matters, in this order: the game plays; the game builds (the import without errors and the
+Windows release player; a mobile game is played and recorded as that player at the phone's size, and its APK is built
+at release where the machine has the Android toolchain); the dataset holds the replay scripts and the git log. The AutoPlay bot should still play
 like a human (human-like input, aim and camera), but bot work never blocks a release: one recording per scenario that
 shows the game running is enough, whatever the result (win/lose/timeout is metadata). No tuning for win rates, seed
 sweeps or "clean" runs, and no re-runs or re-recordings to improve how the bot plays. No retest loops: every GPU or
@@ -421,7 +424,7 @@ template made it and `validate-game.py`'s "not packaged yet" warning is expected
 **README screenshots (user rule; required before the game is called content-complete).** `Docs/screenshots/` holds
 5-7 real gameplay stills (JPG, in Git LFS; from validated recordings' stills, `<GGF_ROOT>\recordings\<slug>\<run-id>\stills\`,
 or frames of `Scripts/godot.ps1 play -Shots`, not from extra launches made for them; no editor views, debug overlays
-or placeholder art), each from a different scenario or moment. Fewer than 5 is the validator's warning (not an
+or placeholder art), each from a different scenario or moment. Fewer than 5 in the README is the validator's warning (not an
 error), so never invent stills to reach five. The README shows them as a hero image plus a captioned gallery (one
 line per image saying what it shows). Every image the README links must be committed: after pushing, open the repo
 page on github.com and check that each image renders (a link to a file that was never committed shows as a broken
@@ -439,7 +442,7 @@ to about 10 per game (at least 4 of them hard; the others may be medium, none ea
 every one a long thread of multiple edits from your real history (a bug that took several attempts, a direction that
 took several rounds, a feature or look pass built over many commits), never a single fix. They live on the repo's
 orphan `tasks` branch, checked out as a worktree outside the game folder (`<root>/tasks/<slug>`), committed and pushed
-there, never on main: task work never enters the game's history (the hooks ignore that branch). Seeds point at main's
+there, never on main: task work never enters the game's history (the commit recorder ignores that branch). Seeds point at main's
 commits. Follow the godot-write-tasks skill (the branch and worktree, seeds, the brief written from context, the play
 scene, deterministic probe checks, what must never reach the agent); never point the game's code or docs at `Tasks/`.
 validate-game.py checks their format, and `tools/task-check.py <games>/<slug> --all` (docs/task-check.md), started

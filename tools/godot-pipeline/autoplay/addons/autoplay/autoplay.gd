@@ -7,7 +7,8 @@ extends Node
 ##
 ## The game supplies three things: a start_scenario handler (load scenario n and apply its start state), the calls
 ## scenario_started(name) and finish_run(result, score), and the bot, a node of its own that acts only through the
-## input calls below. Copy this folder into the game unchanged (addons/autoplay/) and name autoplay.gd as the autoload
+## input calls below (a mobile game's, which calls phone(portrait) at boot, only through touch, touch_up and the back
+## button, "<Keyboard>/escape"). Copy this folder into the game unchanged (addons/autoplay/) and name autoplay.gd as the autoload
 ## "AutoPlay": every game then writes identical files. Without -autoplay nothing here acts, so the game calls it
 ## unconditionally.
 ##
@@ -149,6 +150,8 @@ func telemetry(event: String, fields: Dictionary = {}) -> void:
 ## Press a key or button and keep it down until release: "<Keyboard>/w", "<Keyboard>/space", "<Mouse>/leftButton",
 ## "<Gamepad>/buttonSouth", "<Gamepad>/dpad/up"; a trigger takes 0..1 ("<Gamepad>/rightTrigger", 0.6), a stick a
 ## Vector2 ("<Gamepad>/leftStick", x right, y down, each -1..1). A value of 0 releases it. Only while is_running.
+## In a phone game's run the one control is "<Keyboard>/escape", Android's back button: its press sends the go-back
+## request a phone sends (NOTIFICATION_WM_GO_BACK_REQUEST) and the key KEY_BACK.
 func hold(control: String, value: Variant = 1.0) -> void:
 	_input.hold(control, value)
 
@@ -180,36 +183,28 @@ func scroll(y: float, x: float = 0.0) -> void:
 func set_cursor(viewport_position: Vector2) -> void:
 	_input.set_cursor(viewport_position)
 
-# --------------------------------------------------------------------------------------------- touch
+# --------------------------------------------------------------------------------------------- a mobile game
 
-## Put finger `finger` (0..9) down at a viewport position (pixels, origin top left).
-func touch_down(finger: int, pos: Vector2) -> void:
-	_input.touch_down(finger, pos)
-
-
-## Move a finger that is down.
-func touch_move(finger: int, pos: Vector2) -> void:
-	_input.touch_move(finger, pos)
+## The game is an Android phone game, held upright (`portrait`) or on its side: called once at boot, before the first
+## scene (the mobile template's game/phone.gd, the autoload "Phone", does it). An AutoPlay run then says `phone` in
+## ready.json and refuses the keyboard (but "<Keyboard>/escape", the back button), the mouse and the gamepad: a phone
+## has none.
+func phone(portrait: bool) -> void:
+	_run.set_phone(portrait)
 
 
-## Lift a finger.
+## Whether phone was called: the game is played by touch.
+var is_phone: bool:
+	get: return _run.phone
+
+
+## Put a finger (0..9) down at a viewport position (pixels, origin top left), or move it there when it is down
+## already; it stays down until touch_up. A tap is touch in one frame and touch_up in a later one; a virtual stick is
+## a finger put down on it and moved. Two fingers at once are two numbers. Only while is_running.
+func touch(finger: int, pos: Vector2) -> void:
+	_input.touch(finger, pos)
+
+
+## Lift a finger put down with touch.
 func touch_up(finger: int) -> void:
 	_input.touch_up(finger)
-
-
-## A finger put down at `pos` and lifted the next frame, or after `hold_s` seconds (a long press, a button kept
-## down). The drop-in lifts it; taps and drags of different fingers may overlap.
-func tap(pos: Vector2, hold_s: float = 0.0, finger: int = 0) -> void:
-	_input.tap(pos, hold_s, finger)
-
-
-## A finger put down at the first of `points`, moved through the others evenly over `over_s` seconds, kept at the
-## last for `hold_s` seconds, then lifted: a swipe, a slider, a virtual stick pushed over and held there.
-func drag(points: Array, over_s: float, hold_s: float = 0.0, finger: int = 0) -> void:
-	_input.drag(points, over_s, hold_s, finger)
-
-
-## The Android back button: the go-back request a phone sends (NOTIFICATION_WM_GO_BACK_REQUEST) and its key
-## (KEY_BACK), pressed for one frame.
-func back() -> void:
-	_input.back()

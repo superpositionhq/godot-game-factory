@@ -107,9 +107,9 @@ the task play's own `scene` and `args`), with the task probe sampling every 0.5 
 is played once per side, with the measures of every probe that names it. A play with an `audio` measure is paced to
 real time and every other play runs as fast as the machine renders.
 
-**The frame.** A desktop game is played at 960x540. A mobile game (its commit has a `Platform.json`) is played at the
-phone's size, 1920x1080 when it is held landscape and 1080x1920 when portrait, with the renderer its project names
-(the Mobile renderer). The size is the frame's, whatever the window is (a portrait frame is taller than the screen):
+**The frame.** A desktop game is played at 960x540. A mobile game (its copy has a `Platform.json`) is played at the
+phone's size, 1920x1080 or 1080x1920, by touch ([task-probes.md](task-probes.md), section 1.1), with the renderer its
+project names (the Mobile renderer). The size is the frame's, whatever the window is (a portrait frame is taller than the screen):
 the probe renders the game at the size its project is laid out for and scales the frames it reads to the play's
 size, so a 960x540 frame shows what a 1920x1080 window shows. No play is heard: the engine runs with its dummy
 audio driver, and the mix is still measured. A task never chooses a renderer or a size.
@@ -302,7 +302,7 @@ opposite are one axis), with the threshold on that distance.
 **A mobile game's drive moves nothing.** The drive pushes where a virtual stick usually is (the lower left of the
 screen) and taps the lower right. A game whose controls are elsewhere needs its own task play: `tap` and `drag`
 inputs on its controls by node name (`{"t": 1, "tap": {"widget": "FireButton"}}`). A touch that found no control is in
-the play's `inputs_missed` (`probe.json`) and in `probe.log`.
+the play's `query_errors` and `inputs_missed` (`probe.json`) and in `probe.log`.
 
 **`start fails still-works X`.** The game works at the start, so a still-works probe that fails there is broken: it
 doesn't find the HUD, the node or the value it looks for. Fix the probe (see the play's `probe.json`), never the

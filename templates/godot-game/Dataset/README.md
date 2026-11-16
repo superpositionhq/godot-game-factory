@@ -20,7 +20,7 @@ packed before the replay was made lists it as pending in `manifest.json`.
 
 The full delivery (a zip next to this folder: `Dataset.zip`, or `Dataset.pending.zip` while a part is pending; never
 committed) also has `GodotProject/` (the project at the release commit), `Build/` (the release build: the Windows
-player of a desktop game, the APK of a mobile game), `History/` (the full git history, and the creation sessions as
+player, and a mobile game's APK beside it), `History/` (the full git history, and the creation sessions as
 recorded: every prompt, every reply and every tool call) and `Tasks/` (the game's tasks, split into the agent's and
 the grader's halves); they are not duplicated here because the repo is the project and its history, builds are not
 committed, and tasks live on the tasks branch.

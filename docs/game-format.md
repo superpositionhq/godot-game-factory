@@ -37,8 +37,8 @@ library Python 3.10+.
 python tools/validate-game.py --platform <folder>
 ```
 
-prints the platform of the game in that folder, one line: `desktop`, `mobile landscape` or `mobile portrait` (exit 0).
-For a `Platform.json` that says anything else it prints the reason on stderr and exits 2. It reads nothing but that
+prints the platform of the game in that folder as one JSON line: `{"platform": "desktop"}`, or `{"platform": "mobile",
+"orientation": "landscape", "width": 1920, "height": 1080}` (portrait: 1080 and 1920), exit 0. For a `Platform.json` that says anything else it prints the reason on stderr and exits 2. It reads nothing but that
 file ("Platform", below).
 
 ## Package
@@ -53,7 +53,7 @@ pipeline's release build (`<root>\builds\<slug>\<sha8>\`, else the repo's `Build
 the first valid recording of the release commit for each scenario (`<root>\recordings\<slug>\`) and
 `<out>\_replay\<slug>\<sha8>\ReplayScripts\` once `READY` is beside it. It writes `<repo>\Dataset.zip` (status
 `complete`) when the release has a gameplay video, the replay and its player, `<repo>\Dataset.pending.zip` (`pending`)
-while the replay is missing or a mobile game's release has no APK yet, and the repo's `Dataset/` folder, which the
+while the replay is missing, and the repo's `Dataset/` folder, which the
 game session commits (with a `.gitattributes` that keeps its files byte for byte as `manifest.json` lists them: no
 line-ending conversion, videos and images in Git LFS). A game without a gameplay video is rejected at upload: without
 a valid recording of the release commit it packages nothing.
@@ -171,16 +171,23 @@ code or steps is not listed.
 A game is a desktop (Windows) game unless its root has `Platform.json`, written by `templates/new-game.ps1 -Platform
 mobile -Orientation landscape|portrait` when the project is created and never edited after. That file makes it a
 mobile game: an Android phone game held one way, played by touch (the `godot-mobile-game` skill). Every tool reads the
-platform from it through one reader, `tools/validate-game.py` `read_platform` (PowerShell tools through
-`validate-game.py --platform <folder>`); no other code parses the file. A file that says anything else is an error,
-never read as a desktop game.
+platform from it through one reader, `tools/validate-game.py` (`read_platform`; `python tools/validate-game.py
+--platform <folder>` prints it as one JSON line for the PowerShell tools); no other code parses the file:
 
-The platform decides the size every play, screenshot, still and video of the game has: 1920x1080 for a desktop game
-and a mobile game held landscape, 1080x1920 for one held portrait. A mobile game is played on the PC with the Mobile
-renderer at that size, by touch events; its `Build/` in the dataset is the Android APK.
+- **the validator**, rule `mobile`: the project settings and the Android export preset agree with it (the table below).
+  No task play of any game may choose a frame size or a renderer in its arguments.
+- **the task check** plays a mobile game at the phone's size (1920x1080 landscape, 1080x1920 portrait), and its own
+  drive is by touch ([task-probes.md](task-probes.md), section 1.1).
+- **the pipeline** builds the Windows player, which is what is played and recorded on the PC at the phone's size, and
+  the Android APK (arm64) where the machine has the Android toolchain; the videos are the phone's size
+  ([godot-pipeline.md](godot-pipeline.md)).
+- **the packager** writes `"platform": {"kind": "mobile", "orientation": ...}` in the dataset's manifest, takes
+  videos of the phone's size and puts the APK in `Build/` when the build made one.
 
-The validator's rule `mobile` holds a mobile game's settings to the file. A key a file leaves out is read as Godot
-4.7's own default (the editor drops a setting put back to its default), never as wrong.
+A file that says anything else is an error, never read as a desktop game. Nothing here changes for a desktop game.
+
+Rule `mobile` holds a mobile game's settings to the file. A key a file leaves out is read as Godot 4.7's own default
+(the editor drops a setting put back to its default), never as wrong.
 
 | File | Setting | Must be |
 |---|---|---|
@@ -193,11 +200,11 @@ The validator's rule `mobile` holds a mobile game's settings to the file. A key 
 | | `gradle_build/use_gradle_build` | `true` (only a Gradle build takes the SDK levels) |
 | | `architectures/arm64-v8a`; `armeabi-v7a`, `x86`, `x86_64` | `true`; `false` (arm64 alone) |
 | | `gradle_build/min_sdk`, `gradle_build/target_sdk` | at least 26, at least 34 (left empty they are the engine's own, 29 and 36) |
-| | `package/unique_name` | `com.<name>.game`, lower case |
+| | `package/unique_name` | `com.<project in lower case>.game` |
 
-A mobile game's tasks never choose a renderer or a size: `--rendering-method`, `--rendering-driver`, `--resolution`,
-`-size` and `--write-movie` in a task's `play_args` or a task play's `args` are errors, because the task check
-launches a mobile game with the Mobile renderer at the phone's size. Nothing here changes for a desktop game.
+No game's tasks choose a frame size or a renderer: `--rendering-method`, `--rendering-driver`, `--resolution`, `-size`
+and `--write-movie` in a task's `play_args` or a task play's `args` are errors, because the task check launches every
+game at its own size with its own renderer.
 
 ## The dataset (`godot-dataset-layout/v1`)
 
@@ -215,15 +222,16 @@ while an entry is missing, see "Complete vs pending" below):
 | `Tasks/` | no | the game's tasks, each split: `Tasks/<name>/task.json` (the agent's part) and `Tasks/<name>/grader.json` (milestones, `seed.reference`), plus a generated `README.md` (`tools/split-tasks.py`) |
 | `GodotProject/` | no | the project at the release commit (`project.godot`, `export_presets.cfg`, scenes, scripts and assets with every `.import` and `.uid`; no `.godot/`: the first open rebuilds it), store content included; a mobile game's `Platform.json` at its root |
 | `ReplayScripts/` | yes | the creation replayed headless, with `Verification/report.json` (required for complete; its verdict PASS or FAIL is metadata) |
-| `Gameplay/<game>_S<n>.mp4` | yes | at least one scenario video of the release version (one recorded scenario is enough; videos of other scenarios already recorded may be included), h264 + aac at the game's size: 1920x1080, or 1080x1920 for a mobile game held portrait |
+| `Gameplay/<game>_S<n>.mp4` | yes | at least one scenario video of the release version (one recorded scenario is enough; videos of other scenarios already recorded may be included), 1920x1080 h264 + aac (a mobile game held upright: 1080x1920) |
 | `Screenshots/` | yes | the README's images |
-| `Build/` | no | a desktop game: the Windows release player (x64), `<Project>.exe`; a mobile game: the Android APK `<Project>.apk` (arm64, min SDK 26) and no Windows player |
-| `manifest.json` | yes | metadata, `platform` and `orientation`, `history`, `brief`, `tasks`, `build`, and path / bytes / sha256 of every file except the content-addressed `History/lfs/objects/` |
+| `Build/` | no | the Windows release player (x64), `<Project>.exe`; a mobile game's also holds its Android APK (`<Project>.apk`, arm64) when the machine that built the release had the Android toolchain |
+| `manifest.json` | yes | metadata, `history`, `brief`, `tasks`, `build`, a mobile game's `platform`, and path / bytes / sha256 of every file except the content-addressed `History/lfs/objects/` |
 
-`manifest.json` says what the game is: `platform` (`desktop` or `mobile`) and `orientation` (`landscape`, `portrait`,
-null for a desktop game), which the validator holds equal to `GodotProject/Platform.json` (no file: a desktop game),
-and `build`: a desktop game's names its player (`exe`), a mobile game's its APK (`apk`, with its `bytes`, `package`,
-`min_sdk`, `target_sdk` and `abis`) and never a Windows player.
+`manifest.json` says what a mobile game is: `"platform": {"kind": "mobile", "orientation": "landscape"}` or
+`"portrait"`, which the validator holds equal to `GodotProject/Platform.json`; a manifest without `platform` is a
+desktop game's. `build` names the Windows player (`exe`) and, for a mobile game whose build made one, the APK: `apk`
+(its file name in `Build/`) with `package`, `version_code`, `version_name`, `min_sdk` and `target_sdk`. A mobile game
+delivered without its APK is a warning.
 
 **The history is rewritten for delivery** (the game repos are not changed): authors and committers become `dev_NN`,
 agent trailer lines go, the scrub rules apply to every message and text blob. Commit ids therefore differ from the
@@ -287,10 +295,10 @@ history); it sees only the brief and that snapshot. The grader's half never reac
 
 **Complete vs pending.** `status` is `complete` when every entry is there, `ReplayScripts/` with its
 `Verification/report.json` included; `pending` while an entry is missing and listed in `pending` (the zip is then
-`Dataset.pending.zip`): `ReplayScripts/` while the creation replay is missing, and `Build/` while a mobile game's
-release has no APK (the build machine had no Android toolchain: `machine/get-android.ps1` installs it, then
-`tools/godot-pipeline/build.ps1 <slug> -Force` and package again). A desktop game's `Build/` is never pending. A game
-without a gameplay video is rejected at upload: a delivered zip that lists `Gameplay/` as pending is an error, and the
+`Dataset.pending.zip`): `ReplayScripts/` while the creation replay is missing. `Build/` is never pending: a mobile
+game whose build machine had no Android toolchain ships its Windows player alone, with a warning
+(`machine/get-android.ps1` installs the toolchain; then `tools/godot-pipeline/build.ps1 <slug> -Force` and package
+again). A game without a gameplay video is rejected at upload: a delivered zip that lists `Gameplay/` as pending is an error, and the
 packager refuses a release without a recording. The replay is required but need not pass: a FAIL verdict is metadata,
 like a gameplay run's result: manifest `replay_verification.pass` false (equal to the report's `verdict.pass`) and the
 README says FAIL. The packager writes the complete `Dataset.zip` once the release has a gameplay video, its replay and

@@ -68,11 +68,11 @@ try {
     if ($summary.status -eq 'ok') {
         Write-Step "== $Game $($sha.Substring(0, 8)): release build"
         $build = & (Join-Path $PSScriptRoot 'build.ps1') $Game -Commit $sha -NoAndroid:$NoAndroid | Select-Object -Last 1
-        $an = Get-Prop $build 'android'
+        $an = Get-Prop $build 'apk'
         $summary.build = [ordered]@{
             status = (Get-Prop $build 'status'); short_sha = (Get-Prop $build 'short_sha'); output = (Get-Prop $build 'output_path')
             platform = (Get-Prop $build 'platform'); orientation = (Get-Prop $build 'orientation')
-            android = $(if ($an) { [ordered]@{ status = (Get-Prop $an 'status'); reason = (Get-Prop $an 'reason') } } else { $null })
+            apk = $(if ($an) { [ordered]@{ status = (Get-Prop $an 'status'); reason = (Get-Prop $an 'reason') } } else { $null })
             autoplay_version = (Get-Prop $build 'autoplay_version')
         }
         # Leak-scan hits (user name in paths, forbidden names) in the job summary, so they show without builds.jsonl.

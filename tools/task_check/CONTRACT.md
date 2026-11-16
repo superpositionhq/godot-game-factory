@@ -60,12 +60,13 @@ Plays and inputs:
 - Play arguments (`play_args`, a play's `args`): each `^-?[A-Za-z0-9_.:=,/-]{1,60}$`, at most 16. They follow `--` and
   the probe's own `-taskProbe <spec>` on the command line, so the engine never reads one as its own flag: the game
   reads them with `OS.get_cmdline_user_args()`. The validator refuses the probe's own (any flag starting with
-  `taskprobe`, any case) and, in a mobile game's tasks, a flag that would choose the renderer or the frame's size
-  (`--rendering-method`, `--rendering-driver`, `--resolution`, `-size`).
+  `taskprobe`, any case) and a flag that would choose the renderer or the frame's size (`--rendering-method`,
+  `--rendering-driver`, `--resolution`, `-size`).
 - Inputs (section 4): `key` (key and axis rows) is a control path,
-  `^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$`, or the bare key `Android_Back` (a key row only); a widget click's
+  `^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$` (`<Keyboard>/escape` is the back button in a mobile game's
+  play); a widget click's
   `widget` is a wildcard on a name, or a class name (`^[A-Za-z0-9_.*?() -]{1,120}$`); a touch's spot is `[fx, fy]` or
-  `{"widget": "<name>"}` (`^[A-Za-z0-9_*?]{1,120}$`); `teleport_to`'s `distance` defaults to 2 m.
+  `{"widget": "<name>"}` (the same pattern); `teleport_to`'s `distance` defaults to 2 m.
 - Touches (`tap`, `drag`): one finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and
   every touch is over by the play's end (the validator's `TOUCH_GAP`).
 
@@ -253,9 +254,8 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
 
 The checker's plays (`check.PLAYS`, `check.DRIVE`): `look`, 20 s idle, 6 screenshots; `drive`, 22 s, 8 screenshots:
 `<Keyboard>/w` 1-6 s, `<Keyboard>/d` 6-8 s, `<Keyboard>/w` 8-13 s with `<Keyboard>/space` 9-9.3 s, `<Keyboard>/a`
-13-15 s, `<Keyboard>/w` 15-21 s; a mobile game's drive is the same route by touch (`check.MOBILE_DRIVE`: a finger
-down at `[0.15, 0.75]` dragged up, right, up, left, up at those times, and a second finger's tap at `[0.85, 0.75]`
-at 9 s). A task play: 2 screenshots. A boot check: `seconds` idle, 2 screenshots. Samples every 0.5 s (a task play's
+13-15 s, `<Keyboard>/w` 15-21 s; on a mobile game the drive is `check.MOBILE_DRIVE`, the same route by touch (a left
+thumb's drags from `[0.15, 0.75]`, a tap at `[0.85, 0.75]` at 9 s; `check.own_play`). A task play: 2 screenshots. A boot check: `seconds` idle, 2 screenshots. Samples every 0.5 s (a task play's
 `every`, 0.1-1.0). `play_args` apply to every play; a task play's `args` key replaces them, its `scene` key the
 `play_scene` (`tasks.place`).
 
@@ -321,7 +321,8 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   right modifiers are one key. `<Mouse>/`: `leftButton`, `rightButton`, `middleButton`, `forwardButton`, `backButton`,
   an `InputEventMouseButton` at the cursor. `<Gamepad>/`: `buttonSouth` (the engine's `JOY_BUTTON_A`), `buttonEast`,
   `buttonWest`, `buttonNorth`, `leftShoulder`, `rightShoulder`, `start`, `select`, `leftStickPress`,
-  `rightStickPress`, `dpad/up` and the other three, an `InputEventJoypadButton` of device 0. `Android_Back`: a press
+  `rightStickPress`, `dpad/up` and the other three, an `InputEventJoypadButton` of device 0. `<Keyboard>/escape` in a
+  play whose spec says `touch` (a mobile game's) is the phone's back button instead of the Escape key: a press
   emits the root window's `go_back_requested` and sends `NOTIFICATION_WM_GO_BACK_REQUEST` down the tree, as a phone's
   back button does (so a game that left `application/config/quit_on_go_back` on quits, as on a phone), then the key
   `KEY_BACK`; a release is the key's release.
@@ -341,17 +342,19 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
   holds whatever stretches the frame to the window (`UiScan.to_window`).
-- touches: `{"t", "tap": <spot>, "hold": s, "finger": n}` and `{"t", "drag": [<spot>, ...], "over": s, "hold": s,
-  "finger": n}` (`_touch`, `_move_touch`). The spots are resolved when the finger goes down: `[fx, fy]`, or
-  `{"widget": name}`, the centre of the first visible Control of some size whose name (a wildcard) or class matches
-  (`UiScan.named`). The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
+- tap, drag: `{"t": 2.0, "tap": [0.5, 0.25], "finger": 1, "hold": 0.5}`, `{"t": 3.0, "drag": [{"widget":
+  "MoveStick"}, [0.2, 0.6]], "finger": 0, "over": 0.3, "hold": 2.0}` (the checker writes `finger`, 0 when unset;
+  `hold` and `over` only when set; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
+  point `[fx, fy]` (fractions of the frame, y down), or `{"widget": name}`, the centre of the first visible Control
+  of some size whose name (a wildcard) matches, else the first whose class does (`UiScan.named`). The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
   `InputEventScreenDrag` events (a drag's path walked evenly over `over` seconds, at once without it), and lifts once
   its path and its `hold` are over, never in the frame it went down. Fingers 0 to 9 may be down together. With
   `input_devices/pointing/emulate_mouse_from_touch` on (the engine's default, and a mobile game's setting) the engine
   makes mouse events of the first finger down alone, so a `Button` node presses for that finger only; a Control that
   reads `InputEventScreenTouch` itself (`_gui_input`) takes any finger. At the play's end every finger still down is
-  lifted. Misses: a spot whose widget isn't on screen (`no visible control matches it`), a finger still down from an
-  earlier touch, a finger outside 0-9, a drag without 2 to 16 spots.
+  lifted. A miss (a finger outside 0-9, a widget not on screen, a finger still down, a drag without 2 to 16 spots) is one
+  `query_errors` line, `inputs: the tap at 2.00 s missed: no visible widget matches 'FireButton'`, and a row of
+  `inputs_missed`, and nothing is sent; `probe.log` names what each finger went down on and where it lifted.
 - teleport: `{"t", "teleport": [x, y, z], "yaw": deg, "hold": s}`; teleport_to: `{"t", "teleport_to": <object select>,
   "distance": 2.0, "offset": [x, y, z], "face": <Point>, "hold": s}`. The probe sets the player's `global_position`
   (a 2D player's x and y), with no free-spot search and no snap to the ground, tells the physics server for a rigid
@@ -394,11 +397,13 @@ so the engine imports nothing there), each made fresh before its job.
     "fields": ["percent"]}]}}
 ```
 
-- What varies: `out` (the copy's), `size` (the size frames are read at: 960x540, or a mobile game's phone size), the play's `seconds`,
+- What varies: `out` (the copy's), `size` (the size frames are read at: 960x540, or a mobile game's phone size,
+  `[1080, 1920]` or `[1920, 1080]`: the copy has a `Platform.json`, read by `godot.Project.mobile` through the
+  validator's `read_platform`), `touch` (true, in a mobile game's spec only), the play's `seconds`,
   `shots`, `every`, `scene` (null: the project's main scene), the task's `player` select (null: the probe finds the
   player, section 1), its `inputs` with the checker's defaults filled in (`tasks.inputs`), `sound` (true when a query
   is `audio`) and the queries.
-- The probe reads `out` (default: `user://TaskProbe`), `size` (two numbers of 16 or more; without it the probe leaves the frame as the game has it), `seconds` (clamped to 1-600; default 20), `every` (0.1-1.0; 0.5), `shots` (0-64; 4),
+- The probe reads `out` (default: `user://TaskProbe`), `size` (two numbers of 16 or more; without it the probe leaves the frame as the game has it), `touch` (the play is a phone's: `<Keyboard>/escape` is its back button), `seconds` (clamped to 1-600; default 20), `every` (0.1-1.0; 0.5), `shots` (0-64; 4),
   `fps` (10-240; 30: the rate the clock counts frames at, the one the command line's `--fixed-fps` gives), `scene`,
   `sound`, `player` (its own `player` key ignored), `inputs` and `queries.queries`; the queries' `every` rides along
   unread. A play without queries has an empty list.
@@ -472,9 +477,10 @@ the probe tests' plays:
 ```
 0.00 [0.2 s] play: 5.0 s, every 0.50 s, 0 shot(s), 2 query(ies), scene (the game's own), frame 960x540
 0.00 [0.2 s] the play's clock starts in res://scenes/Main.tscn
-0.50 [0.2 s] tap finger 0 down at (1710, 920)
-0.53 [0.2 s] tap finger 0 up at (1710, 920) after 0.03 s
-3.80 [0.2 s] missed: tap Nope at 3.80 s: no visible control matches it
+0.50 [0.2 s] tap: finger 0 goes down on TapButton (Button)
+0.53 [0.2 s] tap: finger 0 lifts at pixel (1710, 920) after 0.03 s
+3.80 [0.2 s] missed: tap Nope at 3.80 s: no visible widget matches 'Nope'
+3.80 [0.2 s] error: inputs: the tap at 3.80 s missed: no visible widget matches 'Nope'
 5.50 [0.2 s] the play ended: time
 ```
 

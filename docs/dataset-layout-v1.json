@@ -1,6 +1,6 @@
 {
   "schema": "godot-dataset-layout/v1",
-  "description": "The delivery layout of every Godot game: the creation record (git.log, workflow.jsonl, ReplayScripts/, the full git history in History/, the brief and design doc in Brief/), the game's tasks in Tasks/, the project, per-scenario gameplay videos, README screenshots and the built player (a desktop game's Windows player, a mobile game's Android APK). docs/game-format.md is the prose version of this file; tools/validate-dataset.ps1 checks against this file.",
+  "description": "The delivery layout of every Godot game: the creation record (git.log, workflow.jsonl, ReplayScripts/, the full git history in History/, the brief and design doc in Brief/), the game's tasks in Tasks/, the project, per-scenario gameplay videos, README screenshots and the built player. docs/game-format.md is the prose version of this file; tools/validate-dataset.ps1 checks against this file.",
   "names": {
     "zip": "Dataset.zip",
     "zip_place": "the game repo's own folder, next to Dataset/ (git-ignored, with the packager's scratch in .dataset/)",
@@ -67,7 +67,7 @@
       "kind": "dir",
       "required": true,
       "in_repo_dataset": false,
-      "what": "the project at the release commit (project.godot, export_presets.cfg, the scenes, scripts and assets, every imported file with its .import and every script with its .uid; store content included; no .godot/ cache: the first open rebuilds it); a mobile game's Platform.json is at its root; in the repo the repository itself is the project",
+      "what": "the project at the release commit (project.godot, export_presets.cfg, the scenes, scripts and assets, every imported file with its .import and every script with its .uid; store content included; no .godot/ cache: the first open rebuilds it); in the repo the repository itself is the project; a mobile game's has Platform.json at its root",
       "must_contain": [
         "project.godot"
       ],
@@ -88,7 +88,7 @@
       "kind": "dir",
       "required": true,
       "in_repo_dataset": true,
-      "what": "the release version's scenario videos: at least one (one recorded scenario is enough; videos of other scenarios already recorded may be included), named by their scenario number, at the size of the game's platform (gameplay_video); a game without a gameplay video is rejected at upload: a delivered dataset (variant full) never lists Gameplay/ as pending; only a repo's Dataset/ folder may (listed in manifest pending, status pending)",
+      "what": "the release version's scenario videos: at least one (one recorded scenario is enough; videos of other scenarios already recorded may be included), named by their scenario number; a game without a gameplay video is rejected at upload: a delivered dataset (variant full) never lists Gameplay/ as pending; only a repo's Dataset/ folder may (listed in manifest pending, status pending); a mobile game's are recorded from its Windows player at the phone's size",
       "only_files_matching": "^<game>_S([0-9]+)\\.mp4$",
       "scenario_numbers": "distinct, 1 or more; a dataset may hold a subset of the game's scenarios",
       "pending_allowed": true
@@ -106,26 +106,13 @@
       "kind": "dir",
       "required": true,
       "in_repo_dataset": false,
-      "what": "the release player, by the game's platform (manifest platform). A desktop game: the Windows player (x64), <Project>.exe with what the export puts beside it. A mobile game: the Android APK, <Project>.apk (arm64, min SDK 26), and no Windows player; while the release has no APK (built on a machine without the Android toolchain) Build/ is pending",
-      "by_platform": {
-        "desktop": {
-          "must_contain": [
-            "*.exe"
-          ],
-          "forbid": [
-            "*.apk"
-          ]
-        },
-        "mobile": {
-          "must_contain": [
-            "*.apk"
-          ],
-          "forbid": [
-            "*.exe"
-          ],
-          "pending_allowed": true
-        }
-      }
+      "what": "the Windows release player (x64): <Project>.exe with what the export puts beside it; a mobile game's (manifest platform.kind mobile) also holds its Android APK (arm64, release), <Project>.apk, when the machine that built the release had the Android toolchain",
+      "must_contain": [
+        "*.exe"
+      ],
+      "may_contain_mobile": [
+        "*.apk"
+      ]
     },
     {
       "name": "manifest.json",
@@ -141,23 +128,20 @@
   "gameplay_video": {
     "container": "mp4",
     "video_codec": "h264",
+    "width": 1920,
+    "height": 1080,
     "audio_codec": "aac",
     "audio_required": true,
-    "sizes": {
-      "desktop": [
-        1920,
-        1080
-      ],
-      "mobile landscape": [
-        1920,
-        1080
-      ],
-      "mobile portrait": [
-        1080,
-        1920
-      ]
-    },
-    "sizes_rule": "width and height by the manifest's platform and orientation: the size the game is played at"
+    "mobile": {
+      "landscape": {
+        "width": 1920,
+        "height": 1080
+      },
+      "portrait": {
+        "width": 1080,
+        "height": 1920
+      }
+    }
   },
   "manifest": {
     "required_keys": [
@@ -166,8 +150,6 @@
       "title",
       "version",
       "commit",
-      "platform",
-      "orientation",
       "status",
       "variant",
       "pending",
@@ -178,20 +160,11 @@
       "tasks"
     ],
     "layout_value": "godot-dataset-layout/v1",
-    "platform_values": [
-      "desktop",
-      "mobile"
-    ],
-    "orientation_values": [
-      "landscape",
-      "portrait"
-    ],
-    "platform_rule": "platform is what the release commit's Platform.json says (tools/validate-game.py read_platform): \"desktop\" for a game without the file, with orientation null; \"mobile\" with orientation \"landscape\" or \"portrait\"",
     "status_values": [
       "complete",
       "pending"
     ],
-    "pending_rule": "pending lists the entries still missing: ReplayScripts (the creation replay is not made yet) and, for a mobile game alone, Build (the release has no APK yet)",
+    "pending_rule": "pending lists the entries still missing: ReplayScripts (the creation replay is not made yet)",
     "complete_requires": "ReplayScripts/ with Verification/report.json (the creation replay run end to end, headless, from ReplayScripts/ and verified: every tracked file against the release commit byte for byte, the known non-content differences normalised and listed, and the structure of every scene and resource compared) and manifest.json replay_verification from it; the verdict is metadata (the replay is required but need not pass): replay_verification.pass equals the report verdict.pass, true or false, and the README says PASS or FAIL",
     "replay_verification_keys": [
       "pass",
@@ -220,7 +193,8 @@
     "history_rule": "full variant: history is an object (head = commit, the bundle holds every commit, every LFS object of every commit is under History/lfs/objects); repo-dataset: history is null (the repo is its own history)",
     "brief_rule": "brief lists the Brief/ files: {\"brief\": \"Brief/brief.md\", \"design\": \"Brief/design.md\"}",
     "tasks_rule": "tasks: {\"count\": n >= 1, \"names\": [the task names], \"schema\": \"game-task/1\"} (full variant); null in a repo Dataset/",
-    "build_rule": "full variant: build is an object: {config \"Release\", commit, source} with exe \"Build/<Project>.exe\" for a desktop game; with apk \"Build/<Project>.apk\" and, where the build recorded them, bytes, package, min_sdk, target_sdk and abis for a mobile game (no exe); neither exe nor apk while a mobile game's Build/ is pending; null in a repo Dataset/"
+    "platform_rule": "platform is optional: absent or {\"kind\": \"desktop\"} is a desktop game; {\"kind\": \"mobile\", \"orientation\": \"landscape\" | \"portrait\"} an Android phone game, whose gameplay videos are 1920x1080 (landscape) or 1080x1920 (portrait), whose GodotProject/Platform.json says the same, and whose build may name its apk with package, version_code, version_name, min_sdk and target_sdk (then Build/ holds that .apk, arm64-v8a, beside the Windows player)",
+    "build_rule": "full variant: build is an object: {config \"Release\", commit, exe \"Build/<Project>.exe\", source}; a mobile game's may also name its apk (platform_rule); null in a repo Dataset/"
   },
   "readme": {
     "sections_in_order": [
@@ -280,5 +254,11 @@
     },
     "seed_rules": "seed.game = the dataset's game; seed.commit and seed.reference are commits of History/<game>.bundle",
     "harness_rule": "An agent given a task starts from a history-less snapshot of the game at seed.commit with Tasks/, History/ and Dataset/ removed (they hold every task's rubrics and references): only the brief and that snapshot. The grader's half (milestones: rubrics, judge and code-judge questions, log_absent patterns; and seed.reference) never reaches the agent."
+  },
+  "mobile": {
+    "platform_file": "GodotProject/Platform.json",
+    "abi": "arm64-v8a",
+    "min_sdk_at_least": 26,
+    "target_sdk_at_least": 34
   }
 }

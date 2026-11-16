@@ -1,40 +1,43 @@
 ---
 name: godot-mobile-game
-description: The rules of a godot-game-factory game-building session that hold for a mobile (Android phone) game only. Use with the godot-game-session skill in every session that builds a game made with new-game.ps1 -Platform mobile (its root has a Platform.json), and with the godot-write-tasks skill when writing that game's tasks. A desktop game's session reads godot-desktop-game instead.
+description: 'The rules of a godot-game-factory game-building session that hold for a mobile (Android phone) game only. Use with the godot-game-session skill in every session that builds a game made with new-game.ps1 -Platform mobile (its root has a Platform.json), and with the godot-write-tasks skill when writing that game''s tasks. A desktop game''s session reads godot-desktop-game instead.'
 ---
 
 # Mobile game (Godot)
 
 Your game is an Android phone game, landscape or portrait, played by touch. Everything in the **godot-game-session**
 skill holds; this skill is what holds for a mobile game alone, and it takes the place of the **godot-desktop-game**
-skill, which you do not read. Where a shared rule names a keyboard, a mouse, Escape or a Windows build, the rule here
-is the one that applies.
+skill, which you do not read. Where a shared rule names a keyboard, a mouse, Escape, a 1920x1080 window or a Windows
+player as the product, the rule here is the one that applies.
 
 ## Start
 
 - Create the project with `new-game.ps1 ... -Platform mobile -Orientation landscape` (or `portrait`), as the
   godot-game-session skill's Start says, with those two switches added. The orientation is chosen with the person
   before the project exists and never changes after.
-- It writes `Platform.json` at the root (`{"platform":"mobile","orientation":"..."}`), a mobile game's
-  `project.godot` and the `Android` preset in `export_presets.cfg`. **Never edit or delete `Platform.json`**: every
-  later tool reads the platform from that file alone, and a file that says anything else is an error, never read as a
-  desktop game.
-- **Keep the mobile settings as they came**; `tools/validate-game.py` (rule `mobile`) holds the project to them:
+- It writes `Platform.json` at the root (`{"platform": "mobile", "orientation": "..."}`) and lays the mobile files
+  over the skeleton: a mobile game's `project.godot`, the `Android` preset in `export_presets.cfg`, `game/phone.gd`
+  (the autoload `Phone`, which tells the AutoPlay drop-in the game is a phone game) and a first scene with a touch
+  button. **Never edit or delete `Platform.json` or `game/phone.gd`**: every later tool reads the platform from that
+  file alone, and a file that says anything else is an error, never read as a desktop game.
+- **Keep the mobile settings as they came**: the validators hold the project, the APK and the dataset to them
+  (`tools/validate-game.py`, rule `mobile`):
   - `project.godot`: the Mobile renderer (`rendering/renderer/rendering_method="mobile"`, and
     `rendering_method.mobile`), `rendering/textures/vram_compression/import_etc2_astc=true` (the texture formats a
     phone reads), the frame size 1920x1080 (landscape) or 1080x1920 (portrait) with stretch mode `canvas_items`,
     `display/window/handheld/orientation` (0 landscape, 1 portrait), `application/config/quit_on_go_back=false` (the
     back button is the game's to handle), `input_devices/pointing/emulate_mouse_from_touch=true` and
     `emulate_touch_from_mouse=false`.
-  - the `Android` export preset: package `com.<project lowercase>.game`, arm64-v8a alone, a Gradle build
-    (`gradle_build/use_gradle_build=true`) with `min_sdk` 26 and `target_sdk` 34, Vulkan.
+  - the `Android` export preset: package name `com.<project in lower case>.game`, minSdk 26, targetSdk 34, arm64
+    alone, a Gradle build (`gradle_build/use_gradle_build=true`: only a Gradle build takes the SDK levels).
 - Android only. No iOS target, no tablet-only layout.
 
 ## Rendering
 
-- The game runs on Godot's **Mobile renderer** (Vulkan), on the phone and on this PC alike: every play, screenshot,
-  recording and task play of the game uses it, because the project says so. Never pass `--rendering-method` or
-  `--rendering-driver` to a run, and never switch the project to Forward+ "to see it properly".
+- **One renderer everywhere.** The game is drawn with Godot's Mobile renderer (Vulkan), on the phone and on this PC
+  alike: every play, screenshot, recording and task play of the game uses it, because the project says so. Never pass
+  `--rendering-method` or `--rendering-driver` to a run, and never switch the project to Forward+ "to see it
+  properly": the Windows player would then draw what the phone does not.
 - **What the Mobile renderer does not have** (Godot 4.7; all of these are Forward+ only): SDFGI, VoxelGI,
   screen-space indirect lighting (SSIL), screen-space ambient occlusion (SSAO), screen-space reflections, volumetric
   fog (so no `FogVolume` either), TAA and FSR2, sub-surface scattering, the normal-roughness buffer in shaders
@@ -51,10 +54,11 @@ is the one that applies.
 - The art style still decides the look (godot-game-session, "Art style"): follow the guide's Godot recipe and, where
   it has one, its "On the Mobile renderer" sentence. Check every material in a play: one written for a Forward+
   feature can come out black or flat.
-- **Look at the game as a phone draws it.** `Scripts/godot.ps1 play` runs the project with the Mobile renderer at the
-  phone's exact size, 1920x1080 (landscape) or 1080x1920 (portrait), whatever the PC's screen is; `-Shots <n>` saves
-  frames of that size. Every screenshot you judge the game by, the framing screenshots and the README stills come
-  from such a play or from a recording's stills.
+- **Look at the game as a phone draws it.** On this PC the game is played at the phone's size: 1920x1080 (landscape)
+  or 1080x1920 (portrait). `Scripts/godot.ps1 play` runs the project with the Mobile renderer at exactly that size,
+  whatever the PC's screen is; `-Shots <n>` saves frames of that size. Every screenshot you judge the game by, the
+  framing screenshots and the README stills come from such a play or from a recording's stills, never from the
+  editor's view at another size.
 - **Budgets, for a mid-range phone, in any view the player can reach:** at most **500,000 triangles** drawn, at most
   **700 draw calls**, at most **1 GB of textures** in memory. Design to them from the first scene: fewer, merged and
   instanced meshes (`MultiMeshInstance3D`), texture sizes chosen on purpose, few translucent layers, few dynamic
@@ -64,8 +68,9 @@ is the one that applies.
   `Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME`, `RENDER_TOTAL_DRAW_CALLS_IN_FRAME` and `RENDER_TEXTURE_MEM_USED`
   (bytes), the same numbers `RenderingServer.get_rendering_info()` gives. Log them from a git-ignored debug flag of
   your own in a `Scripts/godot.ps1 play` at the busiest views and compare with the budgets; a headless run renders
-  nothing and reads zero. A task measures them with the `render` reading (`draw_calls`, `triangles`, `texture_mb`:
-  docs/task-probes.md), the highest over the frames since the previous sample.
+  nothing and reads zero. A task may measure them (godot-write-tasks, the `render` reading: `draw_calls`,
+  `triangles`, `texture_mb`, docs/task-probes.md section 2.20): the two counts are the highest over the frames since
+  the previous sample, the texture memory is read at the sample.
 
 ## Touch
 
@@ -90,8 +95,9 @@ is the one that applies.
 - **The back button.** Android's back button reaches the game as `NOTIFICATION_WM_GO_BACK_REQUEST` (handle it in
   `_notification` of a node that is always in the tree). It does what Escape does on a desktop game: it opens the
   pause menu in play, closes what is open, and goes back one screen in menus. It never quits without asking. The
-  template sets `application/config/quit_on_go_back=false` so the engine leaves it to the game; keep that. The
-  factory's tools press it the same way (AutoPlay's `back()`, a task's key `Android_Back`).
+  template sets `application/config/quit_on_go_back=false` so the engine leaves it to the game; keep that. To the
+  factory's tools the back button is `<Keyboard>/escape` (the bot's `AutoPlay.hold` / `release`, a task's key): in a
+  mobile game's run they send that control as the phone sends its back button, the go-back request.
 - **Sized for a thumb.** Controls a finger must hit are large and apart from each other, inside the screen's safe
   area (away from the edges, the camera cut-out and the system gesture bar): read
   `DisplayServer.get_display_safe_area()` and keep every control inside that rectangle, with a margin of your own on
@@ -109,8 +115,9 @@ is the one that applies.
 ## Quality bar
 
 - **Quality bar:** main menu, settings (volume, touch sensitivity where the game has a look or aim control), pause on
-  the back button, save/load where it fits, HUD, sound, clear win/lose, an Android release APK (arm64). Recorded and
-  TTS voices are allowed.
+  the back button, save/load where it fits, HUD, sound, clear win/lose, a Windows x64 release player of the game at
+  the phone's size (what is played and recorded here) and, at release, its Android APK (arm64), which the pipeline
+  builds. Recorded and TTS voices are allowed.
 - **Room for hard tasks.** A game's tasks come from its own history (godot-write-tasks skill), and strong agents miss
   what only shows when the game runs. So build these in, and work them over several rounds rather than in one commit:
   feedback for every gameplay event (a HUD readout, marker, sound or effect); visible state changes (materials,
@@ -121,41 +128,48 @@ is the one that applies.
 
 ## AutoPlay on a mobile game
 
-The bot plays by touch only, through the drop-in's touch calls: `AutoPlay.tap(pos)` (with a hold for a long press),
-`AutoPlay.drag(points, over_s)` (with a hold for a stick kept pushed over) and `AutoPlay.back()` for the back button. Positions
-are pixels of the game's frame from its top left; take a control's place from the node itself
-(`get_global_rect().get_center()`), never from a number written down, so the bot still finds it after a layout
-change. Never `hold` a key or move the mouse in a mobile game's bot.
+- `game/phone.gd` tells the AutoPlay drop-in the game is a phone game (`AutoPlay.phone`): `AutoPlay.is_phone` is
+  true, and a run's `ready.json` says how the phone is held.
+- **The bot plays with fingers.** It acts only through `AutoPlay.touch(finger, position)` and
+  `AutoPlay.touch_up(finger)` (a tap is a touch in one frame and its lift in a later one; a virtual stick is a finger
+  put down on it and moved; two thumbs are fingers 0 and 1) and `AutoPlay.hold` / `release` of `<Keyboard>/escape`,
+  the back button. The drop-in refuses every other key, the mouse and the gamepad in a phone game's run
+  (docs/autoplay-contract.md, section 4). Positions are pixels of the game's frame from its top left; find a
+  control's place from the node itself (`get_global_rect().get_center()`), never from a number written for one
+  screen size.
+- The hand test and the recording are the same commands as a desktop game's (`Scripts/godot.ps1 autoplay`,
+  `pipeline.ps1`); the video is 1920x1080 or 1080x1920.
 
 ## Tasks on a mobile game (with the godot-write-tasks skill)
 
-- A mobile game's tasks are played with the Mobile renderer at the phone's size (1920x1080 or 1080x1920); the task
-  check does this itself from `Platform.json`. A task's play never chooses a renderer or a size in its arguments
-  (`--rendering-method`, `--rendering-driver`, `--resolution`, `-size`): the validator refuses it.
-- **Drive the game by touch.** A play's inputs use `tap` and `drag` (docs/task-probes.md, "Touches"): a spot on the
-  screen as fractions of its width and height, or a control by its node name (`{"widget": "FireButton"}`: the centre
-  of the first visible `Control` of that name); `hold` for a held touch, `finger` for a second finger. The back
-  button is the key `Android_Back`. The checker's own `drive` play is by touch on a mobile game: a left thumb at the
+- A mobile game's tasks are played with the Mobile renderer at the phone's size (1920x1080 or 1080x1920), as a
+  phone's play; the task check does this itself from `Platform.json`. A task's play never chooses a renderer or a
+  size in its arguments (`--rendering-method`, `--rendering-driver`, `--resolution`, `-size`): the validator refuses
+  them.
+- **Drive the game by touch.** A play's inputs use `tap` and `drag` (docs/task-probes.md section 1.3): a spot on the
+  screen as fractions of its width and height, or a widget by name (`{"widget": "FireButton"}`: the centre of the
+  first visible `Control` of that node name); `hold` for a held touch, `finger` for a second finger. The back button
+  is the key `<Keyboard>/escape`. The checker's own `drive` play is by touch on a mobile game: a left thumb at the
   lower left pushed along the route, a tap at the lower right. A brief written for a mobile game never asks for a
   key or a mouse.
-- **A budget check gets a play of its own**: a probe with a `render` measure (`draw_calls`, `triangles`,
-  `texture_mb`) and a literal threshold (`{"op": "<=", "value": 700}`), in a task play that takes the player to the
-  view and reads nothing else.
 - Good mobile threads to look for in your history: a control that was too small or badly placed and took rounds to
-  fix, a layout broken in the game's orientation, a view over a budget brought back under it, the back button's
-  behaviour, the pause on leaving the app.
+  fix, a layout broken in the game's orientation, a view over a budget brought back under it (the `render` reading
+  with a literal threshold, `{"op": "<=", "value": 700}`, in a play of its own that takes the player to the view and
+  reads nothing else), the back button's behaviour, the pause on leaving the app.
 
 ## Build, recording and dataset
 
-- **The APK:** `Scripts/godot.ps1 build -Android` exports the Windows player (what this PC plays and records) and the
-  release APK `Build/Android/<Project>.apk`, when the machine has the Android toolchain (`machine/get-android.ps1`
-  installs it; `machine/check.ps1` reports it). On a machine without it the script says the APK is skipped and why:
-  that is not a failure of your game. Everything else (plays, AutoPlay, recordings, the task check) works without the
-  toolchain. Never install Android tools yourself or change the preset to get an APK; tell the coordinator (or the
-  person) that the machine lacks the toolchain.
-- The scenario videos are recorded on this PC from the game running the Mobile renderer, at the orientation's size
-  (1920x1080 or 1080x1920); the pipeline does this from `Platform.json`.
-- The dataset's `Build/` holds the game's APK (`Build/<Project>.apk`) and no Windows player. The pipeline's build of
-  the release commit makes it; while that build has no APK the packager writes `Dataset.pending.zip` and lists
-  `Build/` as pending.
-- `tools/validate-game.py` reads `Platform.json` and holds a mobile game to this skill's project rules.
+- You build and test the Windows player (`Scripts/godot.ps1 build`): it is what this PC plays and records.
+  `Scripts/godot.ps1 build -Android` also exports the APK, `Build/Android/<Project>.apk`, when the machine has the
+  Android toolchain (`machine/get-android.ps1` installs it; `machine/check.ps1` reports it,
+  docs/new-machine.md says how). The release pipeline builds the same player from the release commit and, on a
+  machine with the toolchain, the APK; it reads the APK back and refuses one that is not arm64 alone, at the SDK
+  levels and with the package name above. On a machine without the Android toolchain the APK step is skipped and
+  says so: that is not a failure of your game, and everything else (plays, AutoPlay, recordings, the task check)
+  works without it. Never install Android tools yourself or change the preset to get an APK; tell the coordinator
+  (or the person) that the machine lacks the toolchain.
+- The scenario videos are recorded from the Windows player at the phone's size. The dataset's manifest says
+  `"platform": {"kind": "mobile", "orientation": "..."}`, and its `Build/` holds the Windows player and, when it was
+  built, the APK.
+- `tools/validate-game.py` reads `Platform.json` and holds a mobile game to this skill's project settings (rule
+  `mobile`).

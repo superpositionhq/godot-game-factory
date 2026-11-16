@@ -150,7 +150,8 @@ function Get-GGFPython {
 }
 
 # A game's platform, read by the one reader of Platform.json: tools\validate-game.py --platform <folder> (it prints
-# "desktop", "mobile landscape" or "mobile portrait"; a bad file is an error, never read as desktop). Returns
+# one JSON line, {"platform": "desktop"} or {"platform": "mobile", "orientation", "width", "height"}; a bad file is
+# an error, never read as desktop). Returns
 # @{ platform; orientation; width; height }: the size every play, still and recording of the game has (desktop and
 # mobile landscape 1920x1080, mobile portrait 1080x1920); orientation is $null for a desktop game.
 function Get-GGFPlatform {
@@ -164,10 +165,11 @@ function Get-GGFPlatform {
     finally { $ErrorActionPreference = $old }
     if ($code -ne 0) { throw "Get-GGFPlatform ${Folder}: $(($out -join ' ').Trim())" }
     $line = [string](@($out | Where-Object { "$_".Trim() }) | Select-Object -Last 1)
-    switch ($line.Trim()) {
-        'desktop' { return [ordered]@{ platform = 'desktop'; orientation = $null; width = 1920; height = 1080 } }
-        'mobile landscape' { return [ordered]@{ platform = 'mobile'; orientation = 'landscape'; width = 1920; height = 1080 } }
-        'mobile portrait' { return [ordered]@{ platform = 'mobile'; orientation = 'portrait'; width = 1080; height = 1920 } }
+    $said = $null
+    try { $said = $line | ConvertFrom-Json } catch { }
+    if ($said -and $said.platform -eq 'desktop') { return [ordered]@{ platform = 'desktop'; orientation = $null; width = 1920; height = 1080 } }
+    if ($said -and $said.platform -eq 'mobile' -and $said.orientation -and $said.width -and $said.height) {
+        return [ordered]@{ platform = 'mobile'; orientation = [string]$said.orientation; width = [int]$said.width; height = [int]$said.height }
     }
     throw "Get-GGFPlatform ${Folder}: validate-game.py --platform printed '$line'"
 }

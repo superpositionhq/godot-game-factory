@@ -38,12 +38,14 @@ const PAD_AXES := {
 	"rightstick/y": [JOY_AXIS_RIGHT_Y, -1.0], "lefttrigger": [JOY_AXIS_TRIGGER_LEFT, 1.0],
 	"righttrigger": [JOY_AXIS_TRIGGER_RIGHT, 1.0],
 }
-const BACK := "Android_Back"
+## the control that is the phone's back button in a mobile game's play (the spec says `touch`)
+const BACK := "<keyboard>/escape"
 
 var probe: Node
 var rows: Array[Dictionary] = []
 var sent := 0
 var waiting := false  ## a wait input holds the play's clock
+var touch_play := false  ## the spec says `touch`: a mobile game's play
 var missed: Array = []  ## probe.json "inputs_missed": [{t, kind, target, why}]
 
 var _next := 0
@@ -60,8 +62,9 @@ var _wait_frames := 0
 var _wait_start := 0
 
 
-func _init(owner: Node, spec: Variant) -> void:
+func _init(owner: Node, spec: Variant, touch: bool = false) -> void:
 	probe = owner
+	touch_play = touch
 	if spec is Array:
 		for item: Variant in spec:
 			if item is Dictionary and _kind(item) != "":
@@ -285,9 +288,10 @@ func _key(code: Key, down: bool) -> void:
 
 func _control(path: String, value: float, is_axis: bool) -> void:
 	## a control's value: a key or a button pressed or released, or an axis set
-	if path == BACK:
-		# as a phone's back button reaches a game: the window's request (which quits a game that left
-		# quit_on_go_back on, as on a phone), its notification down the tree, and the key
+	if touch_play and path.to_lower() == BACK:
+		# a phone has no Escape key: in a mobile game's play the control is the phone's back button, sent as it
+		# reaches a game: the window's request (which quits a game that left quit_on_go_back on, as on a phone), its
+		# notification down the tree, and the key
 		if value != 0.0:
 			var root: Window = probe.get_tree().root
 			root.go_back_requested.emit()
@@ -391,6 +395,20 @@ static func _spot_name(value: Variant) -> String:
 	return "%.3f, %.3f" % [xy[0], xy[1]] if xy.size() == 2 else str(value)
 
 
+func _miss_touch(row: Dictionary, kind: String, target: String, why: String) -> void:
+	## a touch that can't be made: a row of inputs_missed and one line of the play's query_errors; nothing is touched
+	_miss(row, kind, target, why)
+	probe.error("inputs: the %s at %.2f s missed: %s" % [kind, _at(row), why])
+
+
+static func _spot_label(value: Variant) -> String:
+	## what a finger goes down on, for probe.log: the point, or the widget found and its class
+	if value is Dictionary:
+		var found := UiScan.named(Find.text(value, "widget"))
+		return "%s (%s)" % [found.name, found.get_class()] if found != null else Find.text(value, "widget")
+	return "(%s)" % _spot_name(value)
+
+
 func _touch(row: Dictionary, elapsed: float) -> void:
 	## a finger going down: its spots are found now (a widget's centre as it is laid out at this moment), then it is
 	## sent a part each frame until it lifts
@@ -399,20 +417,20 @@ func _touch(row: Dictionary, elapsed: float) -> void:
 	var spots: Array = row.get("drag") if drag and row.get("drag") is Array else [row.get("tap")]
 	var finger := roundi(Find.num(row, "finger"))
 	if spots.size() < (2 if drag else 1) or spots.size() > 16:
-		_miss(row, kind, "its spots", "a drag has 2 to 16 spots")
+		_miss_touch(row, kind, "its spots", "it names no spots")
 		return
 	if finger < 0 or finger > 9:
-		_miss(row, kind, "finger %d" % finger, "a finger is 0 to 9")
+		_miss_touch(row, kind, "finger %d" % finger, "finger %d (a finger is 0 to 9)" % finger)
 		return
 	for touch in _touching:
 		if touch["finger"] == finger and not touch["finished"]:
-			_miss(row, kind, _spot_name(spots[0]), "finger %d is still down from an earlier touch" % finger)
+			_miss_touch(row, kind, _spot_name(spots[0]), "finger %d is still down from an earlier touch" % finger)
 			return
 	var points: Array[Vector2] = []
 	for spot: Variant in spots:
 		var at: Variant = _spot(spot)
 		if at == null:
-			_miss(row, kind, _spot_name(spot), "no visible control matches it" if spot is Dictionary else "not a point of the frame")
+			_miss_touch(row, kind, _spot_name(spot), "no visible widget matches '%s'" % _spot_name(spot))
 			return
 		points.append(at)
 	var touch := {
@@ -421,7 +439,7 @@ func _touch(row: Dictionary, elapsed: float) -> void:
 	}
 	_touching.append(touch)
 	_touch_event(finger, points[0], true)
-	probe.note("%s finger %d down at (%.0f, %.0f)" % [kind, finger, points[0].x, points[0].y])
+	probe.note("%s: finger %d goes down on %s" % [kind, finger, _spot_label(spots[0])])
 
 
 func _move_touch(touch: Dictionary, elapsed: float) -> void:
@@ -449,7 +467,7 @@ func _move_touch(touch: Dictionary, elapsed: float) -> void:
 	if since >= (over if points.size() > 1 else 0.0) + touch["hold"] - 1e-9:
 		_touch_event(touch["finger"], to, false)
 		touch["finished"] = true
-		probe.note("%s finger %d up at (%.0f, %.0f) after %.2f s" % [touch["kind"], touch["finger"], to.x, to.y, since])
+		probe.note("%s: finger %d lifts at pixel (%.0f, %.0f) after %.2f s" % [touch["kind"], touch["finger"], to.x, to.y, since])
 
 
 func _touch_event(finger: int, at: Vector2, down: bool) -> void:

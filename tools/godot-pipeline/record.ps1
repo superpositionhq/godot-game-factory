@@ -45,11 +45,9 @@ $projectName = [string]$buildInfo.project
 $exe = Join-Path $Build "Windows\$projectName.exe"
 if (-not (Test-Path -LiteralPath $exe)) { $exe = [string]$buildInfo.exe_path }
 if (-not (Test-Path -LiteralPath $exe)) { throw "no player in $Build (expected Windows\$projectName.exe)" }
-# The frame's size is the game's: 1920x1080, or 1080x1920 for a portrait phone game (the build's own platform).
-$platformName = if (Get-Prop $buildInfo 'platform') { [string]$buildInfo.platform } else { 'desktop' }
-$orientation = Get-Prop $buildInfo 'orientation'
-$width = 1920; $height = 1080
-if ($platformName -eq 'mobile' -and $orientation -eq 'portrait') { $width = 1080; $height = 1920 }
+# The frame of every run: 1920x1080, or the phone's size of a mobile game's build held upright (1080x1920).
+$mobile = ((Get-Prop $buildInfo 'platform') -eq 'mobile')
+$width, $height = Get-BuildWindow $buildInfo
 if ($WallSeconds -le 0) { $WallSeconds = 6 * $MaxSeconds + 600 }
 
 $ffmpeg = Find-FFmpeg
@@ -59,7 +57,7 @@ if (-not $OnScreen -and (-not $python -or -not (Test-Path -LiteralPath $Desk))) 
     Write-Step "no python or no $Desk for a desktop of its own: the game's window shows on this desktop"
     $OnScreen = $true
 }
-Write-Step "ffmpeg: $ffmpeg ($ffmpegVersion); $platformName$(if ($orientation) { " $orientation" }) game, frames ${width}x${height}"
+Write-Step "ffmpeg: $ffmpeg ($ffmpegVersion); frames ${width}x${height}$(if ($mobile) { ' (a mobile game)' })"
 $skillCycle = @(1.0, 0.75, 0.5, 0.25)
 $rng = New-Object System.Random
 
@@ -166,7 +164,7 @@ for ($i = 0; $i -lt $Runs; $i++) {
         # the frame the game rendered, and how
         $vp = @(Get-Prop $outcome 'viewport')
         $frameOk = ($vp.Count -eq 2 -and [int]$vp[0] -eq $width -and [int]$vp[1] -eq $height)
-        $rendererOk = ($platformName -ne 'mobile' -or (Get-Prop $outcome 'renderer') -eq 'mobile')
+        $rendererOk = (-not $mobile -or (Get-Prop $outcome 'renderer') -eq 'mobile')
         $movieOk = ((Get-Prop $outcome 'movie') -eq $true -and [int](Get-Prop $outcome 'fixed_fps') -eq $MovieFps)
         $checks.frame = [ordered]@{ ok = ($frameOk -and $rendererOk -and $movieOk); viewport = $vp; renderer = (Get-Prop $outcome 'renderer'); movie = (Get-Prop $outcome 'movie'); fixed_fps = (Get-Prop $outcome 'fixed_fps') }
         if (-not $frameOk) { [void]$problems.Add("the game rendered $($vp -join 'x') frames, not ${width}x${height}") }
@@ -227,7 +225,6 @@ for ($i = 0; $i -lt $Runs; $i++) {
     $metadata = [ordered]@{
         schema = 'godot-autoplay-bundle/v1'
         run_id = $runId; game = $Game; project = $projectName
-        platform = $platformName; orientation = $orientation
         scenario = $Scenario; scenario_name = (Get-Prop $outcome 'scenario_name')
         seed = $runSeed; skill = $runSkill; max_seconds = $MaxSeconds
         extra_args = $(if ($ExtraArgs) { $ExtraArgs } else { $null }); capture_notes = $(if ($CaptureNote) { $CaptureNote } else { $null })
@@ -261,7 +258,6 @@ for ($i = 0; $i -lt $Runs; $i++) {
     $row = [ordered]@{
         schema = 'godot-run/v1'; run_id = $runId; game = $Game; scenario = $Scenario; scenario_name = (Get-Prop $outcome 'scenario_name'); seed = $runSeed; skill = $runSkill
         build_commit = $buildInfo.commit; build_path = $Build; status = $status
-        platform = $platformName; orientation = $orientation; width = $width; height = $height
         result = $metadata.result; score = $metadata.score; duration_s = (Get-Prop $outcome 'duration_s')
         start = $tStart.ToString('o'); end = $tEnd.ToString('o'); wall_s = [math]::Round(($tEnd - $tStart).TotalSeconds, 1)
         capture = 'movie'; render_fps = $renderFps

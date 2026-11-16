@@ -17,7 +17,7 @@ are `tools/godot-pipeline/` (Windows PowerShell 5.1).
 
 | Script | Does |
 |---|---|
-| `build.ps1 <game> [-Commit rev] [-Force] [-NoAndroid]` | the Windows release player of a commit, from a private clone, and a mobile game's APK; row in `builds.jsonl` |
+| `build.ps1 <game> [-Commit rev] [-Force] [-NoAndroid]` | the Windows release player of a commit, from a private clone, and a mobile game's APK where the machine has the Android toolchain; row in `builds.jsonl` |
 | `record.ps1 <game> -Build <dir\|latest> [-Scenario n] [-Runs k] [-Skill s] [-Seed s] [-MaxSeconds n]` | start in Movie Maker mode, encode, validate, bundle; a row per run in `runs.jsonl` |
 | `pipeline.ps1 <game> [-Scenarios 1,2] [-Commit rev] [-MaxSeconds "1=300,3=900"] [-Force]` | release build, then one recorded run per scenario; row in `pipeline.jsonl` |
 | `validate-run.ps1 <outputDir>` | contract check of one run's files, no video (for game sessions testing by hand) |
@@ -89,8 +89,8 @@ Facts that cost time before:
 - **A project is text.** Scenes, resources, scripts and settings are text files a session writes and commits; the
   engine is run headless only for what only it can do: the import (`.godot/`, and the `.import` and `.uid` files that
   are committed), a generator script, an export.
-- **Import before export.** An export of a project that was never imported can miss resources; `build` and the
-  pipeline import first.
+- **Import before export.** An export of a project that was never imported can miss resources: the pipeline's
+  build imports first, and a session runs `import` before its own `build`.
 - **`--headless` renders nothing**: no screenshots, no frames to read back, no movie.
 - **A game's own arguments come after `--`** (`godot --path <project> -- -scenario 2`): what stands before it is the
   engine's, and the engine does not show its own arguments to a script.
@@ -172,42 +172,47 @@ Dynamic guards on top of the counts:
    Uncommitted work is not built.
 3. The game as the commit has it: the project's name is the file name of the "Windows Desktop" preset's `export_path`
    in `export_presets.cfg` (`Build/Windows/<Project>.exe`, as the template writes it; the slug in PascalCase without
-   one), and its platform comes from `Platform.json` (`Get-GGFPlatform`: desktop, mobile landscape or mobile
-   portrait).
+   one), and what it is made for comes from `Platform.json` (`Get-GGFPlatform` asks the one reader of it,
+   `tools\validate-game.py --platform <clone>`): a desktop game, or a mobile game held in landscape or portrait.
 4. `godot --headless --path <clone> --import` through the limiter: the build fails when it exits with an error or its
    log has a script error (`SCRIPT ERROR`, `Parse Error`, `Failed to load script`).
 5. The release player: `godot --headless --path <clone> --export-release "Windows Desktop"
    builds\<slug>\<sha8>\Windows\<Project>.exe`, into a fresh folder. The game's data is inside the exe (the preset's
    `embed_pck`), so the player is one file.
-6. A mobile game's APK: `godot --headless --path <clone> --install-android-build-template --export-release "Android"
-   builds\<slug>\<sha8>\Android\<Project>.apk`, with the toolchain's environment set for this process
-   (`Set-GGFAndroidEnv`: `GRADLE_USER_HOME`, `JAVA_HOME`, `ANDROID_HOME`, the debug and release keystores). The engine
-   puts its Gradle build template into the clone's `android\build\` (`android\.build_version` names the engine
-   version) and Gradle builds the APK. The APK is then read back with the SDK's `aapt dump badging` and held to the
-   mobile contract: package `com.<project lowercase>.game`, minSdk 26, targetSdk 34, arm64-v8a alone. The result is
-   `android` in the row: `status` `ok`, `skipped` (with the `reason`: `-NoAndroid`, or a machine without the Android
-   toolchain) or `failed` (the export's error, or what the APK got wrong). **A build whose APK is skipped or failed is
-   still an ok build**: the Windows player is what is recorded, and the packager packages a mobile game without an
-   APK as pending ([Dataset packager](#dataset-packager)).
-7. Leak scan of the build's files (`Windows\`, and `Android\` with an APK): a case-insensitive byte search (ASCII and
-   UTF-16LE) for the Windows user name inside paths (`\<name>\`, `/<name>/`) and for superposition / game-factory /
-   game_factory / gamefactory / game factory / claude / anthropic / openai (`$ForbiddenNamePatterns` in `common.ps1`),
-   one read per file; hits are warned about and recorded in `leak_scan` (a build with hits can still be recorded but
-   must not be handed out: the dataset packager refuses it). `leak-scan.ps1 <dir>` runs the same scan by hand. A Godot
-   export compiles no path into a player, so the clone may sit under the user's folder; the scan proves it for every
-   build. It reads the files as they are stored: what is compressed inside the player's pack or the APK is not
-   unpacked (the game's own text is the repo validator's to check).
+6. Leak scan of the player's files (`Windows\`): a case-insensitive byte search (ASCII and UTF-16LE) for the Windows
+   user name inside paths (`\<name>\`, `/<name>/`) and for superposition / game-factory / game_factory / gamefactory /
+   game factory / claude / anthropic / openai (`$ForbiddenNamePatterns` in `common.ps1`), one read per file; hits are
+   warned about and recorded in `leak_scan` (a build with hits can still be recorded but must not be handed out: the
+   dataset packager refuses it). `leak-scan.ps1 <dir>` runs the same scan by hand. A Godot export compiles no path
+   into a player, so the clone may sit under the user's folder; the scan proves it for every build. It reads the
+   files as they are stored: what is compressed inside the player's pack is not unpacked (the game's own text is the
+   repo validator's to check).
+7. **A mobile game** (the commit has a `Platform.json`): the same Windows player is built, which is what is played
+   and recorded on this PC at the phone's size; then its Android APK, `Android\<Project>.apk`: `godot --headless
+   --path <clone> --install-android-build-template --export-release "Android" <out>\Android\<Project>.apk` (the
+   mobile template's "Android" preset: arm64, a Gradle build, release), with the toolchain's environment set for
+   this process (`Set-GGFAndroidEnv`: `GRADLE_USER_HOME`, `JAVA_HOME`, `ANDROID_HOME`, the debug and release
+   keystores). The engine puts its Gradle build template into the clone's `android\build\` (`android\.build_version`
+   names the engine version) and Gradle builds the APK. The APK is read back with the SDK's `aapt2 dump badging` and
+   the build fails when it is not a phone game's: arm64-v8a alone, minSdk 26 or more, targetSdk 34 or more, a
+   package name `com.<project>.game`. Its files are unpacked for the leak scan (hits are named
+   `Android\<Project>.apk!<file>`), then the copy is removed. The APK step needs the machine's Android toolchain
+   (`Get-GGFAndroid`; `machine\check.ps1` reports it, [new-machine.md](new-machine.md) says how to install it): on a
+   machine without it, or with `-NoAndroid`, the step is skipped with a line that says so, `build_info.json` holds
+   `apk {status: "skipped", reason}` and the build is ok, so the game can still be recorded; build the release
+   commit again on a machine with the toolchain for the APK.
 8. The AutoPlay drop-in's version (the `VERSION` constant of the game's `addons/autoplay/autoplay.gd`, null without
    one) goes into the row: `record.ps1` refuses a build without it.
 
 `builds.jsonl` row and `build_info.json` (next to the player, written only for an ok build; schema `godot-build/1`):
-`game`, `project`, `platform` (`desktop` | `mobile`), `orientation` (`landscape` | `portrait` | null), `commit`,
+`game`, `project`, `commit`,
 `short_sha`, `requested`, `commit_subject`, `commit_time`, `command`, `start`/`end`/`duration_s`, `status`,
 `exit_code`, `error_excerpt` (first matching error lines of the failing log), `log_path`, `output_path`, `exe_path`,
-`config` (`release`), `player_bytes`, `android {status, reason, apk, bytes, package, min_sdk, target_sdk, abis}` (null
-for a desktop game), `autoplay_version`, `leak_scan {scanned, hits[] {file, pattern, count, example}}`,
-`godot_version`, `editor`, and `steps[]` (`import`, `player`, `android`: each with its exact command line, times, exit
-code and log).
+`config` (`release`), `player_bytes`, `autoplay_version`, `leak_scan {scanned, hits[] {file, pattern, count,
+example}}`, `godot_version`, `editor`, and `steps[]` (`import`, `player`, `apk`: each with its exact command line,
+times, exit code and log). A mobile game's adds `platform` (`mobile`), `orientation`, `window` (`[1920, 1080]` or
+`[1080, 1920]`) and `apk` (`{status: "ok", file, bytes, sha256, package, version_code, version_name, min_sdk,
+target_sdk, abi}`, or `{status: "skipped", reason}`); a desktop game's has none of them.
 
 Measured on a 16-thread desktop PC beside other sessions' work, for a test game of one scene: the first build from a
 fresh clone 28 s (22 s of it the first import); a portrait mobile game with its APK 85 s (the Gradle build 43 s, its
@@ -216,8 +221,9 @@ Gradle home already filled).
 ### Record
 
 `record.ps1 <game> -Build <dir|latest> [-Scenario n] [-Runs k] [-Skill s] [-Seed s] [-MaxSeconds n]` (also
-`-WallSeconds`, `-ExtraArgs`, `-CaptureNote`, `-OnScreen`, `-KeepMovie`). The frame's size is the build's own
-platform: 1920x1080, or 1080x1920 for a portrait mobile game. Per run (seed = `-Seed + i`, or random; skill =
+`-WallSeconds`, `-ExtraArgs`, `-CaptureNote`, `-OnScreen`, `-KeepMovie`). The frame's size is the build's
+(`common.ps1` `Get-BuildWindow`): 1920x1080, or 1080x1920 for a mobile game's build held upright (`build_info.json`
+`orientation` `portrait`). Per run (seed = `-Seed + i`, or random; skill =
 `-Skill`, or cycling 1.0 / 0.75 / 0.5 / 0.25):
 
 1. Start `builds\<slug>\<sha8>\Windows\<Project>.exe` through the limiter (a general and a GPU slot) with the engine's
@@ -246,7 +252,7 @@ mixed for that frame into `raw\movie.avi`: MJPEG pictures (quality `editor/movie
 0.9 in the template) and 16-bit 48 kHz stereo PCM, one block of 800 sample frames per picture. The engine takes as long
 per frame as the machine needs, so the video has every frame exactly once whatever else the machine is doing: no
 dropped or repeated frames, no start-time estimate, no audio alignment, no display, no idle user. That is why a
-recording here is an ordinary GPU job and needs no screen, no queue and no user away from the keyboard.
+recording here is an ordinary GPU job: it needs no screen and no user away from the keyboard.
 
 - **Frame size.** The movie's frames have the project's `display/window/size/viewport_width` x `viewport_height` (the
   engine scales a frame of another size to it), and `-size` makes the game render exactly that (autoplay-contract.md
@@ -300,7 +306,7 @@ recordings\<slug>\<slug>_S<scenario>_<yyyyMMdd-HHmmss>_s<seed>\
   inputs.jsonl        as written by the game (autoplay-contract.md section 5)
   telemetry.jsonl     as written by the game
   outcome.json        as written by the game
-  metadata.json       schema godot-autoplay-bundle/v1: run_id, game, project, platform, orientation, scenario,
+  metadata.json       schema godot-autoplay-bundle/v1: run_id, game, project, scenario,
                       scenario_name, seed, skill, max_seconds, extra_args, capture_notes, result, score, player, build
                       {commit, short_sha, config, godot_version, path, exe, autoplay_version}, clock {source,
                       qpc_frequency, t_ns_definition, samples: the game's start / go / end}, video {file, codec, width,
@@ -325,7 +331,7 @@ recordings\<slug>\<slug>_S<scenario>_<yyyyMMdd-HHmmss>_s<seed>\
 ```
 
 `runs.jsonl` row (schema `godot-run/v1`): `run_id`, `game`, `scenario`, `scenario_name`, `seed`, `skill`,
-`build_commit`, `build_path`, `status`, `platform`, `orientation`, `width`, `height`, `result`, `score`, `duration_s`,
+`build_commit`, `build_path`, `status`, `result`, `score`, `duration_s`,
 `start`/`end`/`wall_s`, `capture` (`movie`), `render_fps`, `problems`, `warnings`, `bundle`; `mark-invalid.ps1` adds
 `{event: "invalidated", run_id, time, reason, status_before, bundle}` rows.
 
@@ -357,7 +363,7 @@ problems and notes and exits 1 on FAIL. The sound is checked on a recording, who
 a good run (status `ok`/`warn`, not invalidated) of that commit unless `-Force`, then runs `build.ps1` and `record.ps1`
 once per scenario: one recorded run per scenario is enough (AGENTS.md, "Priorities"). Each step takes the game's lock
 itself, and every engine run waits for its slot in the limiter, so several pipelines and the sessions' own runs sort
-themselves out: there is no queue. A recording does not need the screen, so a game session that has reached its
+themselves out. A recording does not need the screen, so a game session that has reached its
 AutoPlay milestone runs it itself, one run per scenario and never again to improve how the bot plays; a coordinated
 session then reports the result to the coordinator (commit, tag, scenarios, bundle paths):
 
@@ -374,7 +380,7 @@ note goes to the run's `metadata.json` (`extra_args`, `capture_notes`), then to 
 (`scenarios[].capture_notes`) and a "Recording note" line under the README's Scenarios table.
 
 Results: `.recording\<slug>\pipeline.jsonl` (schema `godot-pipeline/v1`: commit, scenarios, the time limit per
-scenario, build {status, short_sha, output, platform, orientation, android {status, reason}, autoplay_version,
+scenario, build {status, short_sha, output, platform, orientation, apk {status, reason}, autoplay_version,
 leak_scan_hits}, runs[] {run_id, scenario, status, result}, status `ok` / `partial` / `failed` / `skipped`, note) and
 `runs.jsonl`. The summary's `build.leak_scan_hits` lists the build's leak-scan hits (`[]` = clean); warn-only here: a
 build with hits can be recorded, but the dataset packager refuses it. `pipeline.ps1` exits 1 on `failed` and `partial`.
@@ -421,8 +427,7 @@ game's settings are its `ReplayConfig.json`. Everything else is in [godot-replay
 ([game-format.md](game-format.md), [dataset-layout-v1.json](dataset-layout-v1.json), manifest
 [schemas/dataset-manifest.schema.json](schemas/dataset-manifest.schema.json)). It writes `<repo>\Dataset.zip` (status
 `complete`) when the release has a gameplay video, its creation replay and its player; `<repo>\Dataset.pending.zip`,
-with the missing entry listed in `pending`, while the replay is missing (`ReplayScripts`) or a mobile game's build has
-no APK (`Build`). A game without a gameplay video is rejected at upload: with no valid recording of the release commit
+with the missing entry listed in `pending`, while the replay is missing (`ReplayScripts`). A game without a gameplay video is rejected at upload: with no valid recording of the release commit
 the packager refuses and says to record a scenario of the release commit, then package again. Nobody assembles a
 dataset or `Dataset.zip` by hand, and before the packager's first run on a game its `Dataset/` stays as the template
 made it and `tools/validate-game.py`'s "not packaged yet" warning is expected.
@@ -433,29 +438,20 @@ commit than `HEAD`, `--commit milestone` the newest `milestone/autoplay-<n>` tag
 
 **The platform.** The release commit's `Platform.json` says what the game is, and `tools/validate-game.py`
 `read_platform` is the one reader of it: a game without the file is a desktop game, a mobile game is held `landscape`
-or `portrait`, and a file that says anything else refuses the package. `manifest.json` carries it as `platform`
-(`desktop` or `mobile`) and `orientation` (`landscape`, `portrait`, null for a desktop game). The platform decides what
-`Build/` holds and the size of the videos: 1920x1080 for a desktop game and a mobile game held landscape, 1080x1920
-for one held portrait. A build or a recording that says it was made as another platform (`platform` and `orientation`
-in `build_info.json` and in a bundle's `metadata.json`) is not taken: such a build refuses the package, such a
-recording is listed with the reason.
+or `portrait`, and a file that says anything else refuses the package. A mobile game's `manifest.json` says
+`"platform": {"kind": "mobile", "orientation": ...}`; a desktop game's has no `platform`. The platform decides the size
+of the videos: 1920x1080, or 1080x1920 for a mobile game held portrait.
 
 - **The player.** The pipeline's release build ([Build](#build)): `builds\<slug>\<sha8>\` with its `build_info.json`
   (status `ok`, config `release`), the release commit's own or, without one, the nearest earlier commit's (a warning
   names it). A build whose leak scan found anything (`build_info.json` `leak_scan.hits`), or one not in the release
   commit's history, refuses the package. `--build` names a pipeline build folder or a player folder. An export is named
-  after the project (`<Project>.exe`, `<Project>.apk`, as the release commit's `export_presets.cfg` names it): a player
-  of another name refuses the package.
-  - A desktop game: the build's `Windows\` folder, with `<Project>.exe`, goes to `Build/`. Without a pipeline build
-    the packager takes `<repo>\Build\Windows` (`Scripts\godot.ps1 build`; a warning when a commit after the build
-    changed the game). A desktop game without a player refuses the package.
-  - A mobile game: the APK alone, `builds\<slug>\<sha8>\Android\<Project>.apk`, else `<repo>\Build\Android\<Project>.apk`
-    (`Scripts\godot.ps1 build -Android`), goes in as `Build/<Project>.apk`. The Windows player of the same build is
-    what the recordings are made with and is not delivered. `manifest.json` `build` takes the APK's `bytes` and, from
-    `build_info.json` `android`, its `package`, `min_sdk`, `target_sdk` and `abis`. A build without an APK (`android`
-    status `skipped` or `failed`, or no file) leaves `Build/` pending: everything else is packaged as
-    `Dataset.pending.zip`, and the packager prints how to get the APK: install the Android toolchain with
-    `machine/get-android.ps1`, then build again (`tools/godot-pipeline/build.ps1 <slug> -Force`).
+  after the project (`<Project>.exe`, as the release commit's `export_presets.cfg` names it): a player of another name
+  refuses the package. The build's `Windows\` folder goes to `Build/`. Without a pipeline build the packager takes
+  `<repo>\Build\Windows` (`Scripts\godot.ps1 build`; a warning when a commit after the build changed the game). A game
+  without a player refuses the package. A mobile game's APK comes from the same build (`Android\<Project>.apk`, named
+  by `build_info.json` `apk`, its sha256 checked) and goes in as `Build/<Project>.apk`; a build that skipped it (no
+  Android toolchain) gives a delivery without the APK and a warning.
 - **The videos.** Per scenario, the first valid recording of the release commit ([Bundle](#bundle)):
   `recordings\<slug>\<run>\` with `validation.json` `ok` or `warn`, no `FAILED` or `INVALID`, and `metadata.json`
   `build.commit` the release commit. Its `gameplay.mp4` goes in as `Gameplay/<slug>_S<n>.mp4`, checked with the
@@ -486,8 +482,8 @@ what would go in and what is missing. What it packs:
 | `Gameplay/<slug>_S<n>.mp4` | the videos above |
 | `ReplayScripts/` | the replay above |
 | `Screenshots/` | the images the game's `README.md` shows, else the project's `Docs/screenshots/`, else up to four stills of the recordings taken |
-| `Build/` | the player above: a desktop game's Windows player, or a mobile game's APK alone |
-| `README.md`, `manifest.json` | written by the packager (`--version` gives the release version). A mobile game's README says that it is an Android phone game, how it is held, how to install the APK (`adb install Build/<Project>.apk`, an arm64 phone with Android 8.0, API 26, or later) and how its videos were recorded (on a PC with the Mobile renderer at the phone's size, played by touch events) |
+| `Build/` | the player above; a mobile game's APK beside it, when its build made one |
+| `README.md`, `manifest.json` | written by the packager (`--version` gives the release version); a mobile game's manifest says `"platform": {"kind": "mobile", "orientation": ...}` (from the release commit's `Platform.json`) and names the APK in `build` (`apk`, `package`, `version_code`, `version_name`, `min_sdk`, `target_sdk`), and its README says what the game is made for |
 
 Every text file of the delivery is scrubbed (the studio and tool names, agent, model and provider names, the account
 and machine name, e-mail addresses, git identities, the build machine's session folders and ids) and then scanned: a
@@ -525,9 +521,8 @@ the history's and the scan's numbers; `.allowlisted.tsv`; `.binary-emails.tsv`; 
 folders found in the delivery's text, listed only) and a row per delivery in `package-log.jsonl`.
 
 It ends with the checks a consumer runs: the dataset checks of `tools/validate-game.py` and, where PowerShell is
-installed, `tools/validate-dataset.ps1`, which reads the platform from `manifest.json` and holds `Build/` (an `.exe`
-and no `.apk` for a desktop game, an `.apk` and no `.exe` for a mobile one) and the size of the videos to it. An error
-refuses the package. Then it writes the zip (`--no-zip` stops after the checks) and, unless `--no-repo-dataset`, the
+installed, `tools/validate-dataset.ps1`, which holds the size of a mobile game's videos to the manifest's `platform`.
+An error refuses the package. Then it writes the zip (`--no-zip` stops after the checks) and, unless `--no-repo-dataset`, the
 repo's `Dataset/` folder (`README.md`, `git.log`, `workflow.jsonl`, `Brief/`, `Gameplay/`, `ReplayScripts/`,
 `Screenshots/`, `manifest.json`, and a `.gitattributes` that keeps them byte for byte as `manifest.json` lists them: no
 line-ending conversion, videos and images in Git LFS), which the game session then commits. It never commits and never

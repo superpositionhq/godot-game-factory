@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "godot-dataset-layout/v1/manifest",
   "title": "Dataset manifest.json",
-  "description": "Metadata of one Godot game's dataset and the path, size and sha256 of every other file in it. Cross-file rules (files exist and match, status complete needs the replay report, whose verdict PASS or FAIL is metadata, commit = last git.log commit, platform against the project's Platform.json and the build, history, brief and tasks) are in docs/game-format-v1.json, dataset, and checked by tools/validate-game.py.",
+  "description": "Metadata of one Godot game's dataset and the path, size and sha256 of every other file in it. Cross-file rules (files exist and match, status complete needs the replay report, whose verdict PASS or FAIL is metadata, commit = last git.log commit, history, brief and tasks) are in docs/game-format-v1.json, dataset, and checked by tools/validate-game.py. A mobile game's manifest says so (platform) and may name its APK in build; a manifest without platform is a desktop game's.",
   "type": "object",
   "required": [
     "layout",
@@ -10,8 +10,6 @@
     "title",
     "version",
     "commit",
-    "platform",
-    "orientation",
     "status",
     "variant",
     "pending",
@@ -43,21 +41,6 @@
     "commit": {
       "$ref": "#/$defs/sha1"
     },
-    "platform": {
-      "enum": [
-        "desktop",
-        "mobile"
-      ],
-      "description": "what the release commit's Platform.json says: desktop for a game without the file, mobile for an Android phone game"
-    },
-    "orientation": {
-      "enum": [
-        "landscape",
-        "portrait",
-        null
-      ],
-      "description": "how a mobile game is held; null for a desktop game"
-    },
     "status": {
       "enum": [
         "complete",
@@ -76,7 +59,7 @@
       "items": {
         "type": "string"
       },
-      "description": "entries still missing (ReplayScripts/; Gameplay/ in a repo Dataset/ only; Build/ for a mobile game whose release has no APK yet); empty when complete"
+      "description": "entries still missing (ReplayScripts/; Gameplay/ in a repo Dataset/ only); empty when complete"
     },
     "created": {
       "type": "string"
@@ -159,10 +142,11 @@
         "object",
         "null"
       ],
-      "description": "the release player in Build/ (full variant): a desktop game's Windows player (exe) or a mobile game's Android APK (apk, with what the build recorded of it); neither while a mobile game's Build/ is pending; null in the repo Dataset/",
+      "description": "the Windows release player in Build/ (full variant); null in the repo Dataset/. A mobile game's (platform.kind mobile) may also name its Android APK (`apk`) with what the APK says of itself; it is there when the machine that built the release had the Android toolchain",
       "required": [
         "config",
-        "commit"
+        "commit",
+        "exe"
       ],
       "properties": {
         "config": {
@@ -176,23 +160,27 @@
         },
         "exe": {
           "type": "string",
-          "pattern": "^Build/[^/]+\\.exe$",
-          "description": "a desktop game: Build/<Project>.exe"
+          "pattern": "\\.exe$"
+        },
+        "source": {
+          "type": "string"
         },
         "apk": {
           "type": "string",
-          "pattern": "^Build/[^/]+\\.apk$",
-          "description": "a mobile game: Build/<Project>.apk"
-        },
-        "bytes": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "the APK's size"
+          "pattern": "^[^/\\\\]+\\.apk$",
+          "description": "the APK's file name in Build/"
         },
         "package": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
-          "description": "the APK's Android package name"
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+        },
+        "version_code": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "version_name": {
+          "type": "string",
+          "minLength": 1
         },
         "min_sdk": {
           "type": "integer",
@@ -201,16 +189,6 @@
         "target_sdk": {
           "type": "integer",
           "minimum": 1
-        },
-        "abis": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1
-        },
-        "source": {
-          "type": "string"
         }
       }
     },
@@ -407,6 +385,50 @@
         },
         "schema": {
           "type": "string"
+        }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "description": "what the game is made for: {\"kind\": \"desktop\"}, or {\"kind\": \"mobile\", \"orientation\": \"landscape\" | \"portrait\"} for an Android phone game. A manifest without it is a desktop game's",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "desktop",
+            "mobile"
+          ]
+        },
+        "orientation": {
+          "enum": [
+            "landscape",
+            "portrait"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "mobile"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "orientation"
+        ]
+      },
+      "else": {
+        "properties": {
+          "orientation": {
+            "enum": []
+          }
         }
       }
     }

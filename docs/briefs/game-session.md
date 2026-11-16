@@ -144,7 +144,6 @@ The text above starts a desktop game as it is. For a mobile game (an Android pho
 chosen with the person before the session starts), change three things in the filled text before sending it:
 
 1. Add ` -Platform mobile -Orientation landscape` (or `portrait`) to the `new-game.ps1` line.
-2. Replace `the Windows release player build` with `the Android release APK (Scripts\godot.ps1 build -Android)`.
-3. In the paragraph that names the skills to follow, replace `godot-desktop-game` with `godot-mobile-game`, and add
-   this line after it:
+2. Replace `the Windows release player build` with `the Windows release player build at the phone's size (the APK is built at release)`.
+3. Add this line after the paragraph that names the skills to follow:
    `This is a mobile game (Android phone, <orientation>, touch only): follow the godot-mobile-game skill with godot-game-session, in place of godot-desktop-game.`

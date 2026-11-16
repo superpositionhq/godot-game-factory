@@ -156,7 +156,7 @@ func _begin() -> void:
 	_keep_step()
 	_fit_frame()
 	_load_queries()
-	_inputs = Inputs.new(self, _spec.get("inputs"))
+	_inputs = Inputs.new(self, _spec.get("inputs"), Find.flag(_spec, "touch"))
 	if _scene != "" and _current_scene() != _scene:
 		if ResourceLoader.exists(_scene):
 			_open_scene.call_deferred()

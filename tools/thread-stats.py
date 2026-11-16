@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A thread's own size, from the commits you say belong to it (godot-write-tasks skill, section 6).
+"""A thread's own size, from the commits you say belong to it (godot-write-tasks skill, section 2).
 
     python tools/thread-stats.py <game repo> <commit> [<commit> ...] [--span START..REF]
 

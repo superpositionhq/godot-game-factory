@@ -26,7 +26,7 @@ SIZES = {None: (1920, 1080), 'landscape': (1920, 1080), 'portrait': (1080, 1920)
 def make_inputs(tmp, recorded=True, orientation=None):
     """A game with tasks, one commit by a named person with an agent trailer, a start branch, and next to it the
     recording, the build, the brief files and (recorded) a gameplay recording of the head, without which nothing is
-    packaged. orientation: a mobile game held that way (its Platform.json in the person's commit, an APK as its build).
+    packaged. orientation: a mobile game held that way (its Platform.json in the person's commit).
     Returns the paths."""
     root = os.path.join(tmp, 'root')
     repo = os.path.join(root, 'games', SLUG)
@@ -88,7 +88,7 @@ def make_inputs(tmp, recorded=True, orientation=None):
         row(schema='agent-message/v0', time=before, project=SLUG, session_id=S3, agent='claude', role='user', message_id='m4', text='Package it.'),
         row(schema='agent-message/v0', time=after, project=SLUG, session_id=S1, agent='claude', role='user', message_id='m5', text='Later.')]) + '\n')
     build = os.path.join(tmp, 'build')
-    for rel, data in ((('KilnRun.apk', APK),) if orientation else (('KilnRun.exe', b'MZ' + b'\0' * 30), ('KilnRun.pck', b'GDPC' + b'\0' * 28))):
+    for rel, data in (('KilnRun.exe', b'MZ' + b'\0' * 30), ('KilnRun.pck', b'GDPC' + b'\0' * 28)):
         base.write(build, rel, data)
     base.write(tmp, 'brief.md', '# Brief\n\n' + 'Build a small kiln game. ' * 20)
     base.write(tmp, 'design.md', '# Design\n\n' + 'Systems, scenes and scenarios. ' * 20)
@@ -135,38 +135,39 @@ def gameplay_mp4(size=(1920, 1080)):
     return _MP4[size]
 
 
-def pipeline_build(inp, commit, hits=(), status='ok', config='release', android=None, says=None):
+def pipeline_build(inp, commit, hits=(), status='ok', config='release', apk=None):
     """A pipeline build of commit, as build.ps1 leaves one: <root>/builds/<slug>/<sha8>/Windows/ (the player the
-    recordings are made with) and build_info.json (godot-build/1). A mobile game's build says its platform and its
-    Android step (android: 'ok' with Android/KilnRun.apk, 'skipped' without the toolchain); says: another platform
-    than the game's, as (platform, orientation)."""
+    recordings are made with) and build_info.json (godot-build/1). A mobile game's build says its platform, its
+    window and what became of its APK (apk: 'ok' with Android/KilnRun.apk, 'skipped' without the toolchain)."""
     d = os.path.join(inp['root'], 'builds', SLUG, commit[:8])
     base.write(d, 'Windows/KilnRun.exe', b'MZ' + b'\0' * 30)
     info = {'schema': 'godot-build/1', 'game': SLUG, 'project': 'KilnRun', 'commit': commit, 'short_sha': commit[:8],
             'status': status, 'config': config, 'autoplay_version': 1, 'leak_scan': {'scanned': 'Windows\\', 'hits': list(hits)}}
     o = inp['orientation']
-    info['platform'], info['orientation'] = says or (('mobile', o) if o else ('desktop', None))
-    if android == 'ok':
-        base.write(d, 'Android/KilnRun.apk', APK)
-        info['android'] = {'status': 'ok', 'reason': None, 'apk': 'Android\\KilnRun.apk', 'bytes': len(APK), 'package': 'com.kilnrun.game',
-                           'min_sdk': 26, 'target_sdk': 34, 'abis': ['arm64-v8a']}
-    elif android:
-        info['android'] = {'status': android, 'reason': 'no Android toolchain on this machine', 'apk': None}
+    if o:   # a desktop game's build says nothing of a platform
+        info.update(platform='mobile', orientation=o, window=list(SIZES[o]))
+        if apk == 'ok':
+            base.write(d, 'Android/KilnRun.apk', APK)
+            info['apk'] = {'status': 'ok', 'file': 'Android\\KilnRun.apk', 'bytes': len(APK), 'sha256': hashlib.sha256(APK).hexdigest(),
+                           'package': 'com.kilnrun.game', 'version_code': 1, 'version_name': '1.0', 'min_sdk': 26, 'target_sdk': 34,
+                           'abi': 'arm64-v8a'}
+        else:
+            info['apk'] = {'status': 'skipped', 'reason': 'this machine has no Android toolchain'}
     base.write(d, 'build_info.json', json.dumps(info))
     return d
 
 
 def bundle(inp, commit, scenario, stamp, status='ok', result='win', marker=None, notes=None, held='game'):
     """A recording as record.ps1 leaves one: <root>/recordings/<slug>/<run id>/ with metadata.json, validation.json,
-    gameplay.mp4 and eight stills (also in recordings/<slug>/_stills/), made at the game's size (held: another
-    orientation than the game's, None for a desktop recording). Returns the run id."""
+    gameplay.mp4 and eight stills (also in recordings/<slug>/_stills/), made at the game's size (held: at another
+    orientation's size than the game's, None for 1920x1080). Returns the run id."""
     held = inp['orientation'] if held == 'game' else held
     width, height = SIZES[held]
     run_id = f'{SLUG}_S{scenario}_{stamp}_s7'
     d = os.path.join(inp['root'], 'recordings', SLUG, run_id)
     base.write(d, 'metadata.json', json.dumps({
         'schema': 'godot-autoplay-bundle/v1', 'run_id': run_id, 'game': SLUG, 'scenario': scenario, 'scenario_name': f'Kiln {scenario}',
-        'result': result, 'capture_notes': notes, 'status': status, 'platform': 'mobile' if held else 'desktop', 'orientation': held,
+        'result': result, 'capture_notes': notes, 'status': status,
         'video': {'width': width, 'height': height, 'fps': 60},
         'build': {'commit': commit, 'short_sha': commit[:8], 'config': 'release',
                   'path': f'C:\\Users\\{ACCOUNT}\\GodotWork\\builds\\{SLUG}\\{commit[:8]}'},
@@ -249,7 +250,7 @@ class Package(unittest.TestCase):
         m = json.loads(self.members()['manifest.json'])
         self.assertEqual((m['status'], m['pending'], m['variant'], m['version']), ('pending', ['ReplayScripts'], 'full', '1.0'))
         self.assertEqual(m['build']['exe'], 'Build/KilnRun.exe')
-        self.assertEqual((m['platform'], m['orientation']), ('desktop', None))   # no Platform.json: a desktop game
+        self.assertNotIn('platform', m)   # no Platform.json: a desktop game
         self.assertEqual(m['tasks']['names'], sorted(f'{SLUG}-{n}' for n in base.TASKS))
 
     def test_entries(self):
@@ -752,8 +753,9 @@ class Helpers(unittest.TestCase):
 
 @unittest.skipUnless(base.HAS_LFS, 'git-lfs is not installed')
 class Mobile(unittest.TestCase):
-    """A mobile game (Platform.json at the release commit): its platform in the manifest, the APK and no Windows player
-    in Build/, Build/ pending while the release has no APK, the videos at the phone's size, the README's wording."""
+    """A mobile game's release (the commit has a Platform.json): the manifest says the platform, Build/ holds the APK
+    of the pipeline's build beside the Windows player, the videos are the phone's size, and the README says what the
+    game is made for."""
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix='ggfm')
 
@@ -764,101 +766,89 @@ class Mobile(unittest.TestCase):
         with zipfile.ZipFile(os.path.join(self.inp['repo'], name)) as z:
             return {n[len(SLUG) + 1:]: z.read(n) for n in z.namelist()}
 
-    def test_a_mobile_package(self):
+    def test_the_manifest_says_the_platform_and_names_the_apk(self):
         inp = self.inp = make_inputs(self.tmp, orientation='portrait')
-        pipeline_build(inp, inp['head'], android='ok')
+        pipeline_build(inp, inp['head'], apk='ok')
         replay(inp, inp['head'], passed=True)
         r = run(inp, build=False)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         mem = self.members('Dataset.zip')
         m = json.loads(mem['manifest.json'])
-        self.assertEqual((m['platform'], m['orientation'], m['status'], m['pending']), ('mobile', 'portrait', 'complete', []))
-        b = m['build']
-        self.assertEqual((b['apk'], b['bytes'], b['package'], b['min_sdk'], b['target_sdk'], b['abis']),
-                         ('Build/KilnRun.apk', len(APK), 'com.kilnrun.game', 26, 34, ['arm64-v8a']))
-        self.assertNotIn('exe', b)
-        self.assertEqual(sorted(n for n in mem if n.startswith('Build/')), ['Build/KilnRun.apk'])   # no Windows player
+        self.assertEqual((m['platform'], m['status'], m['pending']), ({'kind': 'mobile', 'orientation': 'portrait'}, 'complete', []))
+        self.assertNotIn('orientation', m)
+        self.assertEqual({k: m['build'][k] for k in ('exe', 'apk', 'package', 'version_code', 'version_name', 'min_sdk', 'target_sdk')},
+                         {'exe': 'Build/KilnRun.exe', 'apk': 'KilnRun.apk', 'package': 'com.kilnrun.game', 'version_code': 1,
+                          'version_name': '1.0', 'min_sdk': 26, 'target_sdk': 34})
+        self.assertLessEqual({'Build/KilnRun.exe', 'Build/KilnRun.apk', 'GodotProject/Platform.json'}, set(mem))
         self.assertEqual(mem['Build/KilnRun.apk'], APK)
-        self.assertEqual(json.loads(mem['GodotProject/Platform.json']), {'platform': 'mobile', 'orientation': 'portrait'})
         self.assertEqual(mem[f'Gameplay/{SLUG}_S1.mp4'], gameplay_mp4((1080, 1920)))
         readme = mem['README.md'].decode()
-        for want in ('An Android phone game, held portrait and played by touch.',
-                     '- An arm64 Android phone with Android 8.0 (API 26) or later for the built game',
-                     'adb install Build/KilnRun.apk', 'Or open `GodotProject/` in Godot',
-                     "recorded on a PC with the Mobile renderer at the phone's size and played by touch events (1080x1920, 60 fps",
-                     '- `Build/` — the Android release APK (`Build/KilnRun.apk`, package `com.kilnrun.game`'):
+        for want in ('the Android APK (`Build/KilnRun.apk`, arm64, package `com.kilnrun.game`)',
+                     'made for an Android phone held in portrait', '`Build/KilnRun.apk` installs on a phone (`adb install`)',
+                     '- An Android phone (arm64, Android API level 26 or later) for the APK.',
+                     "(1080x1920, 60 fps, H.264 and AAC). The game is an Android phone game: the videos are of its Windows "
+                     "player at the phone's size, played by touch."):
             self.assertIn(want, readme)
-        self.assertNotRegex(readme, r'Windows 10/11|\.exe')
         self.assertEqual(re.findall(r'(?m)^## (.+)$', readme), PKG.LAYOUT_SPEC['readme']['sections_in_order'])
         ds = json.loads(base.read(os.path.join(inp['repo'], 'Dataset', 'manifest.json')))   # the repo's Dataset/ says it too
-        self.assertEqual((ds['platform'], ds['orientation'], ds['build']), ('mobile', 'portrait', None))
+        self.assertEqual((ds['platform'], ds['build']), ({'kind': 'mobile', 'orientation': 'portrait'}, None))
+        rep = vg.Report()
+        vg.check_dataset(rep, os.path.join(inp['repo'], 'Dataset.zip'), 'dataset')
+        self.assertEqual(base.errors(rep), [])
 
-    def test_without_an_apk_the_build_is_pending(self):
-        # built on a machine without the Android toolchain: everything else is packaged, and one line says how to get the APK
+    def test_a_build_without_the_android_toolchain_ships_the_player_alone(self):
         inp = self.inp = make_inputs(self.tmp, orientation='landscape')
-        pipeline_build(inp, inp['head'], android='skipped')
+        pipeline_build(inp, inp['head'], apk='skipped')
         replay(inp, inp['head'], passed=True)
         r = run(inp, '--no-repo-dataset', build=False)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertFalse(os.path.exists(os.path.join(inp['repo'], 'Dataset.zip')))
-        (line,) = [l for l in r.stdout.splitlines() if 'machine/get-android.ps1' in l]
-        self.assertIn('Build/ stays pending: no Android APK of the release (the Android build was skipped: no Android toolchain on '
-                      'this machine). Install the Android toolchain with machine/get-android.ps1, then build again '
-                      f'(tools/godot-pipeline/build.ps1 {SLUG} -Force)', line)
-        mem = self.members('Dataset.pending.zip')
+        self.assertIn('a mobile game without its APK: this machine has no Android toolchain. Build/ holds the Windows player '
+                      'alone', r.stdout + r.stderr)
+        mem = self.members('Dataset.zip')   # complete: the APK is never a reason for pending
         m = json.loads(mem['manifest.json'])
-        self.assertEqual((m['platform'], m['orientation'], m['status'], m['pending']), ('mobile', 'landscape', 'pending', ['Build']))
-        self.assertEqual(sorted(k for k in m['build']), ['commit', 'config', 'source'])
-        self.assertFalse([n for n in mem if n.startswith('Build/')])
-        self.assertTrue([n for n in mem if n.startswith('ReplayScripts/')])   # the replay is there: Build/ alone is pending
+        self.assertEqual((m['platform'], m['status'], m['pending']), ({'kind': 'mobile', 'orientation': 'landscape'}, 'complete', []))
+        self.assertNotIn('apk', m['build'])
+        self.assertEqual(m['build']['exe'], 'Build/KilnRun.exe')
+        self.assertNotIn('Build/KilnRun.apk', mem)
         readme = mem['README.md'].decode()
-        self.assertIn('> **Pending:** `Build/` (the Android APK) is not in this delivery yet', readme)
-        self.assertIn('The Android APK is pending. Open `GodotProject/` in Godot', readme)
+        self.assertIn('the Android APK is not in this delivery (it was built on a machine without the Android toolchain)', readme)
         self.assertIn('(1920x1080, 60 fps', readme)
         self.assertNotIn('adb install', readme)
 
-    def test_a_mobile_game_without_any_build_is_pending_too(self):
-        inp = self.inp = make_inputs(self.tmp, orientation='landscape')
-        shutil.rmtree(inp['build'])
-        r = run(inp, '--dry-run')
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn('Build/ stays pending: no Android APK of the release (no KilnRun.apk in ', r.stdout)
-        self.assertIn('Dataset.pending.zip (pending: ReplayScripts, Build pending)', r.stdout)
-
-    def test_the_sessions_own_apk(self):
-        # Scripts/godot.ps1 build -Android: an APK with no build record, so the manifest says its file and size alone
+    def test_the_sessions_own_player_has_no_apk(self):
+        # Scripts/godot.ps1 build: a player with no build record, so no APK is named and the warning says why
         inp = self.inp = make_inputs(self.tmp, orientation='landscape')
         r = run(inp, '--no-repo-dataset', '--no-zip')
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('a mobile game without its APK: the player is not a pipeline build that made one', r.stdout + r.stderr)
         m = json.loads(base.read(os.path.join(inp['repo'], '.dataset', SLUG, 'manifest.json')))
-        self.assertEqual((m['pending'], m['build']['apk'], m['build']['bytes']), (['ReplayScripts'], 'Build/KilnRun.apk', len(APK)))
-        self.assertNotIn('package', m['build'])
-        self.assertEqual(os.listdir(os.path.join(inp['repo'], '.dataset', SLUG, 'Build')), ['KilnRun.apk'])
+        self.assertEqual((m['pending'], m['build']['exe']), (['ReplayScripts'], 'Build/KilnRun.exe'))
+        self.assertNotIn('apk', m['build'])
 
-    def test_a_build_made_as_another_platform_refuses(self):
+    def test_an_apk_that_is_not_the_builds_refuses(self):
         inp = self.inp = make_inputs(self.tmp, orientation='landscape')
-        pipeline_build(inp, inp['head'], android='ok', says=('mobile', 'portrait'))
-        r = run(inp, '--dry-run', build=False)
-        self.assertEqual(r.returncode, 2)
-        self.assertIn('was made as mobile portrait, but the game is mobile landscape (build_info.json against Platform.json', r.stdout)
+        d = pipeline_build(inp, inp['head'], apk='ok')
+        base.write(d, 'Android/KilnRun.apk', APK + b'x')
+        r = run(inp, '--no-repo-dataset', '--no-zip', build=False)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn('is not the APK build_info.json describes (its sha256 differs)', r.stdout + r.stderr)
 
-    def test_a_recording_made_as_another_platform_is_not_taken(self):
+    def test_a_recording_at_another_size_is_not_taken(self):
         inp = self.inp = make_inputs(self.tmp, orientation='portrait', recorded=False)
         run_id = bundle(inp, inp['head'], 1, '20990101-000100', held='landscape')
         r = run(inp, '--dry-run')
         self.assertEqual(r.returncode, 2)   # no video of the release at the game's size: nothing is packaged
-        self.assertIn(f'recording {run_id} not taken: made as mobile landscape, but the game is mobile portrait', r.stdout)
+        self.assertIn(f"recording {run_id} not taken: recorded at 1920x1080, not at the game's 1080x1920", r.stdout)
         self.assertIn('error: no gameplay video', r.stdout)
 
     @unittest.skipUnless(FFMPEG and os.path.isfile(FFMPEG), 'ffmpeg is not installed: the videos are not probed')
     def test_the_video_is_probed_at_the_phones_size(self):
-        # a bundle that says nothing of its platform: the video itself is measured
+        # a bundle that says nothing of its video's size: the video itself is measured
         inp = self.inp = make_inputs(self.tmp, orientation='portrait', recorded=False)
         run_id = bundle(inp, inp['head'], 1, '20990101-000100', held='landscape')
         mp = os.path.join(inp['root'], 'recordings', SLUG, run_id, 'metadata.json')
         meta = json.loads(base.read(mp))
-        for k in ('platform', 'orientation', 'video'):
-            del meta[k]
+        del meta['video']
         base.write(os.path.dirname(mp), 'metadata.json', json.dumps(meta))
         r = run(inp, '--dry-run')
         self.assertEqual(r.returncode, 2)
@@ -868,12 +858,10 @@ class Mobile(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn(f'would take Gameplay/{SLUG}_S1.mp4 from {good}', r.stdout)
 
-    def test_the_sizes_by_platform(self):
-        self.assertEqual([PKG.video_size(o) for o in (None, 'landscape', 'portrait')], [(1920, 1080), (1920, 1080), (1080, 1920)])
-        self.assertEqual([PKG.platform_words(o) for o in (None, 'landscape', 'portrait')], ['desktop', 'mobile landscape', 'mobile portrait'])
-        self.assertIsNone(PKG.platform_problem({}, 'portrait'))   # a record that says nothing
-        self.assertIsNone(PKG.platform_problem({'platform': 'desktop', 'orientation': None}, None))
-        self.assertIn('made as desktop', PKG.platform_problem({'platform': 'desktop'}, 'landscape'))
+    def test_a_desktop_games_manifest_has_no_platform(self):
+        self.assertNotIn('platform', json.dumps(PKG.LAYOUT_SPEC['manifest']['required_keys']))
+        self.assertEqual(PKG.probe_video.__defaults__, (None,))
+        self.assertEqual(PKG.PHONE_VIDEO, vg.PHONE_SIZE)
 
     def test_a_platform_file_that_says_anything_else_refuses(self):
         inp = self.inp = make_inputs(self.tmp)
@@ -881,20 +869,19 @@ class Mobile(unittest.TestCase):
         record(inp)
         r = run(inp, '--dry-run')
         self.assertEqual(r.returncode, 2)   # never read as a desktop game
-        self.assertIn(f'{vg.PLATFORM_FILE} must be', r.stderr)
+        self.assertIn(f'{vg.PLATFORM_FILE} must be', r.stdout + r.stderr)
 
     def test_the_platform_is_the_release_commits(self):
         # the platform is read from the release commit, never from the working tree: an older commit of a game is
         # packaged as what it was then
         inp = self.inp = make_inputs(self.tmp)
-        self.assertIsNone(PKG.platform_at(inp['repo'], inp['head']))
         for name, text in zip(('project.godot', 'export_presets.cfg'), base.mobile_files('portrait')):
             base.write(inp['repo'], name, text)
-        later = commit(inp['repo'], {vg.PLATFORM_FILE: '{"platform":"mobile","orientation":"portrait"}\n'}, 'Go mobile')
-        self.assertEqual(PKG.platform_at(inp['repo'], later), 'portrait')
+        commit(inp['repo'], {vg.PLATFORM_FILE: '{"platform":"mobile","orientation":"portrait"}\n'}, 'Go mobile')
         r = run(inp, '--dry-run', '--commit', inp['head'])
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn(f'{SLUG} (desktop): commit', r.stdout)
+        self.assertIn(f'{SLUG}: commit', r.stdout)
+        self.assertNotIn('a mobile game without its APK', r.stdout)
 
     def test_a_platform_file_that_is_not_committed_refuses(self):
         # rule `mobile` reads the checkout: a Platform.json the game never committed is no way to make it a mobile game

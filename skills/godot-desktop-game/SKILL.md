@@ -1,6 +1,6 @@
 ---
 name: godot-desktop-game
-description: The rules of a godot-game-factory game-building session that hold for a desktop (Windows) game only. Use with the godot-game-session skill in every session that builds a desktop game, which is every game without a Platform.json at its root. A mobile game's session reads godot-mobile-game instead.
+description: 'The rules of a godot-game-factory game-building session that hold for a desktop (Windows) game only. Use with the godot-game-session skill in every session that builds a desktop game, which is every game without a Platform.json at its root. A mobile game''s session reads godot-mobile-game instead.'
 ---
 
 # Desktop game (Godot)

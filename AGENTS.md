@@ -31,8 +31,8 @@ carry a `godot-` prefix so they install next to another factory's skills on a ma
   for hard tasks). Every game is a desktop game unless it was made with `new-game.ps1 -Platform mobile`.
 - **godot-mobile-game** ([skills/godot-mobile-game/SKILL.md](skills/godot-mobile-game/SKILL.md)): sessions that build
   or write tasks for a mobile game (an Android phone game: its root has a `Platform.json`), with godot-game-session,
-  in place of godot-desktop-game (the Mobile renderer and its budgets, touch controls, the back button, the APK, touch
-  task plays).
+  in place of godot-desktop-game (one renderer and its budgets, touch controls, the back button, the bot's fingers,
+  the APK, touch task plays).
 - **godot-sound** ([skills/godot-sound/SKILL.md](skills/godot-sound/SKILL.md)): sessions that build a game, whenever
   it needs sound (the design doc's audio direction, every UI, player, combat, world or ambience sound): finding,
   choosing and importing sound effects through `tools/sfx.py`.
@@ -59,7 +59,8 @@ Pipeline: [docs/godot-pipeline.md](docs/godot-pipeline.md). AutoPlay:
 [docs/autoplay-contract.md](docs/autoplay-contract.md). Creation replay: [docs/godot-replay.md](docs/godot-replay.md).
 
 **Priorities (user decision).** What ships is what matters, in this order: the game plays; the game builds (the
-import without errors and the release player of its platform); the dataset holds the replay scripts and the git log.
+import without errors and the Windows release player; a mobile game is played and recorded as that player at the
+phone's size, and its APK is built at release where the machine has the Android toolchain); the dataset holds the replay scripts and the git log.
 The AutoPlay bot should still play like a human (human-like input, aim and camera), but bot work never blocks a
 release: one recorded scenario per game (one video) that shows the game running is enough, whatever the result
 (win/lose/timeout is metadata). No tuning for win rates, seed sweeps or "clean" runs, and no re-runs or re-recordings
@@ -71,7 +72,7 @@ packaging or sharing.
 the game running. Never tune, fix or re-test the bot to win, score, finish, reach targets, resupply or avoid getting
 stuck; losing, timing out or wandering is fine (metadata). Fix only game bugs (crash, hang, broken scene, missing art,
 lighting, camera); then one AutoPlay run per scenario and one recording of it. A recording needs no screen (the
-release player writes its own frames and sound), so there is no queue: a session that has reached its AutoPlay
+release player writes its own frames and sound), so a session that has reached its AutoPlay
 milestone runs `tools/godot-pipeline/pipeline.ps1 <slug>` itself, one run per scenario, never to improve the bot
 ([docs/godot-pipeline.md](docs/godot-pipeline.md)). Every game has the AutoPlay drop-in in `addons/autoplay/`,
 unchanged (new games from `templates/new-game.ps1`; a new version through
@@ -85,11 +86,11 @@ scenario and the milestone tag (godot-game-session skill, "Dataset", release ste
 (`/Dataset.zip`, `/Dataset.pending.zip`, `/.dataset/`), produced by the packager, never committed. The committed
 `Dataset\` is the same minus `GodotProject/`, `Build/`, `History/` and `Tasks/`. The packager is
 `python tools/package-dataset.py <slug>` ([docs/godot-pipeline.md](docs/godot-pipeline.md#dataset-packager)). It packs
-the release commit with three products of it: the pipeline's release build (for a mobile game its APK), the gameplay
+the release commit with three products of it: the pipeline's release build (for a mobile game the APK beside the Windows player, when the build made one), the gameplay
 video of each scenario's first valid recording of that commit (`Gameplay/`) and the creation replay's package
 (`ReplayScripts/`, made by `python tools/godot-replay/godot_replay.py release --game <slug>`,
 [docs/godot-replay.md](docs/godot-replay.md)). With a video and the replay it writes `Dataset.zip` (a FAIL verdict
-too); while the replay is missing, or a mobile game's build has no APK, it writes `Dataset.pending.zip` and lists what
+too); while the replay is missing it writes `Dataset.pending.zip` and lists what
 is pending; without a video it refuses (a game without a gameplay video is rejected at upload). The release steps are
 in the godot-game-session skill ("Dataset"). Before its first run a game's `Dataset\` stays as the template made it,
 and nobody assembles a dataset by hand.

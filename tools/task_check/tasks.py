@@ -186,11 +186,11 @@ def inputs(rows):
         elif "view" in r:
             row.update(view=_floats(r["view"]))
         elif "tap" in r:
-            row.update(tap=spot(r["tap"]), finger=int(r.get("finger", 0)))
+            row.update(tap=spot(r["tap"]), finger=int(r.get("finger") or 0))
             if r.get("hold") is not None:
                 row["hold"] = float(r["hold"])
         elif "drag" in r:
-            row.update(drag=[spot(x) for x in r["drag"]], finger=int(r.get("finger", 0)))
+            row.update(drag=[spot(x) for x in r["drag"]], finger=int(r.get("finger") or 0))
             for k in ("over", "hold"):
                 if r.get(k) is not None:
                     row[k] = float(r[k])

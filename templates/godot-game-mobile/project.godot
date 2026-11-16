@@ -19,15 +19,16 @@ config/quit_on_go_back=false
 [autoload]
 
 AutoPlay="*res://addons/autoplay/autoplay.gd"
+Phone="*res://game/phone.gd"
 Scenarios="*res://game/scenarios.gd"
 
 [display]
 
-window/size/viewport_width=__VIEWPORT_WIDTH__
-window/size/viewport_height=__VIEWPORT_HEIGHT__
+window/size/viewport_width=__PHONE_WIDTH__
+window/size/viewport_height=__PHONE_HEIGHT__
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/handheld/orientation=__ORIENTATION__
+window/handheld/orientation=__HANDHELD__
 
 [editor]
 

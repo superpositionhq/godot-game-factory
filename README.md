@@ -9,7 +9,8 @@ sessions that build the game, and recorded playtests of each scenario by an in-g
 and inputs). Every part of that is here ([AGENTS.md](AGENTS.md), "What is here").
 
 **Priorities (user decision).** What ships is what matters, in this order: the game plays; the game builds (the
-import without errors and the release player of its platform); the dataset holds the replay scripts and the git log.
+import without errors and the Windows release player; a mobile game is played and recorded as that player at the
+phone's size, and its APK is built at release where the machine has the Android toolchain); the dataset holds the replay scripts and the git log.
 The AutoPlay bot should still play like a human (human-like input, aim and camera), but bot work never blocks a
 release: one recorded scenario per game (one video) that shows the game running is enough, whatever the result
 (win/lose/timeout is metadata). No tuning for win rates, seed sweeps or "clean" runs, and no re-runs or re-recordings
@@ -35,7 +36,7 @@ organisation that owns the game repos):
 
 1. Get `machine/setup.ps1` (Download ZIP on github.com, or `gh api`; [docs/new-machine.md](docs/new-machine.md)) and
    run the one command: `powershell -ExecutionPolicy Bypass -File setup.ps1 -Org <org>` (add `-Agent codex` or
-   `-Agent both`; it asks otherwise; add `-Android` on a machine that builds mobile games' APKs). It installs the
+   `-Agent both`; without it, the agents the machine has; add `-Android` on a machine that builds mobile games' APKs). It installs the
    toolchain through winget (git, the GitHub CLI, Python, and the Codex CLI for Codex), offers the GitHub sign-in
    (staff only), clones this repo into the root, puts the pinned Godot editor and its export templates into
    `<root>\godot\<version>\` (`machine/get-godot.ps1`; nothing machine-wide), runs `machine/bootstrap.ps1` (which asks
@@ -69,10 +70,10 @@ organisation that owns the game repos):
    and scan, the release build's leak scan; `tools/validate-game.py` checks a repo's tracked text for the names).
 6. **Dataset v1**: first the session ensures AutoPlay (the drop-in current through `install.ps1`, every scenario wired,
    the bot written, each scenario's hand test passing, `milestone/autoplay-<n>` tagged; the `godot-game-session` skill,
-   "Dataset"); then, at the release commit, the pipeline builds its release player (for a mobile game its APK too)
+   "Dataset"); then, at the release commit, the pipeline builds its release player (for a mobile game its APK too, where the machine has the Android toolchain)
    and records each scenario, the creation replay (`godot_replay.py release`) rebuilds the game from its history and
    makes `ReplayScripts/`, and `tools/package-dataset.py` packs the commit with the three into
-   `games\<slug>\Dataset.zip` and the repo's `Dataset/` (`Dataset.pending.zip` while the replay or a mobile game's APK
+   `games\<slug>\Dataset.zip` and the repo's `Dataset/` (`Dataset.pending.zip` while the replay
    is missing; without a recording it packages nothing).
 
 ## Dataset format (layout v1, all games)
@@ -94,8 +95,9 @@ videos, README screenshots and the built player:
   ReplayScripts/                 the creation replayed headless, with its verification report
   Gameplay/<game>_S<n>.mp4       one video per recorded scenario of the release version (one is enough), game audio included; 1920x1080, or 1080x1920 for a portrait mobile game
   Screenshots/                   the README's hero and gallery
-  Build/                         a desktop game: the Windows release player; a mobile game: its APK; not in the repo Dataset/
-  manifest.json                  with the game's platform (desktop or mobile) and orientation
+  Build/                         the Windows release player; not in the repo Dataset/
+                                 (a mobile game: also its Android APK, when the release was built with the Android toolchain)
+  manifest.json                  a mobile game's says its platform and orientation
 ```
 
 Each game repo keeps the same delivery in `Dataset/`, minus `GodotProject/`, `Build/`, `History/` and `Tasks/` (its
@@ -104,8 +106,7 @@ format's repo rules (one `assets.manifest.json` format, every imported file comm
 script with its `.uid`). Machine-readable: [docs/game-format-v1.json](docs/game-format-v1.json),
 [docs/dataset-layout-v1.json](docs/dataset-layout-v1.json), [docs/schemas/](docs/schemas/). Build it with
 `python tools/package-dataset.py <slug>` at the release commit, once it has its pipeline build, a valid recording and
-the creation replay's package: it writes `Dataset.zip`, or `Dataset.pending.zip` while the replay (or a mobile game's
-APK) is missing (a game without a gameplay video is rejected at upload: without a recording the packager refuses);
+the creation replay's package: it writes `Dataset.zip`, or `Dataset.pending.zip` while the replay is missing (a game without a gameplay video is rejected at upload: without a recording the packager refuses);
 before its first run a repo's `Dataset/` stays as the template made it. Check a repo and its datasets with
 `python tools/validate-game.py <repo>` (or `--dataset <zip>`); its "not packaged yet" warning is expected before the
 packager's first run.

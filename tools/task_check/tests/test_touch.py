@@ -1,5 +1,6 @@
-"""Touches and the render reading in a task (docs/task-probes.md): a task play may send `tap` and `drag` inputs, one
-finger's touches at least 0.1 s apart and over by the play's end; a probe may read what the renderer drew."""
+"""Touches and the render reading in a task (docs/task-probes.md 1.3 and 2.20): a task play may send `tap` and `drag`
+inputs, one finger's touches at least 0.1 s apart and over by the play's end; a probe may read what the renderer drew.
+A task with neither is read as it always was."""
 
 import unittest
 
@@ -26,7 +27,7 @@ class Touches(unittest.TestCase):
     def test_taps_and_drags_are_inputs(self):
         inputs = [{"t": 1.0, "tap": [0.5, 0.5]}, {"t": 1.0, "tap": {"widget": "FireButton"}, "hold": 0.5, "finger": 1},
                   {"t": 3.0, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "over": 0.3, "hold": 2.0},
-                  {"t": 3.5, "drag": [[0.6, 0.4], [0.7, 0.4]], "finger": 1}, {"t": 6.0, "key": "Android_Back", "press": True}]
+                  {"t": 3.5, "drag": [[0.6, 0.4], [0.7, 0.4]], "finger": 1}, {"t": 6.0, "key": "<Keyboard>/escape", "press": True}]
         task_with(probe(play=play(inputs), measure=MOVED))
 
     def test_a_task_of_keys_alone_is_read_as_before(self):
@@ -35,7 +36,7 @@ class Touches(unittest.TestCase):
                         measure=MOVED))
 
     def test_a_malformed_touch_is_refused(self):
-        for bad in ({"t": 1.0, "tap": [1.5, 0.5]}, {"t": 1.0, "tap": [0.5]}, {"t": 1.0, "tap": {"widget": "a b"}},
+        for bad in ({"t": 1.0, "tap": [1.5, 0.5]}, {"t": 1.0, "tap": [0.5]}, {"t": 1.0, "tap": {"widget": "a;b"}},
                     {"t": 1.0, "tap": [0.5, 0.5], "finger": 10}, {"t": 1.0, "drag": [[0.5, 0.5]]},
                     {"t": 1.0, "tap": [0.5, 0.5], "over": 1.0}):
             self.assertIsNotNone(refused(probe(play=play([bad]), measure=MOVED)), bad)
@@ -58,21 +59,20 @@ class Render(unittest.TestCase):
         task_with(probe(name="budget", measure=BUDGET, expect={"op": "<=", "value": 700}))
 
 class TouchesReachTheProbe(unittest.TestCase):
-    """What the checker hands the probe for a touch task: a task with a tap must pass the validator and the checker
-    alike (read as a key, an input without a kind stopped the checker)."""
+    """What the checker hands the probe for a touch task: the rows as the probe reads them, never a key's."""
 
     def test_a_tasks_touches_are_the_probes_rows(self):
         from task_check import tasks
         inputs = [{"t": 1, "tap": {"widget": "FireButton"}}, {"t": 2, "tap": [0.5, 0.25], "hold": 0.5, "finger": 1},
                   {"t": 3, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "over": 0.3, "hold": 2},
-                  {"t": 6, "drag": [[0.6, 0.4], [0.7, 0.4]], "finger": 1}, {"t": 7, "key": "Android_Back", "press": True}]
+                  {"t": 6, "drag": [[0.6, 0.4], [0.7, 0.4]], "finger": 1}, {"t": 7, "key": "<Keyboard>/escape", "press": True}]
         task = task_with(probe(play=play(inputs), measure=MOVED))
         self.assertEqual(tasks.checks(task)[0][1]["play"]["inputs"], [
             {"t": 1.0, "tap": {"widget": "FireButton"}, "finger": 0},
             {"t": 2.0, "tap": [0.5, 0.25], "finger": 1, "hold": 0.5},
             {"t": 3.0, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "finger": 0, "over": 0.3, "hold": 2.0},
             {"t": 6.0, "drag": [[0.6, 0.4], [0.7, 0.4]], "finger": 1},
-            {"t": 7.0, "key": "Android_Back", "press": True}])
+            {"t": 7.0, "key": "<Keyboard>/escape", "press": True}])
 
     def test_a_render_reading_is_asked_of_the_probe_and_read_back(self):
         from task_check import probes, tasks
@@ -96,23 +96,6 @@ class TouchesReachTheProbe(unittest.TestCase):
         self.assertEqual((seconds, shots), check.PLAYS["drive"][:2])
         self.assertTrue(all("tap" in i or "drag" in i for i in inputs))
         task_with(probe(play={"name": "thumbs", "seconds": seconds, "inputs": inputs}, measure=MOVED))  # its own rules
-
-
-class CodeJudgeFocus(unittest.TestCase):
-    """A code judge may name the files its question is about, as the Lab's grader takes it."""
-
-    @staticmethod
-    def judge(**more):
-        return {"kind": "code_judge", "name": "fixed_at_its_cause", "required": False, "question": "Is it fixed at its cause?",
-                "rubric": [{"key": "cause", "criterion": "The cause is fixed."}], **more}
-
-    def test_a_focus_of_project_file_globs_is_taken(self):
-        task_with(probe(measure=MOVED), self.judge(focus=["game/*", "steps/make_data.gd"]))
-        task_with(probe(measure=MOVED), self.judge())
-
-    def test_a_focus_outside_the_project_or_too_long_is_refused(self):
-        for bad in (["/etc/passwd"], ["../other/*"], ["game/*"] * 9, "game/*"):
-            self.assertIsNotNone(refused(probe(measure=MOVED), self.judge(focus=bad)), bad)
 
 
 if __name__ == "__main__":

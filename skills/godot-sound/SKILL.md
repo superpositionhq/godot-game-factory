@@ -65,8 +65,9 @@ Run `measure` on every clip you keep and reject or trim what is wrong for its cu
   that plays it (`volume_db`, or in its cue bank, section 5) so that cues of one kind sit level with each other.
 - `--mono` for anything placed in the world, so it is heard from its place (an `AudioStreamPlayer3D`); stereo for UI
   and ambience (an `AudioStreamPlayer`).
-- Trim with the machine's ffmpeg (the one on PATH, else `<GGF_ROOT>\tools\ffmpeg-8.1.2\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe`,
-  which `machine/get-ffmpeg.ps1` fetches when the machine has none) by writing a new WAV next to the original; measure it again and record the change (section 3).
+- Trim with the machine's ffmpeg (the pinned copy `machine/get-ffmpeg.ps1` fetches,
+  `<GGF_ROOT>\tools\ffmpeg-8.1.2\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe`, else the one on PATH: what `tools/sfx.py`
+  uses too) by writing a new WAV next to the original; measure it again and record the change (section 3).
 
 ## 5. Into the engine
 
@@ -76,8 +77,8 @@ Run `measure` on every clip you keep and reject or trim what is wrong for its cu
   without the other.
 - A clip's import settings are the `[params]` of its `.import` file: `edit/loop_mode` (0 as the file says, 1 off, 2
   forward: set 2 for ambience and any sound that loops) and `force/mono`. Change the value there with your own file tools
-  (Write/Edit, apply_patch; never a shell one-liner: the replay takes a `.import` from your commit only when the
-  recording shows you editing it), run `Scripts/godot.ps1 import` again and commit the `.import`, with one workflow
+  (Write/Edit, apply_patch; never a shell one-liner: the replay reads your edit from the recording and gives the
+  engine the `[params]` your commit holds), run `Scripts/godot.ps1 import` again and commit the `.import`, with one workflow
   row. Leave the rest of the file as the
   engine wrote it.
 - **Imported files only.** Every sound the game plays is an audio file the engine imported (a Freesound clip, or a

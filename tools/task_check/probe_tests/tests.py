@@ -223,7 +223,9 @@ def check_touch(c, found):
          [(3.8, "tap", "Nope"), (4.2, "tap", "0.400, 0.400")])
     c.true("a missed touch says why", all(m.get("why") for m in probe.get("inputs_missed", [])))
     c.eq("inputs sent", probe.get("inputs_sent"), 10)
-    c.eq("no error", errors(found), [])
+    c.eq("each miss is a line of the play's errors", errors(found),
+         ["inputs: the tap at 3.80 s missed: no visible widget matches 'Nope'",
+          "inputs: the tap at 4.20 s missed: finger 2 is still down from an earlier touch"])
 
 
 def check_second(c, found):

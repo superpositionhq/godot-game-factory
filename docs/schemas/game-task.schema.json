@@ -1,5 +1,5 @@
 {
-  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express.",
+  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory).",
   "$defs": {
     "AtCamera": {
       "additionalProperties": false,
@@ -579,17 +579,8 @@
     },
     "CodeJudge": {
       "additionalProperties": false,
-      "description": "A code reviewer's question over the run's own change (its diff from the start, text files) beside the game's\nreal change for the same problem (the seed's `reference`, a bug's fix from the game's history), which the agent\nnever sees. `focus`: globs of the project files the question is about (game/*, steps/make_data.gd), at most 8; their diffs are shown first on both sides, so a long change still shows them.",
+      "description": "A code reviewer's question over the run's own change (its diff from the start, text files) beside the game's\nreal change for the same problem (the seed's `reference`, a bug's fix from the game's history), which the agent\nnever sees.",
       "properties": {
-        "focus": {
-          "items": {
-            "pattern": "^([A-Za-z0-9_*-][A-Za-z0-9_.*?-]{0,63}/){0,8}[A-Za-z0-9_*-][A-Za-z0-9_.*?-]{0,63}$",
-            "type": "string"
-          },
-          "maxItems": 8,
-          "title": "Focus",
-          "type": "array"
-        },
         "kind": {
           "const": "code_judge",
           "title": "Kind",
@@ -936,7 +927,7 @@
     },
     "Drag": {
       "additionalProperties": false,
-      "description": "A finger put down at the first spot of `drag`, moved through the others evenly over `over` seconds (at\nonce without it), kept at the last for `hold` seconds, then lifted: a swipe, a slider, a virtual stick\npushed over and held there. `finger` as a tap's; two drags of different fingers at the same time are\na pinch. One finger's touches are at least 0.1 s apart, from one's lift to the next one's start. A\ndrag with a spot whose widget isn't on screen is a miss the play reports.",
+      "description": "A finger put down at the first spot of `drag`, moved through the others evenly over `over` seconds (at once\nwithout it), kept at the last for `hold` seconds, then lifted: a swipe, a slider, a virtual stick pushed over and\nheld there. `finger` as a tap's; two drags of different fingers at the same time are a pinch. One finger's touches\nare at least 0.1 s apart, from one's lift to the next one's start. A drag with a spot whose widget isn't on screen\nis a miss the play reports.",
       "properties": {
         "drag": {
           "items": {
@@ -1229,10 +1220,10 @@
     },
     "Key": {
       "additionalProperties": false,
-      "description": "A key pressed or released, by its control path on <Keyboard>, <Mouse> or <Gamepad> (<Keyboard>/w,\n<Keyboard>/space, <Mouse>/leftButton, <Gamepad>/buttonSouth), or Android_Back, a phone's back button.",
+      "description": "A key pressed or released, by its control path on <Keyboard>, <Mouse> or <Gamepad> (<Keyboard>/w,\n<Keyboard>/space, <Mouse>/leftButton, <Gamepad>/buttonSouth). In a mobile game's play <Keyboard>/escape is the\nphone's back button.",
       "properties": {
         "key": {
-          "pattern": "^(<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}|Android_Back)$",
+          "pattern": "^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$",
           "title": "Key",
           "type": "string"
         },
@@ -1660,10 +1651,10 @@
     },
     "OnWidget": {
       "additionalProperties": false,
-      "description": "The centre of the first visible Control of that node name (a wildcard) or class, whatever its kind (a\nbutton, a stick, a panel).",
+      "description": "The centre of the first visible widget of that name (a wildcard) or type, whatever its kind: a Control node (a\nbutton, a stick, a panel), as a widgets select finds one.",
       "properties": {
         "widget": {
-          "pattern": "^[A-Za-z0-9_*?]{1,120}$",
+          "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
           "title": "Widget",
           "type": "string"
         }
@@ -2001,7 +1992,7 @@
     },
     "RenderMeasure": {
       "additionalProperties": false,
-      "description": "What the renderer drew (docs/task-probes.md, section 2.21): `draw_calls` and `triangles`, the engine's\ncounts of a frame (the 3D scene, its shadow passes and the 2D canvas, the UI's draws among them), the\nhighest over the frames since the previous sample; `texture_mb`, the texture memory in use at the\nsample (MiB). A budget's readings: a literal threshold is allowed, since a budget is a number of its\nown (a mobile game's 700 draw calls).",
+      "description": "What the renderer drew (docs/task-probes.md, section 2.20): `draw_calls` and `triangles`, the engine's own counts of\na frame (the 3D scene, its shadow passes and the 2D canvas, the UI's draws among them), the highest over the frames\nsince the previous sample; `texture_mb`, the texture memory in use at the sample (MiB). A budget's readings: a\nliteral threshold is allowed, since a budget is a number of its own (a mobile game's 700 draw calls).",
       "properties": {
         "agg": {
           "anyOf": [
@@ -2693,7 +2684,7 @@
     },
     "Tap": {
       "additionalProperties": false,
-      "description": "A finger put down at `tap` (a point of the frame in fractions, or `{\"widget\": name}`: that Control's\ncentre) and lifted: the next frame, or after `hold` seconds (a long press, a button held). `finger`:\nwhich finger (0-9, 0 unless said); taps and drags of different fingers may overlap in time (two\nthumbs). A tap whose widget isn't on screen is a miss the play reports.",
+      "description": "A finger put down at `tap` (a viewport point in fractions, y down from the top, or `{\"widget\": name}`: that\nwidget's centre) and lifted: the next frame, or after `hold` seconds (a long press, a button held). `finger`: which\nfinger (0-9, 0 unless said); taps and drags of different fingers may overlap in time (two thumbs). A tap whose\nwidget isn't on screen is a miss the play reports.",
       "properties": {
         "finger": {
           "anyOf": [

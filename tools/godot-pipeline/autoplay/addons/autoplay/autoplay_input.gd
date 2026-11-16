@@ -3,7 +3,8 @@ extends RefCounted
 # as the InputEvent a real device sends (Input.parse_input_event, flushed at once). The game's actions, its _input
 # handlers and its Control nodes read them exactly as they read real devices. Every change is a row of inputs.jsonl,
 # with the control named as an input-system path ("<Keyboard>/w", "<Touchscreen>/touch0"). An input reaches the game
-# inside the call that sends it.
+# inside the call that sends it. In a phone game's run (AutoPlay.phone) the bot has its fingers and the back button,
+# "<Keyboard>/escape", and nothing else: a phone has no keyboard, mouse or gamepad.
 
 const Json := preload("res://addons/autoplay/autoplay_json.gd")
 
@@ -11,6 +12,8 @@ enum Kind { KEY, MOUSE_BUTTON, PAD_BUTTON, TRIGGER, STICK, TOUCH, BACK }
 
 const PAD_DEVICE := 0
 const MAX_FINGERS := 10
+const BACK_BUTTON := "<Keyboard>/escape"  # the name of Android's back button in a phone game's run
+const PHONE_REFUSAL := "a phone game is played by touch: the bot has touch, touch_up and " + BACK_BUTTON + " (the back button)"
 
 const KEYS := {
 	"space": KEY_SPACE, "enter": KEY_ENTER, "tab": KEY_TAB, "backquote": KEY_QUOTELEFT, "quote": KEY_APOSTROPHE,
@@ -59,7 +62,6 @@ var run: RefCounted
 var injected := 0
 
 var _held := {}  # path -> the held control
-var _gestures := {}  # finger -> the tap or drag the drop-in is carrying out
 var _described := {}
 var _refused := {}
 var _lower := {}  # each table's names in lower case -> the name as the table spells it
@@ -102,9 +104,13 @@ func _refuse(path: String, why: String) -> Dictionary:
 
 ## A control path read as one of the bot's controls; {} (and one error row per path) for anything else.
 func _resolve(path: String) -> Dictionary:
+	if run.phone:
+		if path.to_lower() != BACK_BUTTON.to_lower():
+			return _refuse(path, PHONE_REFUSAL)
+		return {"path": BACK_BUTTON, "kind": Kind.BACK}
 	var slash := path.find("/")
 	if slash < 3 or path[0] != "<" or path[slash - 1] != ">":
-		return _refuse(path, "a control is <Keyboard>/<key>, <Mouse>/<button>, <Gamepad>/<control> or <Touchscreen>/touch<n>")
+		return _refuse(path, "a control is <Keyboard>/<key>, <Mouse>/<button> or <Gamepad>/<control>")
 	var device := path.substr(1, slash - 2).to_lower()
 	var rest := path.substr(slash + 1)
 	var low := rest.to_lower()
@@ -147,12 +153,8 @@ func _resolve(path: String) -> Dictionary:
 				return {"path": "<Gamepad>/" + name, "kind": Kind.TRIGGER, "left": name == "leftTrigger"}
 			return {"path": "<Gamepad>/" + name, "kind": Kind.STICK, "left": name == "leftStick"}
 		"touchscreen":
-			if low == "back":
-				return _refuse(path, "the back button is pressed with back()")
-			if low.begins_with("touch") and low.substr(5).is_valid_int() and low.substr(5).to_int() in range(MAX_FINGERS):
-				return {"path": "<Touchscreen>/touch%d" % low.substr(5).to_int(), "kind": Kind.TOUCH, "finger": low.substr(5).to_int()}
-			return _refuse(path, "a finger is <Touchscreen>/touch0 .. touch9")
-	return _refuse(path, "no device %s: the bot has <Keyboard>, <Mouse>, <Gamepad> and <Touchscreen>" % path.substr(1, slash - 2))
+			return _refuse(path, "a finger goes down with touch and up with touch_up")
+	return _refuse(path, "no device %s: the bot has <Keyboard>, <Mouse> and <Gamepad>" % path.substr(1, slash - 2))
 
 
 func _key_held(code: Key) -> bool:
@@ -205,7 +207,7 @@ func _apply(c: Dictionary, value: Variant) -> void:
 			var v: Vector2 = value
 			_axis(JOY_AXIS_LEFT_X if c.left else JOY_AXIS_RIGHT_X, clampf(v.x, -1.0, 1.0))
 			_axis(JOY_AXIS_LEFT_Y if c.left else JOY_AXIS_RIGHT_Y, clampf(v.y, -1.0, 1.0))
-		Kind.BACK:
+		Kind.BACK:  # the back button of a phone game's run
 			var ev := InputEventKey.new()
 			ev.keycode = KEY_BACK
 			ev.physical_keycode = KEY_BACK
@@ -319,12 +321,6 @@ func hold(control: String, value: Variant) -> void:
 	var c := _resolve(control)
 	if c.is_empty():
 		return
-	if c.kind == Kind.TOUCH:
-		if value is Vector2:
-			touch_down(c.finger, value)
-		else:
-			_refuse(control, "a finger takes a Vector2: where it is on the screen")
-		return
 	if c.kind == Kind.STICK and not value is Vector2:
 		_refuse(control, c.path + " takes a Vector2")
 		return
@@ -370,7 +366,6 @@ func release(control: String) -> void:
 func _let_go(h: Dictionary, type: String) -> void:
 	_held.erase(h.path)
 	if h.kind == Kind.TOUCH:
-		_gestures.erase(h.finger)
 		var ev := InputEventScreenTouch.new()
 		ev.index = h.finger
 		ev.position = _window_xform() * (h.value as Vector2)
@@ -389,11 +384,17 @@ func release_all(at_end: bool) -> void:
 		return
 	for h: Dictionary in _held.values().duplicate():
 		_let_go(h, "release" if at_end else "inject")
-	_gestures.clear()
+
+
+## A phone has no mouse: said once per control.
+func _phone_refuses(path: String) -> bool:
+	if run.phone:
+		_refuse(path, PHONE_REFUSAL)
+	return run.phone
 
 
 func mouse_delta(delta: Vector2) -> void:
-	if not run.is_running() or delta == Vector2.ZERO:
+	if not run.is_running() or _phone_refuses("<Mouse>/delta") or delta == Vector2.ZERO:
 		return
 	var xf := _window_xform()
 	var ev := InputEventMouseMotion.new()
@@ -407,7 +408,7 @@ func mouse_delta(delta: Vector2) -> void:
 
 
 func scroll(amount: Vector2) -> void:
-	if not run.is_running() or amount == Vector2.ZERO:
+	if not run.is_running() or _phone_refuses("<Mouse>/scroll") or amount == Vector2.ZERO:
 		return
 	var buttons: Array[MouseButton] = []
 	if amount.y != 0.0:
@@ -448,7 +449,7 @@ func _impulse(path: String, value: Vector2, probes: Array[InputEvent]) -> void:
 
 
 func set_cursor(pos: Vector2) -> void:
-	if not run.is_running():
+	if not run.is_running() or _phone_refuses("<Mouse>/position"):
 		return
 	if _cursor_logged and pos.distance_squared_to(_cursor) < 1e-4:
 		return
@@ -466,44 +467,32 @@ func set_cursor(pos: Vector2) -> void:
 	row.merge({"type": "cursor", "key": "<Mouse>/position", "value": pos})
 	run.input_row(row)
 
-# --------------------------------------------------------------------------------------------- touch
+# --------------------------------------------------------------------------------------------- fingers
 
 
-func _finger(finger: int) -> Dictionary:
+## Finger `finger` put down at `pos`, or moved there when it is down already.
+func touch(finger: int, pos: Vector2) -> void:
+	if not run.is_running():
+		return
+	var path := "<Touchscreen>/touch%d" % finger
 	if finger < 0 or finger >= MAX_FINGERS:
-		_refuse("<Touchscreen>/touch%d" % finger, "a finger is 0..%d" % (MAX_FINGERS - 1))
-		return {}
-	return {"path": "<Touchscreen>/touch%d" % finger, "kind": Kind.TOUCH, "finger": finger}
-
-
-func touch_down(finger: int, pos: Vector2) -> void:
-	if not run.is_running():
-		return
-	var c := _finger(finger)
-	if c.is_empty():
-		return
-	if _held.has(c.path):
-		touch_move(finger, pos)
-		return
-	_describe(c)
-	c.value = pos
-	c.frame = Engine.get_process_frames()
-	_held[c.path] = c
-	var ev := InputEventScreenTouch.new()
-	ev.index = finger
-	ev.position = _window_xform() * pos
-	ev.pressed = true
-	_send(ev)
-	_row("inject", c, pos, "down")
-
-
-func touch_move(finger: int, pos: Vector2) -> void:
-	if not run.is_running():
-		return
-	var h: Dictionary = _held.get("<Touchscreen>/touch%d" % finger, {})
-	if h.is_empty() or (h.value as Vector2) == pos:
+		_refuse(path, "a finger is 0 to %d" % (MAX_FINGERS - 1))
 		return
 	var xf := _window_xform()
+	var h: Dictionary = _held.get(path, {})
+	if h.is_empty():
+		h = {"path": path, "kind": Kind.TOUCH, "finger": finger, "value": pos, "frame": Engine.get_process_frames()}
+		_describe(h)
+		_held[path] = h
+		var ev := InputEventScreenTouch.new()
+		ev.index = finger
+		ev.position = xf * pos
+		ev.pressed = true
+		_send(ev)
+		_row("inject", h, pos, "down")
+		return
+	if (h.value as Vector2).distance_squared_to(pos) < 1e-4:
+		return  # where it is: the frame's hold row says so
 	var ev := InputEventScreenDrag.new()
 	ev.index = finger
 	ev.position = xf * pos
@@ -515,7 +504,7 @@ func touch_move(finger: int, pos: Vector2) -> void:
 	h.value = pos
 	h.frame = Engine.get_process_frames()
 	_send(ev)
-	_row("inject", h, pos, "hold")
+	_row("inject", h, pos, "move")
 
 
 func touch_up(finger: int) -> void:
@@ -525,84 +514,7 @@ func touch_up(finger: int) -> void:
 	if not h.is_empty():
 		_let_go(h, "inject")
 
-
-func tap(pos: Vector2, hold_s: float, finger: int) -> void:
-	drag([pos], 0.0, hold_s, finger)
-
-
-func drag(points: Array, over_s: float, hold_s: float, finger: int) -> void:
-	if not run.is_running() or points.is_empty() or _finger(finger).is_empty():
-		return
-	var path: Array[Vector2] = []
-	for p: Variant in points:
-		if not p is Vector2:
-			_refuse("<Touchscreen>/touch%d" % finger, "a drag's points are Vector2 viewport positions")
-			return
-		path.append(p)
-	touch_up(finger)  # a finger carries one touch at a time
-	var lengths: Array[float] = [0.0]
-	for i in range(1, path.size()):
-		lengths.append(lengths[i - 1] + path[i - 1].distance_to(path[i]))
-	touch_down(finger, path[0])
-	_gestures[finger] = {
-		"points": path, "lengths": lengths, "over": maxf(over_s, 0.0), "hold": maxf(hold_s, 0.0),
-		"start": run.now(), "frame": Engine.get_process_frames(),
-		"arrived": 0.0 if path.size() == 1 else -1.0,  # a tap is at its spot from the start
-	}
-
-
-func back() -> void:
-	if not run.is_running():
-		return
-	var c := {"path": "<Touchscreen>/back", "kind": Kind.BACK}
-	if _held.has(c.path):
-		return
-	_describe(c)
-	c.value = 1.0
-	c.frame = Engine.get_process_frames()
-	c.until = c.frame + 1
-	_held[c.path] = c
-	_apply(c, 1.0)
-	_row("inject", c, 1.0, "down")
-
 # --------------------------------------------------------------------------------------------- every frame
-
-
-## The start of every frame of the run: the taps and drags under way move on, and the back button comes up.
-func update() -> void:
-	var frame := Engine.get_process_frames()
-	var back_held: Dictionary = _held.get("<Touchscreen>/back", {})
-	if not back_held.is_empty() and frame >= back_held.until:
-		_let_go(back_held, "inject")
-	for finger: int in _gestures.keys():
-		var g: Dictionary = _gestures.get(finger, {})
-		if g.is_empty() or frame <= g.frame:
-			continue
-		var elapsed: float = run.now() - g.start
-		var points: Array[Vector2] = g.points
-		var lengths: Array[float] = g.lengths
-		if g.arrived < 0.0:
-			var u := 1.0 if g.over <= 0.0 else clampf(elapsed / g.over, 0.0, 1.0)
-			touch_move(finger, _along(points, lengths, u))
-			if u >= 1.0:
-				g.arrived = elapsed
-				if points.size() > 1:
-					continue  # the game sees the last spot for a frame before the finger lifts
-		if g.arrived >= 0.0 and elapsed - g.arrived >= g.hold:
-			touch_up(finger)
-
-
-## The point a share `u` of the way along a path.
-func _along(points: Array[Vector2], lengths: Array[float], u: float) -> Vector2:
-	var total := lengths[lengths.size() - 1]
-	if points.size() == 1 or total <= 0.0:
-		return points[points.size() - 1]
-	var d := u * total
-	for i in range(1, points.size()):
-		if d <= lengths[i]:
-			var span := lengths[i] - lengths[i - 1]
-			return points[i - 1].lerp(points[i], 0.0 if span <= 0.0 else (d - lengths[i - 1]) / span)
-	return points[points.size() - 1]
 
 
 ## The end of every frame of the run: a hold row for each control held through it.

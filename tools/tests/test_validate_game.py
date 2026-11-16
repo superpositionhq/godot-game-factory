@@ -599,10 +599,12 @@ class TaskRules(Base):
              'Dummy', '--quit', '--quit-after', '5', '--script', 'x.gd', '--import', '--editor', '--main-pack', 'x.pck',
              '--display-driver', 'headless', '--position', '0,0', '--screen', '1', '--Fullscreen', '-maximized',
              '--windowed', '--single-window', '-shots', '4', '-shotDir', 'x', '-taskProbeSeconds=9', '-ok', 'headless',
-             '-autoplay', '-scenario', '2', '-size', '960x540'])),
+             '-autoplay', '-scenario', '2', '-size', '960x540', '--resolution', '1280x720', '--rendering-method',
+             'forward_plus', '--Rendering-Driver', 'vulkan', '--write-movie', 'x.avi', 'size', 'rendering-method'])),
             ['headless', 'path', 'log-file', 'fixed-fps', 'disable-vsync', 'audio-driver', 'quit', 'quit-after',
              'script', 'import', 'editor', 'main-pack', 'display-driver', 'position', 'screen', 'Fullscreen',
-             'maximized', 'windowed', 'single-window', 'shots', 'shotDir', 'taskProbeSeconds'])
+             'maximized', 'windowed', 'single-window', 'shots', 'shotDir', 'taskProbeSeconds', 'size', 'resolution',
+             'rendering-method', 'Rendering-Driver', 'write-movie'])
 
     def test_bad_schema_field(self):
         ms = self.probe(2, probe='objects', select={'class': 'Enemy'}, field='bb:Speed')
@@ -661,16 +663,12 @@ class TaskRules(Base):
         for what in ('dist is the distance to its `to` point', 'names its component, or `effect`', 'y_min < y_max'):
             self.assertTrue(any(what in e for e in errs), (what, errs))
 
-    def test_a_mobile_games_tasks_never_choose_a_renderer_or_a_size(self):
+    def test_no_games_tasks_choose_a_renderer_or_a_size(self):
         ms = task(self.start, self.ref)['milestones']
         ms[2]['checks'][1]['play']['args'] = ['-scenario', '3', '--rendering-method', 'forward_plus']
-        set_tasks(self.repo, game_tasks(self.start, self.ref, milestones=ms))
-        self.assertEqual(errors(self.check(), 'repo: Tasks'), [])           # a desktop game: not this rule's
-        write(self.repo, 'Platform.json', '{"platform":"mobile","orientation":"landscape"}\n')
-        self.assertEqual(errors(self.check(), 'repo: Tasks'),
-                         [f"tasks:Tasks/{SLUG}-{TASKS[0]}.json: check score_counts: play collect can't set "
-                          "-rendering-method: a mobile game's plays are launched with the Mobile renderer at the "
-                          "phone's size"])
+        errs = self.tasks(play_args=['-size', '1280x720'], milestones=ms)
+        self.assertTrue(any("play_args can't set -size" in e for e in errs), errs)
+        self.assertTrue(any("a task play can't set -rendering-method" in e for e in errs), errs)
 
 
 class Units(unittest.TestCase):
@@ -890,7 +888,7 @@ class Units(unittest.TestCase):
         self.assertEqual(errs(dict(stick, hold=9)), ['check p: play thumbs has a touch that ends after the play (10 s)'])
         self.assertEqual(errs({'t': 9, 'tap': [0.5, 0.5], 'hold': 2}),
                          ['check p: play thumbs has a touch that ends after the play (10 s)'])
-        self.assertEqual(errs({'t': 3, 'key': 'Android_Back', 'press': True}), [])   # the back button is a key
+        self.assertEqual(errs({'t': 3, 'key': '<Keyboard>/escape', 'press': True}), [])   # the back button is a key
 
     def test_required_quality_judges(self):
         """A required judge is noted as one that should be optional, but for the judges of the brief's looks: a `judge`
@@ -1013,7 +1011,6 @@ class Units(unittest.TestCase):
         def check(**over):
             m = {'layout': 'godot-dataset-layout/v1', 'game': SLUG, 'title': 'Kiln Run', 'version': '1.0',
                  'commit': 'a' * 40, 'status': 'pending', 'variant': 'repo-dataset', 'pending': ['Gameplay'],
-                 'platform': 'desktop', 'orientation': None,
                  'scenarios': [scenario], 'totals': {'files': 5, 'bytes': 0},
                  'files': [{'path': 'workflow.jsonl', 'bytes': 1, 'sha256': '0' * 64},
                            {'path': 'Gone.txt', 'bytes': 1, 'sha256': '0' * 64}],
@@ -1043,9 +1040,8 @@ class Units(unittest.TestCase):
         rep, errs = check(variant='full')
         self.assertEqual([a for s, a, m in rep.items if m.startswith('not JSON: ')],
                          ['dataset: report.json', 'dataset: GodotProject/assets.manifest.json'])
-        self.assertIn('build.exe Build/K.exe is not in the dataset', errs)
-        rep, errs = check(platform='tablet')
-        self.assertIn("$.platform: \"tablet\" not one of ['desktop', 'mobile']", errs)
+        rep, errs = check(platform={'kind': 'tablet'})
+        self.assertIn("$.platform.kind: \"tablet\" not one of ['desktop', 'mobile']", errs)
         write(ds, 'manifest.json', 'not json')
         rep = vg.Report()
         vg.check_dataset(rep, ds, 'dataset')
@@ -1232,11 +1228,11 @@ class Schema(unittest.TestCase):
         play = {'name': 'thumbs', 'seconds': 30, 'inputs': [
             {'t': 1, 'tap': [0.5, 0.5]}, {'t': 2, 'tap': {'widget': 'Jump*'}, 'hold': 0.5, 'finger': 1},
             {'t': 3, 'drag': [[0.2, 0.8], {'widget': 'Stick'}, [0.4, 0.6]], 'over': 0.5, 'hold': 2, 'finger': 0},
-            {'t': 9, 'key': 'Android_Back', 'press': True}]}
+            {'t': 9, 'key': '<Keyboard>/escape', 'press': True}]}
         self.assertEqual(self.ok(play, 'TaskPlay'), [])
         for bad in ({'t': 1, 'tap': [1.5, 0.5]}, {'t': 1, 'tap': [0.5]}, {'t': 1, 'tap': [0.5, 0.5], 'finger': 10},
                     {'t': 1, 'drag': [[0.5, 0.5]]}, {'t': 1, 'tap': {'widget': 'Hud/Jump'}},
-                    {'t': 1, 'tap': [0.5, 0.5], 'hold': 0}):
+                    {'t': 1, 'tap': [0.5, 0.5], 'hold': 0}, {'t': 9, 'key': 'Android_Back', 'press': True}):
             self.assertNotEqual(self.ok(dict(play, inputs=[bad]), 'TaskPlay'), [], bad)
 
     def test_task_level(self):
@@ -1265,19 +1261,14 @@ class Schema(unittest.TestCase):
             self.assertNotEqual(self.ok({'name': 'm', 'checks': [check]}, 'Milestone'), [], kind)
             self.assertNotIn('default', self.S['$defs'][self.SHAPE[kind]]['properties']['kind'], kind)
 
-    def test_a_code_judge_takes_a_focus(self):
-        judge = {'name': 'c', 'kind': 'code_judge', 'question': 'q', 'rubric': self.RUBRIC, 'focus': ['game/*.gd']}
-        self.assertEqual(self.ok(judge, 'CodeJudge'), [])
-        self.assertNotEqual(self.ok(dict(judge, focus=['../x']), 'CodeJudge'), [])
-
 
 # ---- a game's platform --------------------------------------------------------------------------------------------------
 def mobile_files(orientation):
     """(project.godot, export_presets.cfg) of a mobile game as templates/new-game.ps1 -Platform mobile fills them in."""
-    size = vg.MOBILE_SIZE[orientation]
+    size = vg.PHONE_SIZE[orientation]
     project = template('project.godot', MOBILE_TEMPLATE)
-    for mark, value in (('__VIEWPORT_WIDTH__', size[0]), ('__VIEWPORT_HEIGHT__', size[1]),
-                        ('__ORIENTATION__', vg.ORIENTATIONS.index(orientation))):
+    for mark, value in (('__PHONE_WIDTH__', size[0]), ('__PHONE_HEIGHT__', size[1]),
+                        ('__HANDHELD__', vg.ORIENTATIONS.index(orientation))):
         project = project.replace(mark, str(value))
     return project, template('export_presets.cfg', MOBILE_TEMPLATE)
 
@@ -1292,34 +1283,33 @@ class Platform(unittest.TestCase):
             write(d, 'Platform.json', text)
         return d
 
-    def cli(self, folder):
-        r = subprocess.run([sys.executable, os.path.join(TOOLS, 'validate-game.py'), '--platform', folder],
-                           capture_output=True, text=True)
-        return r.returncode, r.stdout, r.stderr.strip()
-
-    def test_a_game_without_the_file_is_a_desktop_game(self):
+    def test_the_reader(self):
         self.assertIsNone(vg.read_platform(self.folder()))
-        self.assertEqual(self.cli(self.folder()), (0, 'desktop\n', ''))
-
-    def test_a_mobile_game_is_held_one_way(self):
-        for orientation in ('landscape', 'portrait'):
-            d = self.folder(json.dumps({'platform': 'mobile', 'orientation': orientation}, separators=(',', ':')) + '\n')
-            self.assertEqual(vg.read_platform(d), orientation)
-            self.assertEqual(self.cli(d), (0, f'mobile {orientation}\n', ''))
-        d = self.folder('\ufeff{"orientation": "portrait", "platform": "mobile"}')   # a BOM, the keys in any order
+        self.assertEqual(vg.platform_of(self.folder()), {'platform': 'desktop'})
+        d = self.folder(json.dumps({'platform': 'mobile', 'orientation': 'portrait'}))
         self.assertEqual(vg.read_platform(d), 'portrait')
-
-    def test_a_file_that_says_anything_else_is_an_error_never_desktop(self):
-        for bad in ('{"platform": "desktop"}', '{"platform": "mobile"}', 'not json', '[]', '',
+        self.assertEqual(vg.platform_of(d), {'platform': 'mobile', 'orientation': 'portrait', 'width': 1080, 'height': 1920})
+        self.assertEqual(vg.platform_of(self.folder('\ufeff{"platform": "mobile", "orientation": "landscape"}')),
+                         {'platform': 'mobile', 'orientation': 'landscape', 'width': 1920, 'height': 1080})
+        for bad in ('{"platform": "desktop"}', '{"platform": "mobile"}', 'not json', '["mobile", "portrait"]', '',
                     '{"platform": "mobile", "orientation": "sideways"}',
-                    '{"platform": "mobile", "orientation": "portrait", "size": [1080, 1920]}'):
-            d = self.folder(bad)
+                    '{"platform": "mobile", "orientation": "portrait", "tablet": true}'):
             with self.assertRaises(ValueError, msg=bad):
-                vg.read_platform(d)
-            code, out, err = self.cli(d)
-            self.assertEqual((code, out), (2, ''), bad)
-            self.assertTrue(err.startswith('Platform.json '), (bad, err))
-        self.assertEqual(self.cli(os.path.join(self.folder(), 'gone'))[0], 2)
+                vg.read_platform(self.folder(bad))
+            with self.assertRaises(ValueError, msg=bad):
+                vg.platform_said(bad)
+
+    def test_the_reader_from_the_command_line(self):
+        tool = os.path.join(TOOLS, 'validate-game.py')
+        r = subprocess.run([sys.executable, tool, '--platform', self.folder()], capture_output=True, text=True)
+        self.assertEqual((r.returncode, json.loads(r.stdout)), (0, {'platform': 'desktop'}))
+        r = subprocess.run([sys.executable, tool, '--platform', self.folder('{"platform":"mobile","orientation":"landscape"}\n')],
+                           capture_output=True, text=True)
+        self.assertEqual(json.loads(r.stdout), {'platform': 'mobile', 'orientation': 'landscape', 'width': 1920, 'height': 1080})
+        self.assertEqual(len(r.stdout.splitlines()), 1)
+        r = subprocess.run([sys.executable, tool, '--platform', self.folder('{"platform": "mobile"}')], capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stdout), (2, ''))
+        self.assertIn('Platform.json must be', r.stderr)
 
     def test_the_cli_needs_nothing_but_the_folder(self):
         """--platform answers from a copy of the script alone: no format file, no schema, no git."""
@@ -1327,18 +1317,20 @@ class Platform(unittest.TestCase):
         alone = os.path.join(d, 'validate-game.py')
         shutil.copy(os.path.join(TOOLS, 'validate-game.py'), alone)
         r = subprocess.run([sys.executable, alone, '--platform', d], capture_output=True, text=True)
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, 'mobile landscape\n', ''))
+        self.assertEqual((r.returncode, json.loads(r.stdout), r.stderr),
+                         (0, {'platform': 'mobile', 'orientation': 'landscape', 'width': 1920, 'height': 1080}, ''))
 
     def test_the_sizes_a_game_is_played_at(self):
         size = vg.SPEC['repo']['platform']['size']
-        self.assertEqual({k: tuple(v) for k, v in size.items()},
-                         {'desktop': (1920, 1080), 'mobile landscape': vg.MOBILE_SIZE['landscape'],
-                          'mobile portrait': vg.MOBILE_SIZE['portrait']})
+        self.assertEqual(size['desktop'], {'width': 1920, 'height': 1080})
+        self.assertEqual({k: (v['width'], v['height']) for k, v in size['mobile'].items()}, vg.PHONE_SIZE)
+        self.assertEqual({k: (v['width'], v['height']) for k, v in vg.load_json(
+            os.path.join(REPO, 'docs', 'dataset-layout-v1.json'))['gameplay_video']['mobile'].items()}, vg.PHONE_SIZE)
 
 
 class Mobile(unittest.TestCase):
-    """Rule `mobile`: a mobile game's project settings, its Android preset and its tasks' plays; a desktop game is not
-    looked at."""
+    """Rule `mobile`: a mobile game's project settings and its Android preset, and a mobile dataset's manifest; a
+    desktop game is not looked at."""
 
     def game(self, platform=None, project=None, presets=None):
         d = tempfile.mkdtemp(prefix='ggfm')
@@ -1353,7 +1345,9 @@ class Mobile(unittest.TestCase):
     def said(self, d, files=('Platform.json',)):
         rep = vg.Report()
         vg.check_mobile(rep, d, list(files))
-        return [m for _, area, m in rep.items if area == 'mobile']
+        return [m.replace(self.KEEP, '') for sev, area, m in rep.items if area == 'mobile' and sev == 'error']
+
+    KEEP = ' (godot-mobile-game skill, "Start": the project settings stay as new-game.ps1 made them)'
 
     def test_a_desktop_game_is_not_looked_at(self):
         self.assertEqual(self.said(self.game(project=template('project.godot'), presets=template('export_presets.cfg')),
@@ -1368,6 +1362,10 @@ class Mobile(unittest.TestCase):
             self.assertEqual(vg.mobile_preset_errors(presets), [], orientation)
             d = self.game({'platform': 'mobile', 'orientation': orientation}, project, presets)
             self.assertEqual(self.said(d), [])
+            rep = vg.Report()
+            vg.check_mobile(rep, d, ['Platform.json'])
+            self.assertEqual([m for s, a, m in rep.items if s == 'note'],
+                             [f'an Android phone game held in {orientation}: the project settings agree with Platform.json'])
         self.assertEqual(vg.godot_config(mobile_files('portrait')[1])['preset.1.options']['package/unique_name'],
                          'com.kilnrun.game')
 
@@ -1392,6 +1390,12 @@ class Mobile(unittest.TestCase):
                       errs('rendering_method.mobile="mobile"', 'rendering_method.mobile="gl_compatibility"')[0])
         self.assertIn('import_etc2_astc is not true', errs('import_etc2_astc=true\n', '')[0])   # default false
         self.assertIn('quit_on_go_back is not false', errs('config/quit_on_go_back=false\n', '')[0])   # default true
+        self.assertIn('stretch/mode="disabled"', errs('window/stretch/mode="canvas_items"\n', '')[0])   # the default
+        self.assertEqual(errs('pointing/emulate_mouse_from_touch=true\n', ''), [])            # default true
+        self.assertIn('emulate_mouse_from_touch is not true',
+                      errs('emulate_mouse_from_touch=true', 'emulate_mouse_from_touch=false')[0])
+        self.assertIn('emulate_touch_from_mouse is not false',
+                      errs('emulate_touch_from_mouse=false', 'emulate_touch_from_mouse=true')[0])
         self.assertIn('display/window/size is 1152x648', errs('window/size/viewport_width=1080\n'
                                                               'window/size/viewport_height=1920\n', '')[0])
 
@@ -1413,9 +1417,10 @@ class Mobile(unittest.TestCase):
                          ['gradle_build/target_sdk=33: at least 34'])
         self.assertEqual(errs('gradle_build/min_sdk="26"', 'gradle_build/min_sdk=""'), [])   # the engine's own: 29
         self.assertEqual(errs('gradle_build/target_sdk="34"\n', ''), [])                     # the engine's own: 36
-        self.assertIn('package/unique_name=com.example.$genname',
+        self.assertIn("the Android package name is 'com.example.$genname': com.<project in lower case>.game",
                       errs('package/unique_name="com.kilnrun.game"\n', '')[0])               # the engine's default
-        self.assertIn('package/unique_name=org.kiln.run', errs('"com.kilnrun.game"', '"org.kiln.run"')[0])
+        self.assertIn("package name is 'org.kiln.run'", errs('"com.kilnrun.game"', '"org.kiln.run"')[0])
+        self.assertIn("package name is 'com.kiln_run.game'", errs('"com.kilnrun.game"', '"com.kiln_run.game"')[0])
         self.assertIn("for the platform 'iOS'", errs('platform="Android"', 'platform="iOS"')[0])
 
     def test_a_platform_file_that_says_neither_is_an_error_never_desktop(self):
@@ -1428,23 +1433,83 @@ class Mobile(unittest.TestCase):
         project, presets = mobile_files('portrait')
         mobile = {'platform': 'mobile', 'orientation': 'portrait'}
         self.assertIn('not committed', self.said(self.game(mobile, project, presets), files=())[0])
-        self.assertEqual(self.said(self.game(mobile)), ['no project.godot', 'no export_presets.cfg'])
+        self.assertEqual(self.said(self.game(mobile)),
+                         ['no project.godot (templates/new-game.ps1 -Platform mobile writes it)',
+                          'no export_presets.cfg (templates/new-game.ps1 -Platform mobile writes it)'])
         self.assertEqual(self.said(self.game(mobile, project, template('export_presets.cfg'))),
                          ['export_presets.cfg: no preset named "Android"'])
 
-    def test_a_mobile_tasks_play_never_chooses_the_renderer_or_the_size(self):
-        def said(args, play_args=()):
-            return vg.mobile_play_errors({'play_args': list(play_args), 'milestones': [{'checks': [
-                {'kind': 'probe', 'name': 'a', 'play': {'name': 'p', 'seconds': 10, 'args': args}},
-                {'kind': 'judge', 'name': 'b', 'plays': [{'name': 'q', 'seconds': 10, 'args': ['-scenario', '2']}]}]}]})
-        self.assertEqual(said(['-scenario', '1', '-autoplay']), [])
-        for arg in ('--rendering-method', '--rendering-driver', '--resolution', '-size', '--write-movie',
-                    '--Rendering-Method', '-resolution=1280x720'):
-            self.assertEqual(len(said([arg, 'x'])), 1, arg)
-        self.assertEqual(said(['-scenario', '1'], ['-size', '1280x720']),
-                         ["play_args can't set -size: a mobile game's plays are launched with the Mobile renderer at "
-                          "the phone's size"])
-        self.assertEqual(said(['size', 'rendering-method']), [])   # values, not flags
+    def test_the_rule_is_one_of_the_games_rules(self):
+        project, presets = mobile_files('landscape')
+        d = self.game({'platform': 'mobile', 'orientation': 'portrait'}, project, presets)
+        rep = vg.Report()
+        vg.check_rules(rep, d, ['Platform.json'])
+        self.assertTrue(errors(rep, 'mobile'))
+
+    # ---- the mobile template -------------------------------------------------------------------------------------------
+    def test_the_overlay_uses_only_the_placeholders_new_game_fills(self):
+        new_game = read(os.path.join(REPO, 'templates', 'new-game.ps1'))
+        used = set()
+        for d, _, files in os.walk(MOBILE_TEMPLATE):
+            for f in files:
+                used |= set(re.findall(r'__[A-Z_]+?__', read(os.path.join(d, f)) + f))
+        for name in used:
+            self.assertIn(f"'{name}'", new_game)
+        self.assertLessEqual({'__ORIENTATION__', '__PORTRAIT__', '__PHONE_WIDTH__', '__PHONE_HEIGHT__', '__ANDROID_NAME__'}, used)
+        self.assertIn("[ValidateSet('desktop', 'mobile')][string]$Platform = 'desktop'", new_game)
+        self.assertIn("[ValidateSet('landscape', 'portrait')][string]$Orientation", new_game)
+
+    # ---- a mobile dataset's manifest ---------------------------------------------------------------------------------
+    class View:
+        def __init__(self, platform_json=None):
+            self.text = platform_json
+
+        def open_text(self, rel):
+            if self.text is None:
+                raise KeyError(rel)
+            return io.StringIO(self.text)
+
+    APK = {'apk': 'KilnRun.apk', 'package': 'com.kilnrun.game', 'version_code': 1, 'version_name': '1.0', 'min_sdk': 26,
+           'target_sdk': 34}
+
+    def platform(self, manifest, platform_json=None, files=('Build/KilnRun.apk',)):
+        rep = vg.Report()
+        m = dict({'variant': 'full', 'build': {'config': 'Release', 'exe': 'Build/KilnRun.exe'}}, **manifest)
+        vg.check_dataset_platform(rep, 'dataset', self.View(platform_json), m, set(files))
+        return errors(rep), [msg for sev, _, msg in rep.items if sev == 'warning']
+
+    def test_a_desktop_dataset_says_nothing_of_a_platform(self):
+        self.assertEqual(self.platform({}), ([], []))
+        self.assertEqual(self.platform({'platform': {'kind': 'desktop'}}), ([], []))
+        self.assertIn('desktop game', self.platform({'build': dict(self.APK, exe='Build/KilnRun.exe')})[0][0])
+        self.assertIn('says mobile, portrait', self.platform({}, '{"platform": "mobile", "orientation": "portrait"}')[0][0])
+
+    def test_a_mobile_dataset_agrees_with_its_project_and_names_its_apk(self):
+        mobile = {'platform': {'kind': 'mobile', 'orientation': 'portrait'}}
+        held = '{"platform": "mobile", "orientation": "portrait"}'
+        self.assertEqual(self.platform(dict(mobile, build=dict(self.APK, exe='Build/KilnRun.exe')), held), ([], []))
+        found, warned = self.platform(mobile, held)
+        self.assertEqual(found, [])
+        self.assertIn('without its APK', warned[0])
+        self.assertIn('there is no GodotProject/Platform.json', self.platform(mobile)[0][0])
+        self.assertIn('says mobile, landscape', self.platform(mobile, held.replace('portrait', 'landscape'))[0][0])
+        self.assertIn('says its orientation', self.platform({'platform': {'kind': 'mobile'}}, held)[0][0])
+        self.assertIn('GodotProject/Platform.json must be', self.platform(mobile, '{"platform": "desktop"}')[0][0])
+        for change, why in (({'min_sdk': 24}, 'minSdk 24'), ({'package': 'com.Company.Product'}, 'package name'),
+                            ({'apk': 'Other.apk'}, 'not in files[]')):
+            build = dict(self.APK, exe='Build/KilnRun.exe', **change)
+            self.assertIn(why, self.platform(dict(mobile, build=build), held)[0][0], change)
+        del build['target_sdk']
+        self.assertIn('without target_sdk', self.platform(dict(mobile, build=dict(build, apk='KilnRun.apk')), held)[0][0])
+
+    def test_the_manifest_schema_takes_a_platform_and_an_apk(self):
+        schema = vg.SCHEMAS['dataset-manifest']['properties']
+        self.assertEqual(list(vg.check_schema({'kind': 'mobile', 'orientation': 'portrait'}, schema['platform'])), [])
+        self.assertTrue(list(vg.check_schema({'kind': 'phone'}, schema['platform'])))
+        build = dict(self.APK, config='Release', commit='a' * 40, exe='Build/KilnRun.exe')
+        self.assertEqual(list(vg.check_schema(build, schema['build'], vg.SCHEMAS['dataset-manifest'])), [])
+        self.assertTrue(list(vg.check_schema(dict(build, apk='Build/KilnRun.apk'), schema['build'], vg.SCHEMAS['dataset-manifest'])))
+        self.assertNotIn('platform', vg.SCHEMAS['dataset-manifest']['required'])
 
 
 # ---- the game contract and the sound rule ------------------------------------------------------------------------------
@@ -1595,7 +1660,6 @@ class Dataset(Base):
                              f'1. Rush: Gameplay/{SLUG}_S1.mp4\n\n' if s == 'Scenarios' else 'Text.\n\n') for s in sections))
         m = {'layout': 'godot-dataset-layout/v1', 'game': SLUG, 'title': 'Kiln Run', 'version': '1.0', 'commit': head,
              'status': 'pending', 'variant': 'full', 'pending': ['ReplayScripts'],
-             'platform': 'desktop', 'orientation': None,
              'scenarios': [{'file': f'Gameplay/{SLUG}_S1.mp4', 'scenario': 1, 'name': 'Rush', 'result': 'win', 'seconds': 30}],
              'replay_verification': None,
              'build': {'config': 'Release', 'commit': head, 'exe': 'Build/KilnRun.exe'},
@@ -1689,56 +1753,39 @@ class Dataset(Base):
                                              'a scenario of the release commit and package again'])
 
     def test_a_mobile_dataset(self):
-        """A mobile game's dataset: Platform.json in GodotProject/, platform and orientation in the manifest, the APK
-        as its build and no Windows player; while the release has no APK, Build/ is pending."""
+        """A mobile game's dataset: Platform.json in GodotProject/, the platform in the manifest, the APK beside the
+        Windows player; without the APK a warning."""
         def mobile(m, ds, apk=True):
             write(ds, 'GodotProject/Platform.json', '{"platform":"mobile","orientation":"portrait"}\n')
-            os.remove(os.path.join(ds, 'Build', 'KilnRun.exe'))
-            m.update(platform='mobile', orientation='portrait',
-                     build={'config': 'Release', 'commit': m['commit']})
+            m['platform'] = {'kind': 'mobile', 'orientation': 'portrait'}
             if apk:
                 write(ds, 'Build/KilnRun.apk', b'PK\3\4' + b'\0' * 30)
-                m['build'].update(apk='Build/KilnRun.apk', bytes=34, package='com.kilnrun.game', min_sdk=26,
-                                  target_sdk=34, abis=['arm64-v8a'])
-            else:
-                m['pending'] = ['ReplayScripts', 'Build']
+                m['build'].update(apk='KilnRun.apk', package='com.kilnrun.game', version_code=1, version_name='1.0',
+                                  min_sdk=26, target_sdk=34)
         self.assertEqual(self.said(mobile), [])
-        self.assertEqual(self.said(lambda m, ds: mobile(m, ds, apk=False)), [])
-
-        def no_apk(m, ds):
-            mobile(m, ds, apk=False)
-            m['pending'] = ['ReplayScripts']
-        self.assertEqual(self.said(no_apk), ['a mobile game needs build.apk, or Build/ listed as pending while the '
-                                             'release has no APK'])
-
-        def with_exe(m, ds):
-            mobile(m, ds)
-            write(ds, 'Build/KilnRun.exe', b'MZ')
-            m['build']['exe'] = 'Build/KilnRun.exe'
-        self.assertEqual(self.said(with_exe), ["a mobile game's build is its APK (build.apk), never a Windows player "
-                                               '(build.exe)'])
+        rep = vg.Report()
+        vg.check_dataset(rep, self.make_zip(lambda m, ds: mobile(m, ds, apk=False)), 'dataset')
+        self.assertEqual(errors(rep), [])
+        self.assertTrue(any('a mobile game without its APK in Build/' in m for s, a, m in rep.items if s == 'warning'))
 
     def test_the_manifests_platform_is_the_projects(self):
         def said_desktop(m, ds):
             write(ds, 'GodotProject/Platform.json', '{"platform":"mobile","orientation":"portrait"}\n')
-        self.assertEqual(self.said(said_desktop), ['platform desktop, but GodotProject/Platform.json says mobile portrait'])
+        self.assertEqual(self.said(said_desktop), ['platform says a desktop game, but GodotProject/Platform.json says mobile, portrait'])
 
         def said_mobile(m, ds):
-            m.update(platform='mobile', orientation='landscape')
-        errs = self.said(said_mobile)
-        self.assertIn('platform mobile landscape, but GodotProject/Platform.json says desktop', errs)
+            m['platform'] = {'kind': 'mobile', 'orientation': 'landscape'}
+        self.assertIn('platform says mobile, landscape, but there is no GodotProject/Platform.json (a desktop game)',
+                      self.said(said_mobile))
 
         def bad_file(m, ds):
             write(ds, 'GodotProject/Platform.json', '{"platform": "desktop"}')
-        self.assertTrue(self.said(bad_file)[0].startswith('GodotProject/Platform.json: Platform.json must be'))
+        self.assertTrue(self.said(bad_file)[0].startswith('GodotProject/Platform.json must be'))
 
         def desktop_held(m, ds):
-            m['orientation'] = 'landscape'
-        self.assertEqual(self.said(desktop_held), ["platform desktop has orientation null, not 'landscape'"])
-
-        def desktop_waits(m, ds):
-            m['pending'] = ['ReplayScripts', 'Build']
-        self.assertEqual(self.said(desktop_waits), ['Build/ is pending: only a mobile game without its APK waits for a build'])
+            m['platform'] = {'kind': 'desktop', 'orientation': 'landscape'}
+        self.assertEqual(self.said(desktop_held),
+                         ['platform: a mobile game says its orientation (landscape or portrait), a desktop game has none'])
 
     def test_cli_with_zip(self):
         self.make_zip()

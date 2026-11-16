@@ -74,7 +74,7 @@ with an id of its own.
 | Play | What it proves |
 |---|---|
 | `keys` | keys through an input action, the wheel, a widget click, the cursor and the left button, a gamepad button, a teleport with a hold, `teleport_to`, a view turn; every kind's fields on the scene above: object selects (group, name, class, `near`, `has`, `where`, `inactive`), `prop:` paths, parts, speed and spin, extents, 200 rows of 250 with `total` and `full`, components (class, `effect`, `mesh`, lights), spawns, the camera, widgets, ui, audio (count, volume at the listener, level, `started`, selects by name, bus and owner), render's keys; the saved data cleared; an unknown key and a click that finds nothing |
-| `touch` | a tap on a named Control, a drag that holds the stick over, a second finger's tap meanwhile, `Android_Back`, a Control by its class, and the misses: a widget that isn't there, a finger still down |
+| `touch` | a tap on a named Control, a drag that holds the stick over, a second finger's tap meanwhile, `<Keyboard>/escape` as the phone's back button (the spec says `touch`), a Control by its class, and the misses: a widget that isn't there, a finger still down |
 | `second` | the spec's `scene` opened, a 2D player and a 2D camera, a `scene` input, a scene the project lacks |
 | `errors` | every `query_errors` line a bad query gives, the task's `player` select, a row that is no input |
 | `refuse` | a spec of another format: exit code 2, nothing written |

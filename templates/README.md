@@ -21,19 +21,22 @@ skips that; an existing repo of that name is never linked: it may be another gam
 containing Superposition, game-factory, Claude, Anthropic or OpenAI, and titles with quotes, backslashes or line
 breaks (they land in quoted strings of `project.godot` and the first scene).
 
-`-Platform mobile -Orientation landscape|portrait` makes an Android phone game instead: the files of
-`godot-game-mobile/` are laid over the skeleton (`project.godot` with the Mobile renderer, the phone's frame size and
-orientation, the touch settings and ETC2/ASTC texture import; `export_presets.cfg` with the Android preset beside the
-Windows one; a first scene with an on-screen button that reads touch) and `Platform.json`
-(`{"platform":"mobile","orientation":...}`) is written at the root. That file is how every later tool knows the game
-is a mobile game; a game without it is a desktop game. `-Orientation` is required with mobile and refused without
-it; it is the game's for good. The default, `-Platform desktop`, creates a desktop game.
+`-Platform mobile -Orientation landscape|portrait` makes an Android phone game instead. The files of
+`godot-game-mobile/` are laid over the skeleton: `project.godot` (the Mobile renderer, the phone's size, 1920x1080 or
+1080x1920, and orientation, the touch settings, ETC2/ASTC texture import, the back button left to the game),
+`export_presets.cfg` (the Android preset beside the Windows one: package `com.<project in lower case>.game`, minSdk
+26, targetSdk 34, arm64 alone, a Gradle build), `game/phone.gd` (the autoload `Phone`: the call that tells the
+AutoPlay drop-in the game is played by touch), a first scene with an on-screen button that reads touch, and a
+`README.md` that says what the game is made for. `Platform.json` (`{"platform": "mobile", "orientation": ...}`) is
+written at the root: that file is how every later tool knows the game is a mobile game; a game without it is a
+desktop game. `-Orientation` is required with `-Platform mobile` and refused without it. The default, `-Platform
+desktop`, creates a desktop game: `godot-game/` is the same for both.
 
 What the skeleton carries, and why:
 
 | File | Why |
 |---|---|
-| `project.godot` | the game's name, the first scene, the engine version (`config/features`), the renderer (Forward+; a mobile game: Mobile), the frame size (1920x1080; a portrait mobile game 1080x1920) with stretch mode `canvas_items` and aspect `expand`, so a frame of that size shows what a window or phone of that size shows, and the autoloads `AutoPlay` and `Scenarios` |
+| `project.godot` | the game's name, the first scene, the engine version (`config/features`), the renderer (Forward+; a mobile game: Mobile), the frame size (1920x1080; a portrait mobile game 1080x1920) with stretch mode `canvas_items` and aspect `expand`, so a frame of that size shows what a window or phone of that size shows, and the autoloads `AutoPlay` and `Scenarios` (a mobile game: `Phone` too) |
 | `export_presets.cfg` | the preset `Windows Desktop` as the engine writes it: x86_64, the game's data embedded in the exe (one file), and an exclude filter that keeps what is not the game out of the player (`steps/`, `addons/task_probe/`, `*.md`, `workflow.jsonl`, the JSON files at the root). A mobile game also has the preset `Android`: a Gradle build, min SDK 26, target SDK 34, arm64-v8a alone, package `com.<project lowercase>.game` |
 | `scenes/Main.tscn`, `icon.svg` | a first scene that runs and shows something: a lit block, a camera, the game's title |
 | `game/scenarios.gd` | the autoload `Scenarios`, the scenario list: scenario n's scene and name, loaded from `-- -scenario <n>` and from AutoPlay's `start_scenario` (docs/autoplay-contract.md, section 6) |
@@ -57,8 +60,9 @@ per game, row ids in commit messages) are in the godot-commit-always and godot-g
 
 ## godot-game-mobile/
 
-The files a mobile game has instead of the skeleton's; never used alone. `__VIEWPORT_WIDTH__`, `__VIEWPORT_HEIGHT__`
-(1920x1080, or 1080x1920 for portrait), `__ORIENTATION__` (`display/window/handheld/orientation`: 0 landscape,
-1 portrait) and `__ANDROID_NAME__` (the project name in lower case, for the package name) are replaced with the
-skeleton's placeholders. `tools/validate-game.py` holds a mobile game's `project.godot` and Android preset to what is
-written here.
+The files a mobile game has instead of the skeleton's, and `game/phone.gd`, which only a mobile game has; never
+used alone. `__ORIENTATION__` (`landscape` or `portrait`), `__PORTRAIT__` (`true` or `false`), `__PHONE_WIDTH__` and
+`__PHONE_HEIGHT__` (1920x1080, or 1080x1920 for portrait), `__HANDHELD__` (`display/window/handheld/orientation`: 0
+landscape, 1 portrait) and `__ANDROID_NAME__` (the project name in lower case, for the package name) are replaced
+with the skeleton's placeholders. `tools/validate-game.py` holds a mobile game's `project.godot` and Android preset
+to what is written here.

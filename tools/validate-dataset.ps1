@@ -10,12 +10,12 @@
 
   Prints one verdict line, then the findings ("  x" = error, "  !" = note):
     VALID    everything in the spec is present and correct (manifest status "complete")
-    PENDING  correct, but ReplayScripts/ (or a mobile game's Build/) is not there yet (manifest status "pending")
+    PENDING  correct, but ReplayScripts/ is not there yet (manifest status "pending")
     INVALID  anything else
   Exit code 0 for VALID, 1 for PENDING, 2 for INVALID. The contents (manifest, workflow rows, git.log, history, tasks)
   are tools/validate-game.py --dataset <path>, which runs this script too; the scan of binaries for banned names is the
-  packager's. The game's platform is read from manifest.json (platform, orientation): it decides what Build/ holds (a
-  desktop game's .exe, a mobile game's .apk) and the size of the videos (1920x1080; 1080x1920 for mobile portrait).
+  packager's. A mobile game's videos are the phone's size, by how it is held (manifest.json platform): 1920x1080, or
+  1080x1920 for portrait.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)][string]$Path,
@@ -76,23 +76,6 @@ if ($man) {
     $game = Get-Prop $man 'game'
 }
 if (-not $game) { $game = $top -replace '_nostore$', '' }
-
-# ---- the game's platform (manifest.json; absent = desktop): what Build/ holds and the size of the videos ---------------
-$platform = 'desktop'; $platKey = 'desktop'
-if ($man) {
-    $mp = Get-Prop $man 'platform'; $mo = Get-Prop $man 'orientation'
-    if ($mp -eq 'mobile') {
-        $platform = 'mobile'
-        if ($mo -eq 'landscape' -or $mo -eq 'portrait') { $platKey = "mobile $mo" }
-        else { E "manifest.json orientation '$mo' is not landscape or portrait (platform mobile)"; $platKey = 'mobile landscape' }
-    }
-    elseif ($mp -and $mp -ne 'desktop') { E "manifest.json platform '$mp' is not desktop or mobile" }
-    elseif ($mo) { E "manifest.json orientation '$mo' on a desktop game (it is null)" }
-}
-foreach ($en in $L.entries) {   # an entry's rules for this platform replace its general ones
-    $bp = Get-Prop (Get-Prop $en 'by_platform') $platform
-    if ($bp) { foreach ($q in $bp.PSObject.Properties) { $en | Add-Member -NotePropertyName $q.Name -NotePropertyValue $q.Value -Force } }
-}
 
 # ---- top level ---------------------------------------------------------------------------------------------------------
 $topNames = @($files.Keys | ForEach-Object { ($_ -split '/')[0] } | Sort-Object -Unique)
@@ -204,9 +187,13 @@ else {
         $ErrorActionPreference = $old
         if (-not $j -or -not (Get-Prop $j 'format')) { E "$v cannot be read as a video"; if ($isZip) { Remove-Item -Force $p }; continue }
         $vs = @($j.streams | Where-Object codec_type -eq 'video'); $as = @($j.streams | Where-Object codec_type -eq 'audio')
-        $g = $L.gameplay_video; $size = @(Get-Prop $g.sizes $platKey); $gw = [int]$size[0]; $gh = [int]$size[1]
+        $g = $L.gameplay_video
+        # a mobile game's videos are the phone's size, by how it is held (manifest platform)
+        $gw = $g.width; $gh = $g.height
+        $plat = if ($man) { Get-Prop $man 'platform' } else { $null }
+        if ((Get-Prop $plat 'kind') -eq 'mobile') { $phone = Get-Prop (Get-Prop $g 'mobile') "$(Get-Prop $plat 'orientation')"; if ($phone) { $gw = $phone.width; $gh = $phone.height } }
         if ($j.format.format_name -notmatch 'mp4') { E "$v is not an mp4 ($($j.format.format_name))" }
-        if ($vs.Count -ne 1 -or $vs[0].codec_name -ne $g.video_codec -or [int]$vs[0].width -ne $gw -or [int]$vs[0].height -ne $gh) { E "$v video is not $($g.video_codec) ${gw}x${gh} ($platKey): $(@($vs | ForEach-Object { "$($_.codec_name) $($_.width)x$($_.height)" }) -join ', ')" }
+        if ($vs.Count -ne 1 -or $vs[0].codec_name -ne $g.video_codec -or [int]$vs[0].width -ne $gw -or [int]$vs[0].height -ne $gh) { E "$v video is not $($g.video_codec) ${gw}x${gh}: $(@($vs | ForEach-Object { "$($_.codec_name) $($_.width)x$($_.height)" }) -join ', ')" }
         if ($g.audio_required -and ($as.Count -lt 1 -or $as[0].codec_name -ne $g.audio_codec)) { E "$v has no $($g.audio_codec) audio" }
         N ("{0}: {1:N1} s, {2} {3}x{4} + {5}" -f $v, [double]$j.format.duration, $vs[0].codec_name, $vs[0].width, $vs[0].height, $(if ($as.Count) { $as[0].codec_name } else { 'no audio' }))
         if ($isZip) { Remove-Item -Force $p }

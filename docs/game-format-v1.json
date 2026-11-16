@@ -284,26 +284,27 @@
     "platform": {
       "file": "Platform.json",
       "what": "a mobile (Android phone) game has Platform.json at its root, {\"platform\": \"mobile\", \"orientation\": \"landscape\" or \"portrait\"}, written by templates/new-game.ps1 -Platform mobile and never edited after; a game without it is a desktop game; a file that says anything else is an error, never read as desktop",
-      "reader": "tools/validate-game.py read_platform (python tools/validate-game.py --platform <folder> prints desktop, mobile landscape or mobile portrait); no other code parses the file",
+      "reader": "tools/validate-game.py read_platform (python tools/validate-game.py --platform <folder> prints one JSON line: {\"platform\": \"desktop\"}, or {\"platform\": \"mobile\", \"orientation\", \"width\", \"height\"}); no other code parses the file",
       "size": {
-        "desktop": [
-          1920,
-          1080
-        ],
-        "mobile landscape": [
-          1920,
-          1080
-        ],
-        "mobile portrait": [
-          1080,
-          1920
-        ]
+        "desktop": {
+          "width": 1920,
+          "height": 1080
+        },
+        "mobile": {
+          "landscape": {
+            "width": 1920,
+            "height": 1080
+          },
+          "portrait": {
+            "width": 1080,
+            "height": 1920
+          }
+        }
       },
       "mobile": [
         "project.godot: rendering/renderer/rendering_method and rendering_method.mobile are \"mobile\" (never the desktop renderer forward_plus), rendering/textures/vram_compression/import_etc2_astc is true, display/window/size/viewport_width x viewport_height is 1920x1080 (landscape) or 1080x1920 (portrait), display/window/handheld/orientation is a landscape or a portrait setting as Platform.json says (never sensor), application/config/quit_on_go_back is false",
-        "export_presets.cfg: a preset named \"Android\" for the platform Android with gradle_build/use_gradle_build true, architectures/arm64-v8a true and the other three false, gradle_build/min_sdk at least 26, gradle_build/target_sdk at least 34, package/unique_name com.<name>.game",
-        "a key the file leaves out is read as Godot 4.7's default (the editor drops a setting put back to its default), never as wrong",
-        "a mobile game's tasks never choose a renderer or a size: no --rendering-method, --rendering-driver, --resolution, -size or --write-movie in play_args or a task play's args"
+        "export_presets.cfg: a preset named \"Android\" for the platform Android with gradle_build/use_gradle_build true, architectures/arm64-v8a true and the other three false, gradle_build/min_sdk at least 26, gradle_build/target_sdk at least 34, package/unique_name com.<project in lower case>.game",
+        "a key the file leaves out is read as Godot 4.7's default (the editor drops a setting put back to its default), never as wrong"
       ]
     },
     "dataset_folder": "Dataset/ (variant repo-dataset): checked as a dataset when manifest.json is there; a game that is not packaged yet has none (python tools/package-dataset.py <slug> writes the folder)",
@@ -335,8 +336,8 @@
       "replay_verification is null only while ReplayScripts/ is pending (listed in pending): the delivery is then pending, not invalid",
       "commit equals the last commit in git.log and report.json final_commit",
       "variant full: build is an object; repo-dataset: build is null",
-      "platform is desktop or mobile and orientation landscape, portrait or (desktop) null, as GodotProject/Platform.json says (full variant; no file is a desktop game)",
-      "full variant: a desktop game's build names its Windows player (build.exe); a mobile game's names its APK (build.apk) and no Windows player, or Build/ is listed as pending while the release has no APK"
+      "platform is absent or {kind desktop} for a desktop game, {kind mobile, orientation landscape or portrait} for an Android phone game, as GodotProject/Platform.json says (full variant; no file is a desktop game)",
+      "a mobile game's build may name its apk, then with package, version_code, version_name, min_sdk (at least 26) and target_sdk (at least 34), the file Build/<apk> in files[] and the package com.<project in lower case>.game; without it the delivery holds the Windows player alone (a warning); a desktop game's build names none of them"
     ],
     "workflow": [
       "every line is one JSON object matching the row schema",

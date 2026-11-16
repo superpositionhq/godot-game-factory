@@ -1,6 +1,6 @@
 ---
 name: godot-write-tasks
-description: 'How to write the tasks a Godot game ships with (Tasks/ on the repo''s orphan tasks branch, never on main, one GameTask JSON per task, 5 to about 10 per game) so an agent can be given them in the game-creation environment: the tasks branch and its worktree, the one bar every task meets (a long thread of multiple edits from the game''s real history: many commits, many files, several systems, at least 4 hard, the rest medium, never easy or a single fix), the four kinds as where a thread comes from, picking seed.commit (the parent of the thread''s first attempt) and seed.reference (its final accepted fix), observation-only briefs, play_scene and play_args, milestones and deterministic probe checks (pass/fail never by pixels; judges only for asked looks; one required probe per issue), touch plays and budget checks on a mobile game, validating and the background task check, limits, and what keeps a task gradable and unleaked. Use when a Godot game session writes, moves, checks or reviews tasks, or reads a task check''s result, and before calling a game complete.'
+description: 'How to write the tasks a Godot game ships with (Tasks/ on the repo''s orphan tasks branch, never on main, one GameTask JSON per task, 5 to about 10 per game) so an agent can be given them in the game-creation environment: the tasks branch and its worktree, the one bar every task meets (a long thread of multiple edits from the game''s real history: many commits, many files, several systems, at least 4 hard, the rest medium, never easy or a single fix), the four kinds as where a thread comes from, picking seed.commit (the parent of the thread''s first attempt) and seed.reference (its final accepted fix), observation-only briefs, play_scene and play_args, milestones and deterministic probe checks (pass/fail never by pixels; judges only for asked looks; one required probe per issue), validating and the background task check, limits, and what keeps a task gradable and unleaked. Use when a Godot game session writes, moves, checks or reviews tasks, or reads a task check''s result, and before calling a game complete.'
 ---
 
 # Writing a game's tasks (Godot)
@@ -70,8 +70,8 @@ branch, else `origin/tasks`, through git: schema, the format's extra rules, name
 the task's `starts/<name>` branch and on Godot 4.7, the branch an orphan, nothing under `Tasks/` on main). It
 prints one line per finding (`x` an error, `!` a warning, `-` a note): its `repo: Tasks` lines are about your tasks
 (a task with nothing wrong has no line of its own: the note `N task(s) on tasks` counts those it read and checked);
-its other `repo:` lines (the README, `.import` and `.uid` files, LFS, the manifest) and its `dataset:` lines are
-about the game repo, not a task: they never change a task check's verdict, but a game is delivered only when the
+its other `repo:` lines (the README, `.import` and `.uid` files, LFS, the manifest), its `contract`, `sound` and
+`mobile` lines and its `dataset` and `layout` lines are about the game repo, not a task: they never change a task check's verdict, but a game is delivered only when the
 validator says VALID. Commit tasks as you go, like any work (godot-commit-always skill), but on the tasks branch only.
 Then run the task check on all of them in one background run (section 5, `tools/task-check.py`): only VALID tasks
 ship, so fix or remove every INVALID one before the game is packaged.
@@ -114,8 +114,10 @@ A thread qualifies only when all of these hold (the validator enforces the numbe
    exported player, an intermittent or timing bug, a regression from an earlier change).
 5. **Checkable by the grader.** Every required outcome is measurable in the grader's own plays: a scenario
    (`play_scene` and `play_args` at the seed) that triggers the moment, or a task play whose scripted inputs reach it
-   (keys, mouse buttons, mouse movement and the cursor, touches, clicks on a control, teleports). The plays send
-   Godot input events: a game that reads its input another way takes none of them. A thread no probe can measure is
+   (keys, mouse buttons, mouse movement and the cursor, clicks on a control, teleports, and touches: `tap` and
+   `drag`, docs/task-probes.md section 1.3). The plays send Godot input events: a game that reads its input another
+   way takes none of them. A mobile game (its root has a `Platform.json`) is played at the phone's size and driven by
+   touch: the godot-mobile-game skill, "Tasks on a mobile game". A thread no probe can measure is
    not a task. One issue of a compound thread that no probe can measure fairly stays in the brief and gets a
    required `looks_as_asked` rubric item (section 5), never one of the required probes.
 
@@ -188,8 +190,8 @@ unrelated later fix is needed for its scripts to parse), give it a made start:
   pre-fix commit, so nothing in the start records or regenerates the fix. **R** (`seed.reference`) = a child of S
   whose tree is B's (`git commit-tree <B^{tree}> -p S -m "<message>"`; without `-m` it waits for a message on its
   input, or makes R with none).
-- Both live on the branch `starts/<task name>` (pointing at R), pushed with the game; the dataset ships every branch
-  but `tasks`, so the delivered history holds them.
+- Both live on the branch `starts/<task name>` (pointing at R), pushed with the game; the dataset ships main and
+  every `starts/` branch, so the delivered history holds them.
 - Scenes and resources are text: one may go back to its pre-fix version when no later commit changed it, or with the
   later changes kept and only the fix taken out by hand; a binary asset only if no later commit changed it; otherwise
   re-create the issue in code or settings, or pick another task. Keep every `.import` and `.uid` with its file.
@@ -371,8 +373,8 @@ looks up and a positive yaw turns left.
   touch), or a task play `{"name": ..., "seconds": ..., "inputs": [...]}` when the outcome needs other input or
   another start. A task play's inputs, each at its time `t`: a key or button
   (`{"t": 1.0, "key": "<Keyboard>/f2", "press": true}`, later `"press": false`; `<Mouse>/leftButton`,
-  `<Gamepad>/buttonSouth`; `Android_Back` is the phone's back button), mouse movement, the wheel, the cursor, a click
-  on a control by its node name, a touch (`tap`, `drag`: below), a teleport of the player (to a point, or
+  `<Gamepad>/buttonSouth`; on a mobile game `<Keyboard>/escape` is the phone's back button), mouse movement, the wheel, the cursor, a click
+  on a control by its node name, a touch (`tap`, `drag`: below, and docs/task-probes.md section 1.3), a teleport of the player (to a point, or
   `teleport_to` the node a select matches), a wait in real time, a named screenshot (`shot`), a scene load, a view
   turn. docs/task-probes.md has each one's form.
 - **Touches.** `{"t": 2.0, "tap": <spot>, "hold": s, "finger": n}` puts a finger down at the spot and lifts it (after
@@ -382,8 +384,9 @@ looks up and a positive yaw turns left.
   left, or `{"widget": "<node name>"}`: the centre of the first visible `Control` of that name (a wildcard) or class.
   Name the control where you can: its place differs between landscape and portrait, its name does not. Touches of
   different fingers may overlap; one finger's touches are at least 0.1 s apart and over by the play's end (the
-  validator refuses otherwise); a spot whose control isn't on screen is listed in the play's `inputs_missed`. A
-  mobile game's plays use touches and `Android_Back`, never a key or the mouse.
+  validator refuses otherwise); a touch whose control isn't on screen is a miss the play reports, and nothing is
+  touched. A mobile game's plays use touches and the back button (the key `<Keyboard>/escape`), never another key,
+  the mouse or a gamepad.
 - `measure.probe`, one of:
   - `player`: the player's track (x, y, z, speed, how far it moved);
   - `camera`: the player's camera against the player (distance, height, pitch, yaw, fov, occluded, player on screen);
@@ -400,8 +403,9 @@ looks up and a positive yaw turns left.
   - `audio`: the players that play and how loud the listener hears them, the mix's level, the sounds that start;
   - `spawns`: nodes of a class appearing and going;
   - `log`: a line in the play's log;
-  - `render`: what the renderer drew, the readings a budget is checked by (`draw_calls`, `triangles`, `texture_mb`,
-    the highest over the frames since the previous sample). A literal threshold is allowed, since a budget is a
+  - `render`: what the renderer drew, against a budget: draw calls, triangles, texture memory (`draw_calls` and
+    `triangles`, the highest over the frames since the previous sample, and `texture_mb` at the sample;
+    docs/task-probes.md section 2.20). A literal threshold is allowed, since a budget is a
     number of its own (`{"op": "<=", "value": 700}`). Give a budget check a task play of its own that goes to the
     view and reads nothing else.
   Each kind's fields, defaults and limits are in docs/task-probes.md.
@@ -567,7 +571,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | a touch named a control by a name that differed in the other orientation, or by the default `Button2` | controls have names of their own (godot-mobile-game skill); tap by `{"widget": "<name>"}` |
 | a second touch of the same finger began before the first had lifted and missed on every run | 0.1 s between one finger's touches, or give the second touch another `finger` |
 | a budget read in a play that also toured, clicked and took other readings | a `render` check gets a task play of its own |
-| a mobile game's play asked for a key or the mouse | touches and `Android_Back` only |
+| a mobile game's play asked for a key or the mouse | touches and the back button (`<Keyboard>/escape`) only |
 | a probe that isn't required but passes at the start carried weight | every check the start passes takes `"weight": 0`, a `"required": false` probe too |
 | a probe that tests the reference's implementation ("spawn_height = 0.92") | measure the outcome; another valid fix must pass |
 | the brief said "scenario 1" but the task had no `-scenario 1` | `play_args` (and `play_scene` where needed) always set and checked at the seed |

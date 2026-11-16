@@ -181,13 +181,14 @@ static func usable(c: Control) -> Variant:
 
 
 static func named(want: String) -> Control:
-	## the first visible Control of some size whose name (a wildcard) or class matches: where a touch or a click on
-	## that widget lands
+	## the first visible Control of some size whose name (a wildcard) matches, else the first whose class does: where
+	## a touch or a click on that widget lands
 	if want == "":
 		return null
-	for c in controls():
-		if (String(c.name).matchn(want) or Find.is_a(c, want)) and visible(c) and rect(c) != null:
-			return c
+	for by_class in [false, true]:
+		for c in controls():
+			if (Find.is_a(c, want) if by_class else String(c.name).matchn(want)) and visible(c) and rect(c) != null:
+				return c
 	return null
 
 

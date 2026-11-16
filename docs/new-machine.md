@@ -69,7 +69,10 @@ What it does, in order (log: `<root>\.setup\setup.log`):
 ## 3. The Android toolchain (for a mobile game's APK)
 
 A mobile game is made, played, recorded and task-checked on the PC without it. Only the APK needs it: without the
-toolchain the build step skips the APK and says so, and the game's dataset waits for it.
+toolchain the release build (`tools/godot-pipeline/build.ps1`) builds a mobile game's Windows player, skips the APK
+with a line that says so and records it in `build_info.json` (`apk.status` `skipped`); the dataset then ships without
+the APK, with a warning. `machine/check.ps1` says which pieces the machine has (`Android toolchain (mobile games)`, a
+WARN when one is missing).
 
 ```bash
 powershell -ExecutionPolicy Bypass -File machine\get-android.ps1

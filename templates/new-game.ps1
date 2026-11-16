@@ -7,7 +7,10 @@
   <org>/godot-game-<slug> (not pushed; <org> = -Org, else the config's github_org).
 .DESCRIPTION
   Placeholders replaced in file names and contents: __PROJECT__ (the exe and APK name), __SLUG__, __TITLE__,
-  __DESCRIPTION__, __GODOT_VERSION__ and __GODOT_FEATURE__ (the factory's pinned engine, machine\godot.json).
+  __DESCRIPTION__, __GODOT_VERSION__ and __GODOT_FEATURE__ (the factory's pinned engine, machine\godot.json); in a
+  mobile game's files also __ORIENTATION__ (landscape or portrait), __PORTRAIT__ (true or false), __PHONE_WIDTH__ and
+  __PHONE_HEIGHT__ (the phone's size), __HANDHELD__ (the engine's number for the orientation) and __ANDROID_NAME__
+  (the project name in lower case, for the package name).
   tools\godot-pipeline\autoplay\addons\autoplay\ (the AutoPlay drop-in) is copied unchanged into addons\autoplay\.
   The first workflow.jsonl row (op project.create) is written at the moment the project is created; the first commit
   names it. Pushing is left to the coordinator's go-ahead (godot-commit-always skill).
@@ -21,9 +24,9 @@
 .EXAMPLE
   ... -Slug <game> -Path <root>\games\<game> -Platform mobile -Orientation portrait
   An Android phone game: the same skeleton with templates\godot-game-mobile laid over it (the Mobile renderer, the
-  phone's frame size and orientation, touch settings, the Android export preset, a first scene with a touch button) and
-  Platform.json at its root. -Platform desktop (the default) creates a desktop game; -Orientation goes with mobile only
-  and is the game's for good.
+  phone's size and orientation, touch settings, the Android export preset, game\phone.gd, a first scene with a touch
+  button) and Platform.json at its root. -Platform desktop (the default) creates a desktop game; -Orientation goes with
+  mobile only and is the game's for good.
 #>
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^(?!.*--)[a-z0-9][a-z0-9-]*[a-z0-9]$', Options = 'None')][string]$Slug,
@@ -111,13 +114,17 @@ foreach ($f in Get-ChildItem -LiteralPath $template -Recurse -File -Force) {
     $count++
 }
 if ($Platform -eq 'mobile') {
-    # A mobile (Android) game: the mobile project settings, export presets and first scene laid over the skeleton's,
-    # and Platform.json at the root, which says what the game is to every tool after this one (validate-game.py, the
-    # task check, the packager). A desktop game has neither.
+    # A mobile (Android phone) game: the mobile files laid over the skeleton's (the project settings, the export
+    # presets, game\phone.gd, the first scene, the README) and Platform.json at the root, which says what the game is
+    # to every tool after this one (validate-game.py, the task check, the pipeline, the packager). A desktop game has
+    # none of it.
+    $phone = if ($Orientation -eq 'portrait') { @(1080, 1920) } else { @(1920, 1080) }
+    $map['__ORIENTATION__'] = $Orientation
+    $map['__PORTRAIT__'] = if ($Orientation -eq 'portrait') { 'true' } else { 'false' }
+    $map['__PHONE_WIDTH__'] = "$($phone[0])"
+    $map['__PHONE_HEIGHT__'] = "$($phone[1])"
+    $map['__HANDHELD__'] = if ($Orientation -eq 'portrait') { '1' } else { '0' }   # display/window/handheld/orientation
     $map['__ANDROID_NAME__'] = $Project.ToLowerInvariant()
-    $map['__VIEWPORT_WIDTH__'] = if ($Orientation -eq 'portrait') { '1080' } else { '1920' }
-    $map['__VIEWPORT_HEIGHT__'] = if ($Orientation -eq 'portrait') { '1920' } else { '1080' }
-    $map['__ORIENTATION__'] = if ($Orientation -eq 'portrait') { '1' } else { '0' }   # display/window/handheld/orientation
     $overlay = Join-Path $PSScriptRoot 'godot-game-mobile'
     foreach ($f in Get-ChildItem -LiteralPath $overlay -Recurse -File -Force) {
         $rel = Expand ($f.FullName.Substring($overlay.Length + 1))
@@ -187,7 +194,7 @@ if (-not $NoSetup) {
 # The first commit (the post-commit hook records it).
 $ErrorActionPreference = 'Continue'
 & git -C $Path add -A 2>&1 | Out-Null
-$kind = if ($Platform -eq 'mobile') { "`nAn Android phone game, held in $Orientation (Platform.json, the mobile project settings, the Android export preset)." } else { '' }
+$kind = if ($Platform -eq 'mobile') { "`nAn Android phone game, held in $Orientation (Platform.json, the mobile project settings, the APK build)." } else { '' }
 $msg = "Create the $Title project (Godot $($engine.version) skeleton)`n`nText scenes and settings, the scenario list, the AutoPlay drop-in v$autoplay, Scripts/godot.ps1,`nroot-anchored .gitignore, LFS for every binary type.$kind`n`nworkflow: $rowId"
 $msgFile = Join-Path $Path '.git\NEW_GAME_MSG'
 [IO.File]::WriteAllText($msgFile, $msg, $utf8)
@@ -226,7 +233,7 @@ if (-not $NoGitHub) {
 }
 
 Write-Host "created $Title ($Project, Godot $($engine.version)) at $Path"
-if ($Platform -eq 'mobile') { Write-Host "  platform: mobile (Android), held in $Orientation; read the godot-mobile-game skill before building" }
+if ($Platform -eq 'mobile') { Write-Host "  platform: mobile (an Android phone game), held in $Orientation; read the godot-mobile-game skill before building" }
 Write-Host "  files: $count, AutoPlay drop-in v$autoplay, first row $rowId, commit $sha"
 Write-Host "  first import: $setup"
 Write-Host "  remote: $(if ($remote) { $remote } else { 'none' })"

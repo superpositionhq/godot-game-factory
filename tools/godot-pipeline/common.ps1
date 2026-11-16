@@ -132,6 +132,35 @@ function Test-ExportPreset([string]$ProjectDir, [string]$Name) {
 }
 
 # Which AutoPlay drop-in a project ships: the VERSION constant of its addons\autoplay\autoplay.gd; $null when it has none.
+# The frame every play and recording of a build has: 1920x1080, or the phone's size of a mobile game's build
+# (build_info.json platform / orientation, written by build.ps1 from the game's Platform.json).
+function Get-BuildWindow($BuildInfo) {
+    if ((Get-Prop $BuildInfo 'platform') -eq 'mobile' -and (Get-Prop $BuildInfo 'orientation') -eq 'portrait') { return @(1080, 1920) }
+    return @(1920, 1080)
+}
+
+# aapt2.exe of the machine's Android toolchain ($Toolchain: Get-GGFAndroid's answer), in the SDK's build-tools; $null
+# without one.
+function Get-Aapt2($Toolchain) {
+    $dir = Join-Path $Toolchain.sdk 'build-tools'
+    if (-not (Test-Path -LiteralPath $dir)) { return $null }
+    return (Get-ChildItem -LiteralPath $dir -Recurse -Filter 'aapt2.exe' -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName)
+}
+
+# What an APK says of itself (aapt2 dump badging): package, version_code, version_name, min_sdk, target_sdk and its
+# ABIs (native-code). $null when aapt2 cannot read it.
+function Read-ApkBadging([string]$Aapt2, [string]$Apk) {
+    $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $text = (& $Aapt2 dump badging $Apk 2>$null | ForEach-Object { "$_" }) -join "`n"
+    $ErrorActionPreference = $eap
+    if ($text -notmatch "package: name='([^']+)' versionCode='(\d+)' versionName='([^']*)'") { return $null }
+    $b = [ordered]@{ package = $Matches[1]; version_code = [int]$Matches[2]; version_name = $Matches[3]; min_sdk = $null; target_sdk = $null; abis = @() }
+    if ($text -match "(?m)^(?:sdkVersion|minSdkVersion):'(\d+)'") { $b.min_sdk = [int]$Matches[1] }
+    if ($text -match "(?m)^targetSdkVersion:'(\d+)'") { $b.target_sdk = [int]$Matches[1] }
+    if ($text -match "(?m)^native-code:(.*)$") { $b.abis = @([regex]::Matches($Matches[1], "'([^']+)'") | ForEach-Object { $_.Groups[1].Value }) }
+    return $b
+}
+
 function Get-AutoPlayVersion([string]$ProjectDir) {
     $f = Join-Path $ProjectDir 'addons\autoplay\autoplay.gd'
     if (-not (Test-Path -LiteralPath $f)) { return $null }

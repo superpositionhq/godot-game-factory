@@ -9,15 +9,20 @@
   Builds from a private clone (<ggb>\src\<game>) of the committed tree, never from the game's working copy: the game
   session keeps its half-edited files to itself. Uncommitted changes are not built. The player is the game's own
   "Windows Desktop" export preset, exported with the release template through the machine's job limiter.
-  Output: builds\<game>\<short-sha>\Windows\<Project>.exe, for a mobile game Android\<Project>.apk as well when the
-  machine has the Android toolchain, build_info.json, logs\. One row per run in .recording\<game>\builds.jsonl. Holds
-  the game's pipeline lock (one build or recording of a game at a time).
+  Output: builds\<game>\<short-sha>\Windows\<Project>.exe, build_info.json, logs\. One row per run in
+  .recording\<game>\builds.jsonl. Holds the game's pipeline lock (one build or recording of a game at a time).
+
+  A mobile game (the commit has a Platform.json) gets the same Windows player, which is what is played and recorded
+  on this PC at the phone's size, and its Android APK (arm64, release) in Android\<Project>.apk, exported with the
+  game's "Android" preset and read back with the SDK's aapt2. The APK step needs the machine's Android toolchain
+  (machine\check.ps1 says whether the machine has it, docs\new-machine.md how to install it); without it the step is
+  skipped, build_info.json says so (apk.status "skipped") and the build is still ok.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)][string]$Game,
     [string]$Commit = 'HEAD',
     [switch]$Force,
-    [switch]$NoAndroid   # a mobile game: leave the APK out (android.status "skipped")
+    [switch]$NoAndroid   # a mobile game: leave the APK out (apk.status "skipped")
 )
 
 . (Join-Path $PSScriptRoot 'common.ps1')
@@ -50,7 +55,7 @@ $godot = $null
 $godotVersion = ''
 $projectName = $info.ProjectName
 $platform = $null
-$android = $null
+$apk = $null
 $playerBytes = $null
 $status = 'ok'
 $stamp = $start.ToString('yyyyMMdd-HHmmss')
@@ -71,20 +76,6 @@ function Invoke-Step([string]$Name, [string[]]$GodotArgs) {
     [void]$steps.Add($row)
     Write-Step ("{0} exit {1} in {2}s" -f $Name, $code, $row.duration_s)
     return $row
-}
-
-# aapt's "dump badging" of an APK: the package name, the SDK levels and the ABIs it holds.
-function Read-Apk([string]$Apk, $Toolchain) {
-    $aapt = Join-Path $Toolchain.sdk "build-tools\$($Toolchain.build_tools)\aapt.exe"
-    if (-not (Test-Path -LiteralPath $aapt)) { throw "no aapt.exe in the SDK's build-tools $($Toolchain.build_tools)" }
-    $text = (Invoke-Native $aapt @('dump', 'badging', $Apk)) -join "`n"
-    $r = [ordered]@{ package = $null; min_sdk = $null; target_sdk = $null; abis = @() }
-    if ($text -match "(?m)^package: name='([^']+)'") { $r.package = $Matches[1] }
-    if ($text -match "(?m)^sdkVersion:'(\d+)'") { $r.min_sdk = [int]$Matches[1] }
-    if ($text -match "(?m)^targetSdkVersion:'(\d+)'") { $r.target_sdk = [int]$Matches[1] }
-    if ($text -match "(?m)^native-code: (.+)$") { $r.abis = @([regex]::Matches($Matches[1], "'([^']+)'") | ForEach-Object { $_.Groups[1].Value }) }
-    if (-not $r.package) { throw "aapt read no package name from $Apk" }
-    return $r
 }
 
 try {
@@ -137,7 +128,8 @@ try {
     $godot = Get-GGFGodot -Console -Cfg $GGFConfig -WarningAction SilentlyContinue
     if (-not $godot) { throw "the engine is not installed: run machine\get-godot.ps1" }
     $godotVersion = "$(Invoke-Native $godot @('--version') | Select-Object -First 1)".Trim()
-    Write-Step "Godot $godotVersion at $godot; $($platform.platform)$(if ($platform.orientation) { " $($platform.orientation)" }) game -> $projectName.exe; AutoPlay drop-in $(if ($null -ne $autoplayVersion) { "v$autoplayVersion" } else { 'none' })"
+    Write-Step "Godot $godotVersion at $godot; $projectName.exe; AutoPlay drop-in $(if ($null -ne $autoplayVersion) { "v$autoplayVersion" } else { 'none' })"
+    if ($platform.platform -eq 'mobile') { Write-Step "a mobile game, held in $($platform.orientation): played and recorded as its Windows player at $($platform.width)x$($platform.height); its APK is built too" }
 
     # ---- import: the project's scripts must load ----
     $r = Invoke-Step 'import' @('--path', $src, '--import')
@@ -158,55 +150,57 @@ try {
     # The recorder starts this player with the engine's own --write-movie: its game data must be inside the exe or in a
     # .pck beside it, as the template's preset (embed_pck) makes it.
 
-    # ---- a mobile game: the Android APK, when this machine can build one ----
-    if ($platform.platform -eq 'mobile') {
-        $android = [ordered]@{ status = 'skipped'; reason = $null; apk = $null; bytes = $null; package = $null; min_sdk = $null; target_sdk = $null; abis = @() }
-        $toolchain = $null
-        if ($NoAndroid) { $android.reason = '-NoAndroid' }
-        elseif (-not (Test-ExportPreset $src 'Android')) { $android.status = 'failed'; $android.reason = "export_presets.cfg at $short has no preset named `"Android`"" }
-        else {
-            $toolchain = Set-GGFAndroidEnv $GGFConfig
-            if (-not $toolchain) { $android.reason = 'this machine has no Android toolchain (machine\get-android.ps1 installs it)' }
-        }
-        if ($toolchain) {
-            try {
-                if (Test-Path -LiteralPath $apkDir) { Remove-Item -LiteralPath $apkDir -Recurse -Force }
-                New-Item -ItemType Directory -Force $apkDir | Out-Null
-                $apk = Join-Path $apkDir "$projectName.apk"
-                # the Gradle build template of this engine version in the clone's android\build (android\.build_version
-                # names it); the engine installs it from the export templates' android_source.zip
-                $r = Invoke-Step 'android' @('--path', $src, '--install-android-build-template', '--export-release', 'Android', $apk)
-                if ($r.exit_code -ne 0 -or -not (Test-Path -LiteralPath $apk)) {
-                    if ($r.exit_code -eq 0) { $r.exit_code = 1; $r.error_excerpt = Get-ErrorExcerpt $r.log_path }
-                    throw "the Android export failed: $(($r.error_excerpt -split "`n")[0])"
-                }
-                $read = Read-Apk $apk $toolchain
-                $android.apk = $apk; $android.bytes = (Get-Item -LiteralPath $apk).Length
-                $android.package = $read.package; $android.min_sdk = $read.min_sdk; $android.target_sdk = $read.target_sdk; $android.abis = @($read.abis)
-                $wrong = @()
-                $wantPackage = "com.$($projectName.ToLowerInvariant()).game"
-                if ($read.package -ne $wantPackage) { $wrong += "package $($read.package), not $wantPackage" }
-                if ($read.min_sdk -ne 26) { $wrong += "minSdk $($read.min_sdk), not 26" }
-                if ($read.target_sdk -ne 34) { $wrong += "targetSdk $($read.target_sdk), not 34" }
-                if ((@($read.abis) -join ',') -ne 'arm64-v8a') { $wrong += "ABIs $(@($read.abis) -join ', '), not arm64-v8a alone" }
-                if ($wrong.Count) { $android.status = 'failed'; $android.reason = "the APK is not the Android build of a mobile game: $($wrong -join '; ')" }
-                else { $android.status = 'ok' }
-            } catch { $android.status = 'failed'; $android.reason = $_.Exception.Message }
-        }
-        Write-Step "Android: $($android.status)$(if ($android.reason) { " ($($android.reason))" })$(if ($android.status -eq 'ok') { " $($android.package), minSdk $($android.min_sdk), targetSdk $($android.target_sdk), $($android.abis -join ' ')" })"
-    }
-
     # Strings that must not ship: the user name inside paths and $ForbiddenNamePatterns (common.ps1). Recorded and
     # warned about; recording still works, but such a build must not be handed out.
-    $scanned = @('Windows\')
     $leakHits = @(Find-LeakedStrings $winDir @($UserNamePatterns + $ForbiddenNamePatterns) | ForEach-Object { $_.file = "Windows\$($_.file)"; $_ })
-    if ($android -and $android.status -eq 'ok') {
-        $scanned += 'Android\'
-        $leakHits += @(Find-LeakedStrings $apkDir @($UserNamePatterns + $ForbiddenNamePatterns) | ForEach-Object { $_.file = "Android\$($_.file)"; $_ })
+    $leakScan = [ordered]@{ scanned = 'Windows\'; hits = @($leakHits | ForEach-Object { [ordered]@{ file = $_.file; pattern = $_.pattern; count = $_.count; example = $_.example } }) }
+    if ($leakHits.Count) { Write-Step "WARNING: the player's files contain names that must not ship: $(($leakHits | ForEach-Object { "$($_.file) ($($_.pattern) x$($_.count))" }) -join '; ')" }
+    else { Write-Step 'leak scan: no user name or forbidden names in the player''s files' }
+
+    # ---- a mobile game's Android APK (arm64, release), when this machine can build one ----
+    if ($platform.platform -eq 'mobile') {
+        if (Test-Path -LiteralPath $apkDir) { Remove-Item -LiteralPath $apkDir -Recurse -Force }
+        if (-not (Test-ExportPreset $src 'Android')) {
+            throw "a mobile game (Platform.json) without an export preset named `"Android`": the mobile template's export_presets.cfg is missing at this commit"
+        }
+        $toolchain = if ($NoAndroid) { $null } else { Set-GGFAndroidEnv $GGFConfig }
+        if (-not $toolchain) {
+            $why = if ($NoAndroid) { '-NoAndroid' } else { 'this machine has no Android toolchain (machine\get-android.ps1 installs it; docs/new-machine.md)' }
+            $apk = [ordered]@{ status = 'skipped'; reason = $why }
+            Write-Step "APK: skipped, $why. The Windows player is built and can be recorded; build again on a machine with the Android toolchain for the APK"
+        } else {
+            New-Item -ItemType Directory -Force $apkDir | Out-Null
+            $apkPath = Join-Path $apkDir "$projectName.apk"
+            # the Gradle build template of this engine version in the clone's android\build (android\.build_version
+            # names it); the engine installs it from the export templates' android_source.zip
+            $r = Invoke-Step 'apk' @('--path', $src, '--install-android-build-template', '--export-release', 'Android', $apkPath)
+            if ($r.exit_code -ne 0) { $failure = 'APK build failed'; throw $failure }
+            if (-not (Test-Path -LiteralPath $apkPath)) { $r.exit_code = 1; $r.error_excerpt = Get-ErrorExcerpt $r.log_path; throw "the APK build succeeded but $apkPath is missing" }
+            $aapt2 = Get-Aapt2 $toolchain
+            $said = if ($aapt2) { Read-ApkBadging $aapt2 $apkPath } else { $null }
+            if (-not $said) { throw "the APK cannot be read back (aapt2 dump badging $apkPath)" }
+            # what the APK itself says must be a phone game's: arm64 alone, the SDK levels, a package name of its own
+            $wrong = @()
+            if (($said.abis -join ',') -ne 'arm64-v8a') { $wrong += "ABIs '$($said.abis -join ', ')' (arm64-v8a alone)" }
+            if ($null -eq $said.min_sdk -or $said.min_sdk -lt 26) { $wrong += "minSdk $($said.min_sdk) (at least 26)" }
+            if ($null -eq $said.target_sdk -or $said.target_sdk -lt 34) { $wrong += "targetSdk $($said.target_sdk) (at least 34)" }
+            if ($said.package -notmatch '^com\.[a-z][a-z0-9]*\.game$') { $wrong += "package '$($said.package)' (com.<project>.game)" }
+            if ($wrong.Count) { throw "the APK is not what a mobile game ships: $($wrong -join '; ')" }
+            # the APK is a zip: its files are scanned unpacked, as the Windows player's are, then the copy is removed
+            $unpacked = Join-Path $outDir '_apk'
+            if (Test-Path -LiteralPath $unpacked) { Remove-Item -LiteralPath $unpacked -Recurse -Force }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [IO.Compression.ZipFile]::ExtractToDirectory($apkPath, $unpacked)
+            $apkHits = @(Find-LeakedStrings $unpacked @($UserNamePatterns + $ForbiddenNamePatterns))
+            Remove-Item -LiteralPath $unpacked -Recurse -Force
+            $leakScan.scanned = 'Windows\, Android\'
+            $leakScan.hits = @($leakScan.hits) + @($apkHits | ForEach-Object { [ordered]@{ file = "Android\$projectName.apk!$($_.file)"; pattern = $_.pattern; count = $_.count; example = $_.example } })
+            if ($apkHits.Count) { Write-Step "WARNING: the APK's files contain names that must not ship: $(($apkHits | ForEach-Object { "$($_.file) ($($_.pattern) x$($_.count))" }) -join '; ')" }
+            $apk = [ordered]@{ status = 'ok'; file = "Android\$projectName.apk"; bytes = (Get-Item -LiteralPath $apkPath).Length; sha256 = (Get-FileSha256 $apkPath)
+                package = $said.package; version_code = $said.version_code; version_name = $said.version_name; min_sdk = $said.min_sdk; target_sdk = $said.target_sdk; abi = 'arm64-v8a' }
+            Write-Step "APK: $($apk.file), $([math]::Round($apk.bytes / 1MB, 1)) MB, $($said.package) $($said.version_name) ($($said.version_code)), minSdk $($said.min_sdk), targetSdk $($said.target_sdk), arm64-v8a"
+        }
     }
-    $leakScan = [ordered]@{ scanned = ($scanned -join ', '); hits = @($leakHits | ForEach-Object { [ordered]@{ file = $_.file; pattern = $_.pattern; count = $_.count; example = $_.example } }) }
-    if ($leakHits.Count) { Write-Step "WARNING: the build's files contain names that must not ship: $(($leakHits | ForEach-Object { "$($_.file) ($($_.pattern) x$($_.count))" }) -join '; ')" }
-    else { Write-Step 'leak scan: no user name or forbidden names in the build''s files' }
 } catch {
     $status = 'failed'
     $failure = $_.Exception.Message
@@ -217,14 +211,13 @@ try {
 }
 
 $end = Get-Date
-$failedStep = $steps | Where-Object { $_.exit_code -ne 0 -and $_.name -ne 'android' } | Select-Object -First 1
+$failedStep = $steps | Where-Object { $_.exit_code -ne 0 } | Select-Object -First 1
 $lastStep = $steps | Select-Object -Last 1
 $subject = "$(Invoke-Git $info.Dir @('log', '-1', '--format=%s', $sha) -AllowFail)"
 $commitTime = "$(Invoke-Git $info.Dir @('log', '-1', '--format=%cI', $sha) -AllowFail)"
 $row = [ordered]@{
     schema = 'godot-build/1'   # neutral: build_info.json sits next to the game's player
     game = $Game; project = $projectName
-    platform = $(if ($platform) { $platform.platform } else { $null }); orientation = $(if ($platform) { $platform.orientation } else { $null })
     commit = $sha; short_sha = $short; requested = $Commit; commit_subject = $subject; commit_time = $commitTime
     command = $commandLine
     start = $start.ToString('o'); end = $end.ToString('o'); duration_s = [math]::Round(($end - $start).TotalSeconds, 1)
@@ -236,12 +229,15 @@ $row = [ordered]@{
     exe_path = $(if ($status -eq 'ok') { Join-Path $winDir "$projectName.exe" } else { $null })
     config = 'release'
     player_bytes = $playerBytes
-    android = $android
     autoplay_version = $autoplayVersion
     leak_scan = $leakScan
     godot_version = $godotVersion
     editor = $godot
     steps = @($steps)
+}
+# a mobile game's build says what it is and what became of its APK; a desktop game's row has none of the four
+if ($platform -and $platform.platform -eq 'mobile') {
+    $row['platform'] = 'mobile'; $row['orientation'] = $platform.orientation; $row['window'] = @($platform.width, $platform.height); $row['apk'] = $apk
 }
 Add-JsonLine (Join-Path $info.LogDir 'builds.jsonl') $row
 if ($status -eq 'ok') { Write-JsonFile $buildInfoPath $row }   # describes a player that is there

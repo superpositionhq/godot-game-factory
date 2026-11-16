@@ -54,7 +54,7 @@ passes its output and exit code on. Tools run the console wrapper. A missing exe
 `get-godot.ps1` (`ggfroot.py` exits with that message).
 
 A game's platform has one reader, `tools/validate-game.py` (`read_platform`). PowerShell tools ask it through
-`Get-GGFPlatform -Folder <game>`, which runs `python <checkout>\tools\validate-game.py --platform <folder>` and returns
+`Get-GGFPlatform -Folder <game>`, which runs `python <checkout>\tools\validate-game.py --platform <folder>` (it prints one JSON line) and returns
 `@{ platform; orientation; width; height }`: `desktop` 1920x1080, `mobile` `landscape` 1920x1080 or `mobile`
 `portrait` 1080x1920. A bad `Platform.json` is an error, never read as desktop.
 
@@ -141,7 +141,7 @@ they share on purpose:
 | `android.json` | | the pinned JDK and Android command-line tools: URLs, SHA-256 |
 | `get-android.ps1` | `<root>\android\` | the Android toolchain (above) and the editor settings an export reads; asks before accepting the Android SDK licence agreements (`-Yes` accepts) |
 | `bootstrap.ps1` | | idempotent setup: config + layout, tools, ffmpeg, hooks + each agent's settings merge (`-Agent claude\|codex\|both`; prints what the hooks record and asks first; `-Yes` skips the question), the `godot-*` skills, root CLAUDE.md / AGENTS.md, LFS, gh, game repo hooks (`-CloneGames`) |
-| `check.ps1` | | read-only PASS/WARN/FAIL report: the engine and its export templates, git, Git LFS, gh, Python, ffmpeg, disk, the job slots and where each count comes from, hooks, agents, skills, and the Android toolchain piece by piece (a missing piece is a WARN: mobile games still work, except the APK) |
+| `check.ps1` | | read-only PASS/WARN/FAIL report: the engine and its export templates, git, Git LFS, gh, Python, ffmpeg, disk, the job slots and where each count comes from, hooks, agents, skills, and the Android toolchain (`Android toolchain (mobile games)`; a missing piece is a WARN: mobile games still work, except the APK) |
 | `get-ffmpeg.ps1` | `<root>\tools\ffmpeg-8.1.2\` | uses an ffmpeg that is already there (the config's, PATH); else downloads gyan.dev ffmpeg 8.1.2 full_build .7z, verifies SHA-256 `0fff1889...7059`, unpacks |
 | `lib/ggf-root.ps1` | `<root>\tools\`, the hooks dir | root/config resolver (also `Get-GGFHooksDir`, `Get-GGFAgents`, `Get-GGFGodot`, `Get-GGFPlatform`, `Get-GGFAndroid`, `Set-GGFAndroidEnv`, `Get-GGFFfmpeg`, the slot mutexes), dot-sourced by every script |
 | `lib/ggfroot.py` | | the same for Python tools (`root`, `ggb`, `org`, `engine`, `godot_exe`, `android`, `android_env`, `ffmpeg`, `computed_slots`, `slot_plan`, `out`, `check_free`) |

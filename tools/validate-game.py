@@ -3,7 +3,7 @@
 
     python tools/validate-game.py <games>/<slug>                 # the repo, its Dataset/ and Dataset.zip if present
     python tools/validate-game.py --dataset <Dataset.zip|folder>  # a dataset alone (what a consumer receives)
-    python tools/validate-game.py --platform <folder>             # the game's platform, one line
+    python tools/validate-game.py --platform <folder>             # the game's platform, one JSON line
     options: --no-layout (skip tools/validate-dataset.ps1), --no-zip, --json <file>, --quiet
 
 Checks the repo (required files, a project.godot of the factory's Godot version with its main scene, .gitignore, Git
@@ -17,9 +17,9 @@ tools/validate-dataset.ps1, which this script runs too on Windows unless --no-la
 
 Verdict: VALID (no errors), INVALID (errors). Exit code 0 / 2. Warnings never change the verdict.
 
---platform reads the folder's Platform.json and nothing else: it prints `desktop`, `mobile landscape` or
-`mobile portrait` (exit 0), or for a file that says anything else the reason on stderr (exit 2). The PowerShell tools
-read a game's platform through it, so there is one reader.
+--platform reads the folder's Platform.json and nothing else: it prints one JSON line, {"platform": "desktop"} or
+{"platform": "mobile", "orientation", "width", "height"} (exit 0), or for a file that says anything else the reason on
+stderr (exit 2). The PowerShell tools read a game's platform through it, so there is one reader.
 Standard library only (Python 3.10+).
 """
 import argparse, io, json, os, re, shutil, subprocess, sys, zipfile
@@ -35,10 +35,27 @@ def load_json(path):
         return json.load(f)
 
 
-# A game's platform (docs/game-format.md, "Platform"): a mobile (Android) game has Platform.json at its root, written by
-# templates/new-game.ps1 -Platform mobile when the project is created; a game without the file is a desktop game.
+# A game's platform (docs/game-format.md, "Platform"): a mobile (Android phone) game has Platform.json at its root,
+# written by templates/new-game.ps1 -Platform mobile when the project is created; a game without the file is a desktop
+# game. read_platform is the one reader of it: the validator, the task check, the pipeline and the packager all ask
+# here (the PowerShell tools through `validate-game.py --platform <folder>`).
 PLATFORM_FILE = 'Platform.json'
 ORIENTATIONS = ('landscape', 'portrait')
+PHONE_SIZE = {'landscape': (1920, 1080), 'portrait': (1080, 1920)}   # every play, still and recording of a mobile game
+
+
+def platform_said(text):
+    """What a Platform.json's text says: how the game is held ('landscape' or 'portrait'). ValueError, saying why, for
+    one that says anything else: never read as desktop. For a game read out of git or a zip; a folder is read with
+    read_platform."""
+    try:
+        said = json.loads(text.decode('utf-8-sig') if isinstance(text, bytes) else text.lstrip('\ufeff'))
+    except ValueError as e:
+        raise ValueError(f'{PLATFORM_FILE} cannot be read ({type(e).__name__})') from e
+    if (not isinstance(said, dict) or set(said) != {'platform', 'orientation'} or said['platform'] != 'mobile'
+            or said['orientation'] not in ORIENTATIONS):
+        raise ValueError(f'{PLATFORM_FILE} must be {{"platform": "mobile", "orientation": "landscape" or "portrait"}}')
+    return said['orientation']
 
 
 def read_platform(folder):
@@ -49,27 +66,30 @@ def read_platform(folder):
     if not os.path.isfile(path):
         return None
     try:
-        with open(path, encoding='utf-8-sig') as f:
-            said = json.load(f)
-    except (OSError, ValueError) as e:
+        with open(path, 'rb') as f:
+            return platform_said(f.read())
+    except OSError as e:
         raise ValueError(f'{PLATFORM_FILE} cannot be read ({type(e).__name__})') from e
-    if (not isinstance(said, dict) or set(said) != {'platform', 'orientation'} or said['platform'] != 'mobile'
-            or said['orientation'] not in ORIENTATIONS):
-        raise ValueError(f'{PLATFORM_FILE} must be {{"platform": "mobile", "orientation": "landscape" or "portrait"}}')
-    return said['orientation']
+
+
+def platform_of(folder):
+    """read_platform's answer as the tools pass it on: {"platform": "desktop"}, or {"platform": "mobile",
+    "orientation", "width", "height"} with the phone's size for that orientation."""
+    orientation = read_platform(folder)
+    if orientation is None:
+        return {'platform': 'desktop'}
+    width, height = PHONE_SIZE[orientation]
+    return {'platform': 'mobile', 'orientation': orientation, 'width': width, 'height': height}
 
 
 def print_platform(folder):
-    """--platform: one line, `desktop`, `mobile landscape` or `mobile portrait`; the exit code (2, with the reason on
-    stderr, for a Platform.json that says anything else, or a folder that isn't there)."""
+    """--platform: platform_of as one JSON line; the exit code (2, with the reason on stderr and nothing on stdout, for
+    a Platform.json that says anything else)."""
     try:
-        if not os.path.isdir(folder):
-            raise ValueError(f'{folder} is not a folder')
-        orientation = read_platform(folder)
+        print(json.dumps(platform_of(folder)))
     except ValueError as e:
-        print(e, file=sys.stderr)
+        print(f'{folder}: {e}', file=sys.stderr)
         return 2
-    print(f'mobile {orientation}' if orientation else 'desktop')
     return 0
 
 
@@ -426,6 +446,7 @@ def _check_dataset(rep, v, area):
         rep.error(a, 'variant full needs a build object')
     if m['variant'] == 'repo-dataset' and m.get('build') is not None:
         rep.error(a, 'variant repo-dataset has build null')
+    check_dataset_platform(rep, area, v, m, listed)
     # workflow.jsonl
     directions = set()
     if v.has('workflow.jsonl'):
@@ -505,7 +526,6 @@ def _check_dataset(rep, v, area):
             rep.error(area, 'a repo Dataset/ has no Tasks/ (tasks live on the game repo\'s tasks branch)')
     # full variant: every asset file listed by the project's assets.manifest.json is inside GodotProject/
     if m['variant'] == 'full':
-        check_dataset_platform(rep, a, v, m)
         am = 'GodotProject/assets.manifest.json'
         if v.has(am):
             try:
@@ -520,48 +540,54 @@ def _check_dataset(rep, v, area):
     rep.note(area, f'{m["game"]} {m["variant"]} {m["status"]}: {len(m["files"])} files, {len(m["scenarios"])} scenario video(s)')
 
 
-def check_dataset_platform(rep, a, v, m):
-    """Full variant: the manifest's platform and orientation are what GodotProject/Platform.json says (read_platform:
-    no file is a desktop game), and its build is that platform's: a desktop game's `exe`, a mobile game's `apk` (neither
-    while a mobile game's Build/ is pending)."""
-    import tempfile
-    rel = f'GodotProject/{PLATFORM_FILE}'
-    try:
-        if not v.has(rel):
-            held = None
-        elif not v.zip:
-            held = read_platform(os.path.dirname(v.names[rel]))
-        else:
-            with tempfile.TemporaryDirectory(prefix='validate-game-') as tmp:
-                with v.zip.open(v.names[rel]) as src, open(os.path.join(tmp, PLATFORM_FILE), 'wb') as dst:
-                    shutil.copyfileobj(src, dst)
-                held = read_platform(tmp)
-    except ValueError as e:
-        rep.error(a, f'{rel}: {e}')
+def check_dataset_platform(rep, area, v, m, listed):
+    """A dataset's platform (docs/game-format.md, "Platform"): the manifest's `platform` (absent or kind desktop: a
+    desktop game; kind mobile with its orientation: an Android phone game) says what GodotProject/Platform.json says
+    (full variant); a mobile game's build may name its APK, then with what the APK says of itself, at the SDK levels
+    and package name of a mobile game, the file in Build/; a desktop game's names none. A mobile game delivered without
+    its APK (built on a machine without the Android toolchain) is a warning."""
+    a = f'{area}: manifest.json'
+    p = m.get('platform') if isinstance(m.get('platform'), dict) else {}
+    mobile = p.get('kind') == 'mobile'
+    if mobile != (p.get('orientation') in ORIENTATIONS):
+        rep.error(a, 'platform: a mobile game says its orientation (landscape or portrait), a desktop game has none')
         return
-    said = m['orientation'] if m['platform'] == 'mobile' else None
-    if m['platform'] != 'mobile' and m['orientation'] is not None:
-        rep.error(a, f'platform {m["platform"]} has orientation null, not {m["orientation"]!r}')
-    elif m['platform'] == 'mobile' and said is None:
-        rep.error(a, 'platform mobile needs an orientation (landscape or portrait)')
-    elif held != said:
-        name = lambda o: f'mobile {o}' if o else 'desktop'   # noqa: E731
-        rep.error(a, f'platform {name(said)}, but {rel} says {name(held)}')
-    build = m.get('build') if isinstance(m.get('build'), dict) else {}
-    waits = any(str(p).rstrip('/') == 'Build' for p in m['pending'])
-    if m['platform'] == 'mobile':
-        if 'exe' in build:
-            rep.error(a, 'a mobile game\'s build is its APK (build.apk), never a Windows player (build.exe)')
-        if 'apk' not in build and not waits:
-            rep.error(a, 'a mobile game needs build.apk, or Build/ listed as pending while the release has no APK')
-    else:
-        if 'apk' in build or 'exe' not in build:
-            rep.error(a, 'a desktop game\'s build is its Windows player (build.exe)')
-        if waits:
-            rep.error(a, 'Build/ is pending: only a mobile game without its APK waits for a build')
-    for key in ('exe', 'apk'):
-        if key in build and not v.has(build[key]):
-            rep.error(a, f'build.{key} {build[key]} is not in the dataset')
+    if m['variant'] == 'full':
+        rel = 'GodotProject/' + PLATFORM_FILE
+        try:
+            with v.open_text(rel) as f:
+                held = platform_said(f.read())
+        except KeyError:
+            held = None
+        except ValueError as e:
+            rep.error(area, f'GodotProject/{e}')
+            return
+        if held != (p.get('orientation') if mobile else None):
+            rep.error(a, f'platform says {"mobile, " + str(p.get("orientation")) if mobile else "a desktop game"}, but '
+                         + (f'{rel} says mobile, {held}' if held else f'there is no {rel} (a desktop game)'))
+    b = m.get('build') if isinstance(m.get('build'), dict) else {}
+    keys = ('apk', 'package', 'version_code', 'version_name', 'min_sdk', 'target_sdk')
+    if not mobile:
+        named = [k for k in keys if k in b]
+        if named:
+            rep.error(a, f'build names {", ".join(named)}, but the game is a desktop game (no platform of kind mobile)')
+        return
+    if 'apk' not in b:
+        if m['variant'] == 'full':
+            rep.warn(a, 'a mobile game without its APK in Build/: built on a machine without the Android toolchain '
+                        '(docs/new-machine.md, section 3); build the release commit on one that has it and package again')
+        return
+    missing = [k for k in keys if k not in b]
+    if missing:
+        rep.error(a, f'build names its apk without {", ".join(missing)} (what the APK says of itself)')
+        return
+    if 'Build/' + b['apk'] not in listed:
+        rep.error(a, f'build.apk Build/{b["apk"]} is not in files[]')
+    if b['min_sdk'] < MOBILE_MIN_SDK or b['target_sdk'] < MOBILE_TARGET_SDK:
+        rep.error(a, f'the APK is for minSdk {b["min_sdk"]} and targetSdk {b["target_sdk"]}: at least {MOBILE_MIN_SDK} and '
+                     f'{MOBILE_TARGET_SDK}')
+    if not re.fullmatch(r'com\.[a-z][a-z0-9]*\.game', b['package']):
+        rep.error(a, f'the APK\'s package name is {b["package"]!r}: com.<project in lower case>.game')
 
 
 LFS_PTR = re.compile(rb'^version https://git-lfs\.github\.com/spec/v1\r?\noid sha256:([0-9a-f]{64})\r?\nsize ([0-9]+)')
@@ -724,15 +750,17 @@ RES = 'res://'   # a project path as Godot names it: a scene, a script, a resour
 PLAY_FLAG = re.compile(r'^-+([A-Za-z][^=]*)')   # "--x" too
 DENIED_PLAY_ARGS = {'headless', 'path', 'log-file', 'fixed-fps', 'disable-vsync', 'audio-driver', 'quit', 'quit-after',
                     'script', 'import', 'editor', 'main-pack', 'display-driver', 'position', 'screen', 'fullscreen',
-                    'maximized', 'windowed', 'single-window', 'shots', 'shotdir'}
+                    'maximized', 'windowed', 'single-window', 'shots', 'shotdir',
+                    # the frame's size and the renderer are the game's own, a mobile game's too: never a play's choice
+                    'size', 'resolution', 'rendering-method', 'rendering-driver', 'write-movie'}
 DENIED_PLAY_PREFIXES = ('taskprobe',)
 # a task play's `scene` and `args` take the task's place only when present, so they have no default here
 TASK_PLAY_DEFAULTS = {'inputs': [], 'every': None}
 
 
 def denied_play_args(args):
-    """The flags among `args` the checker sets itself (window, log, frame rate, screenshots, the probe's own) or that
-    would undo them, as written."""
+    """The flags among `args` the checker sets itself (window, frame size, renderer, log, frame rate, screenshots, the
+    probe's own) or that would undo them, as written."""
     for arg in args or []:
         mm = PLAY_FLAG.match(arg) if isinstance(arg, str) else None
         if mm and (mm.group(1).lower() in DENIED_PLAY_ARGS or mm.group(1).lower().startswith(DENIED_PLAY_PREFIXES)):
@@ -745,7 +773,7 @@ NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z',
                  'audio': ('volume', 'max_volume', 'level')}
 UI_SIGNATURE_AGGS = ('changes', 'any', 'all', 'count')  # a ui signature's value means nothing; whether it changes does
 WAITS = 300   # seconds of real time a task play's waits add at most
-# seconds a finger stays up before it goes down again (docs/task-probes.md, section 1.5): the probe lifts a finger a
+# seconds a finger stays up before it goes down again (docs/task-probes.md, section 1.3): the probe lifts a finger a
 # frame after its touch is over, so a touch that began sooner would find its finger still down and miss on every run
 TOUCH_GAP = 0.1
 JUDGE_PLAY_SHOTS = 5   # the screenshots a judge check is shown of each of its own plays, unless its `shots` says
@@ -1241,9 +1269,8 @@ def check_repo_tasks(rep, repo, files=None):
     """The game's tasks on its orphan `tasks` branch (`tasks`, else `origin/tasks`): Tasks/<name>.json, one GameTask
     each, name = file stem, seeds on commits of main's history (ancestors of HEAD, the main branch in a game checkout)
     or of the task's own start branch `starts/<name>` (godot-write-tasks section 2), each a Godot ENGINE project as
-    committed. The branch shares no history with main, and main's HEAD tracks nothing under Tasks/. A mobile game's
-    plays never choose a renderer or a size (mobile_play_errors). Read from git, not the working tree (`files` is
-    unused)."""
+    committed. The branch shares no history with main, and main's HEAD tracks nothing under Tasks/. Read from git, not
+    the working tree (`files` is unused)."""
     a = 'repo: Tasks'
     game = os.path.basename(os.path.normpath(repo))
     on_main = [p for p in _git(repo, '-c', 'core.quotepath=off', 'ls-tree', '-r', '--name-only', 'HEAD', '--', 'Tasks')
@@ -1265,10 +1292,6 @@ def check_repo_tasks(rep, repo, files=None):
         rep.error(a, f'no task files in Tasks/ on {ref} (a game ships at least {MIN_TASKS}; about 10 recommended)')
         return
     known, current, levels = {}, {'stem': ''}, {}
-    try:
-        mobile = read_platform(repo) is not None   # a mobile game: its plays never choose a renderer or a size
-    except ValueError:
-        mobile = False                              # said by rule `mobile` (check_mobile)
 
     def has_commit(c):   # an ancestor of main's head, or of the task's own start branch
         key = (c, current['stem'])
@@ -1298,9 +1321,6 @@ def check_repo_tasks(rep, repo, files=None):
         current['stem'] = stem
         if not check_task(rep, a, label, t, game, has_commit):
             continue
-        if mobile:
-            for e in mobile_play_errors(t)[:5]:
-                rep.error(a, f'{label}: {e}')
         seed = t.get('seed') if isinstance(t.get('seed'), dict) else {}
         for k in ('commit', 'reference'):
             if seed.get(k) and has_commit(seed[k]):
@@ -1749,27 +1769,29 @@ PROJECT_DEFAULTS = {('rendering', 'renderer/rendering_method'): 'forward_plus',
                     ('rendering', 'renderer/rendering_method.mobile'): 'mobile',
                     ('rendering', 'textures/vram_compression/import_etc2_astc'): 'false',
                     ('display', 'window/size/viewport_width'): '1152', ('display', 'window/size/viewport_height'): '648',
-                    ('display', 'window/handheld/orientation'): '0', ('application', 'config/quit_on_go_back'): 'true'}
+                    ('display', 'window/handheld/orientation'): '0', ('application', 'config/quit_on_go_back'): 'true',
+                    ('display', 'window/stretch/mode'): 'disabled',
+                    ('input_devices', 'pointing/emulate_mouse_from_touch'): 'true',
+                    ('input_devices', 'pointing/emulate_touch_from_mouse'): 'false'}
 ANDROID_DEFAULTS = {'gradle_build/use_gradle_build': 'false', 'gradle_build/min_sdk': '', 'gradle_build/target_sdk': '',
                     'architectures/armeabi-v7a': 'false', 'architectures/arm64-v8a': 'true', 'architectures/x86': 'false',
                     'architectures/x86_64': 'false', 'package/unique_name': 'com.example.$genname'}
 ANDROID_ENGINE_SDK = {'gradle_build/min_sdk': 29, 'gradle_build/target_sdk': 36}   # what an empty SDK level means (Vulkan)
 MOBILE_MIN_SDK, MOBILE_TARGET_SDK = 26, 34
-MOBILE_SIZE = {'landscape': (1920, 1080), 'portrait': (1080, 1920)}   # the size a mobile game is made for and played at
 # display/window/handheld/orientation, by its number: the game is held one way, so no setting that follows the sensor
 # to the other
 HANDHELD = ('landscape', 'portrait', 'reverse landscape', 'reverse portrait', 'sensor landscape', 'sensor portrait',
             'sensor')
 ANDROID_PRESET = 'Android'
-ANDROID_PACKAGE = re.compile(r'^com\.[a-z][a-z0-9_]*\.game\Z')
-# the renderer and the size a mobile game's plays are launched with are the tools' choice, never a task play's
-MOBILE_DENIED_PLAY_ARGS = {'rendering-method', 'rendering-driver', 'resolution', 'size', 'write-movie'}
+ANDROID_PACKAGE = re.compile(r'^com\.[a-z][a-z0-9]*\.game\Z')
 
 
 def mobile_project_errors(orientation, project):
     """What a mobile game's project.godot (`project`, its text) breaks: the Mobile renderer on the PC and on the
     phone (nothing of the desktop renderer alone forced on), textures imported for Android, the viewport and the way
-    the phone is held as Platform.json says (`orientation`), and the back button left to the game."""
+    the phone is held as Platform.json says (`orientation`), the frame stretched as the UI was laid out for, the back
+    button left to the game, and touches as a phone sends them (a touch is also a click to a plain Control; a mouse
+    is never a touch)."""
     errs, said = [], godot_config(project)
     get = lambda section, key: said.get(section, {}).get(key, PROJECT_DEFAULTS[(section, key)])   # noqa: E731
     for key in ('renderer/rendering_method', 'renderer/rendering_method.mobile'):
@@ -1781,15 +1803,24 @@ def mobile_project_errors(orientation, project):
         errs.append('rendering/textures/vram_compression/import_etc2_astc is not true: an Android build needs its '
                     'textures imported as ETC2/ASTC')
     size = tuple(get('display', f'window/size/viewport_{side}') for side in ('width', 'height'))
-    if size != tuple(str(n) for n in MOBILE_SIZE[orientation]):
+    if size != tuple(str(n) for n in PHONE_SIZE[orientation]):
         errs.append(f'display/window/size is {size[0]}x{size[1]}, but {PLATFORM_FILE} says {orientation} '
-                    f'({MOBILE_SIZE[orientation][0]}x{MOBILE_SIZE[orientation][1]})')
+                    f'({PHONE_SIZE[orientation][0]}x{PHONE_SIZE[orientation][1]})')
     held = get('display', 'window/handheld/orientation')
     name = HANDHELD[int(held)] if held.isdigit() and int(held) < len(HANDHELD) else held
     if name == 'sensor' or orientation not in name:
         errs.append(f'display/window/handheld/orientation={held} ({name}), but {PLATFORM_FILE} says {orientation}')
     if get('application', 'config/quit_on_go_back').lower() != 'false':
         errs.append("application/config/quit_on_go_back is not false: the back button is the game's to handle")
+    if get('display', 'window/stretch/mode') != 'canvas_items':
+        errs.append(f'display/window/stretch/mode="{get("display", "window/stretch/mode")}": a mobile game\'s frame is '
+                    'stretched as "canvas_items", so its UI fills any phone\'s screen')
+    if get('input_devices', 'pointing/emulate_mouse_from_touch').lower() != 'true':
+        errs.append('input_devices/pointing/emulate_mouse_from_touch is not true: a touch must reach a plain Control '
+                    'as a click')
+    if get('input_devices', 'pointing/emulate_touch_from_mouse').lower() != 'false':
+        errs.append('input_devices/pointing/emulate_touch_from_mouse is not false: a mouse is no finger, and a click '
+                    'would arrive twice')
     return errs
 
 
@@ -1818,30 +1849,7 @@ def mobile_preset_errors(presets):
         if not level.isdigit() or int(level) < least:
             errs.append(f'{key}={a[key]}: at least {least}')
     if not ANDROID_PACKAGE.match(a['package/unique_name']):
-        errs.append(f'package/unique_name={a["package/unique_name"]}: a mobile game\'s package is com.<name>.game '
-                    '(lower case)')
-    return errs
-
-
-def mobile_play_errors(t):
-    """The plays of a mobile game's task `t` (and its play_args) that choose a renderer or a size themselves: its
-    plays are launched with the Mobile renderer at the phone's size."""
-    errs = []
-
-    def denied(where, args):
-        for arg in (x for x in args or [] if isinstance(x, str)):
-            mm = PLAY_FLAG.match(arg)
-            if mm and mm.group(1).lower() in MOBILE_DENIED_PLAY_ARGS:
-                errs.append(f"{where} can't set -{mm.group(1)}: a mobile game's plays are launched with the Mobile "
-                            "renderer at the phone's size")
-    denied('play_args', t.get('play_args') if isinstance(t.get('play_args'), list) else [])
-    for m in t.get('milestones') or []:
-        for c in (m.get('checks') or []) if isinstance(m, dict) else []:
-            if not isinstance(c, dict):
-                continue
-            plays = [c.get('play')] if c.get('kind') == 'probe' else (c.get('plays') or [] if c.get('kind') == 'judge' else [])
-            for play in (x for x in plays if isinstance(x, dict)):
-                denied(f"check {c.get('name')}: play {play.get('name')}", play.get('args'))
+        errs.append(f'the Android package name is {a["package/unique_name"]!r}: com.<project in lower case>.game')
     return errs
 
 
@@ -1858,13 +1866,19 @@ def check_mobile(rep, repo, files):
         return
     if PLATFORM_FILE not in files:
         rep.error('mobile', f'{PLATFORM_FILE} is not committed')
+    found = 0
     for name, errors in (('project.godot', lambda text: mobile_project_errors(orientation, text)),
                          ('export_presets.cfg', mobile_preset_errors)):
         if not os.path.isfile(os.path.join(repo, name)):
-            rep.error('mobile', f'no {name}')
+            rep.error('mobile', f'no {name} (templates/new-game.ps1 -Platform mobile writes it)')
+            found += 1
             continue
         for e in errors(read_text(os.path.join(repo, name))):
-            rep.error('mobile', f'{name}: {e}')
+            rep.error('mobile', f'{name}: {e} (godot-mobile-game skill, "Start": the project settings stay as '
+                                'new-game.ps1 made them)')
+            found += 1
+    if not found:
+        rep.note('mobile', f'an Android phone game held in {orientation}: the project settings agree with {PLATFORM_FILE}')
 
 
 # ---- the contract on a game with combat: damage through one take_damage method the probe can find, key gameplay
@@ -2012,8 +2026,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('repo', nargs='?', help='a game repo (games/<slug>)')
     ap.add_argument('--dataset', help='validate only this dataset (Dataset.zip or a Dataset folder)')
-    ap.add_argument('--platform', metavar='FOLDER', help="print the game's platform (desktop, mobile landscape or "
-                                                         'mobile portrait) from its Platform.json and exit')
+    ap.add_argument('--platform', metavar='FOLDER',
+                    help="print what a game folder's Platform.json says, as one JSON line, and exit: "
+                         '{"platform": "desktop"}, or {"platform": "mobile", "orientation", "width", "height"}')
     ap.add_argument('--no-layout', action='store_true', help='skip tools/validate-dataset.ps1')
     ap.add_argument('--content-only', action='store_true', help=argparse.SUPPRESS)  # used by validate-dataset.ps1
     ap.add_argument('--no-zip', action='store_true', help="skip the repo's Dataset.zip")
@@ -2022,8 +2037,8 @@ def main():
     ap.add_argument('--no-hash', action='store_true', help='skip hashing History/ LFS objects')
     ap.add_argument('--quick', action='store_true', help='skip unpacking the History/ bundle')
     ap.add_argument('--rules-only', action='store_true',
-                    help="only the game contract, the sound rule and a mobile game's settings (what the packager "
-                         'checks first)')
+                    help="only the game contract, the sound rule and a mobile game's project settings (what the "
+                         'packager checks first)')
     a = ap.parse_args()
     if a.platform:
         sys.exit(print_platform(a.platform))

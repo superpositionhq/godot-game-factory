@@ -68,8 +68,14 @@ units, y down, as `x` and `y` with `z` 0, and its rotation as `roll`.
 - `"drive"`: the checker's scripted drive of `play_scene`: 22 s, `<Keyboard>/w` 1-6 s, `<Keyboard>/d` 6-8 s,
   `<Keyboard>/w` 8-13 s with a jump (`<Keyboard>/space`) at 9-9.3 s, `<Keyboard>/a` 13-15 s, `<Keyboard>/w` 15-21 s;
   sampled every 0.5 s.
-  On a mobile game (its `Platform.json`) the same route by touch: a left thumb at the lower left of the screen pushed
-  up, right, up, left, up at those times, and a tap at the lower right at 9 s.
+  On a mobile game (its `Platform.json`) the same route by touch: a left thumb down at the lower left of the screen
+  (`[0.15, 0.75]`) pushed up, right, up, left, up at those times and held there, and a tap at the lower right
+  (`[0.85, 0.75]`) at 9 s.
+- **A mobile game's plays** (every one: the checker's own and a task's) run at the phone's size, 1920x1080 for a game
+  held in landscape and 1080x1920 for one held upright, drawn with the renderer the game's project names. The checker
+  reads that from the copy's `Platform.json` ([game-format.md](game-format.md), "Platform"); a desktop game's plays
+  are 960x540. Nothing in a task says or changes it. The size holds on any display: it is the frame's, whatever the
+  window is (a phone held upright is taller than most screens), since the probe sets the frame's size itself.
 - A **task play**, when the outcome needs other input or another start:
   ```json
   {"name": "aim_left", "seconds": 12, "every": 0.5,
@@ -95,9 +101,9 @@ units, y down, as `x` and `y` with `z` 0, and its rotation as `roll`.
     none), at most 16, each `^-?[A-Za-z0-9_.:=,/-]{1,60}$`. An element starting with `-` and a letter is a flag
     (`-scenario`, `-devmenu`); anything else is a value (`2`, `2:quest=bull,6:fell`). They reach the game as its user
     arguments (`OS.get_cmdline_user_args()`, what follows `--` on the engine's command line), after the probe's own.
-    Never the probe's own (any flag starting with `taskprobe`, any case), and in a mobile game's tasks never one that
-    would choose the renderer or the frame's size (`--rendering-method`, `--rendering-driver`, `--resolution`,
-    `-size`); `tools/validate-game.py` lists what it refuses.
+    Never the probe's own (any flag starting with `taskprobe`, any case), and never one that would choose the
+    renderer or the frame's size (`--rendering-method`, `--rendering-driver`, `--resolution`, `-size`);
+    `tools/validate-game.py` lists what it refuses.
   - `inputs` (at most 400; a play with none leaves the key out), each at time `t` (seconds of play, 0-120). They reach
     the game as the engine's own input events (`InputEventKey`, `InputEventMouseButton`, `InputEventMouseMotion`,
     `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventScreenTouch`, `InputEventScreenDrag`), so the
@@ -112,8 +118,8 @@ units, y down, as `x` and `y` with `z` 0, and its rotation as `roll`.
       `backButton`; on `<Gamepad>/`, `buttonSouth` (the engine's A), `buttonEast`, `buttonWest`, `buttonNorth`,
       `leftShoulder`, `rightShoulder`, `start`, `select`, `leftStickPress`, `rightStickPress`, `dpad/up`, `dpad/down`,
       `dpad/left`, `dpad/right`. A key event carries the key as both `keycode` and `physical_keycode`, so an action
-      bound either way takes it. Any other control is a line in the play's `query_errors`, and nothing is pressed. A
-      phone's back button is the bare key `Android_Back` (section 1.5);
+      bound either way takes it. Any other control is a line in the play's `query_errors`, and nothing is pressed. In
+      a mobile game's play `<Keyboard>/escape` is the phone's back button (section 1.3);
     - an axis event: `{"t": 2.0, "key": "<Mouse>/delta/x", "axis": 40.0}` (`axis` -1000 to 1000), on `<Mouse>/`
       `delta/x`, `delta/y`, `scroll/x`, `scroll/y` or `<Gamepad>/` `leftStick/x`, `leftStick/y`, `rightStick/x`,
       `rightStick/y`, `leftTrigger`, `rightTrigger`. A mouse delta is one mouse movement of that many pixels
@@ -172,7 +178,8 @@ units, y down, as `x` and `y` with `z` 0, and its rotation as `roll`.
     - a view turn: `{"t": 10.5, "view": [-15, 90]}` turns the player to the yaw and the camera to that pitch and
       yaw in degrees (pitch -89 to 89, a negative one looks down), once: a camera rig that sets its own rotation
       every frame turns it back, so place the player with `teleport_to` and `face` where that matters;
-    - touches, `tap` and `drag`: section 1.5.
+    - a touch: `{"t": 1.0, "tap": [0.5, 0.6]}` or `{"t": 2.0, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "over":
+      0.3, "hold": 2.0}`, a finger on the screen (section 1.3).
 
   With these, one launch tours several places and scenes and pictures each: scene, teleport (or `teleport_to` what
   the build placed), turn, shot. **The grader's tour lives in the task**, which the agent never sees, so a build can't
@@ -238,7 +245,7 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
 Where the number depends on what a build chose, the threshold is calibrated or relative to the start, never a literal
 value, and `tools/validate-game.py` refuses a literal: `objects` `spin`; `components` `intensity`, `extent_*` and
 `spin`; every `screen` field; `audio` `volume`, `max_volume` and `level`. Each section says why. A `render` field
-takes a literal: a budget is a number of its own (section 2.21).
+takes a literal: a budget is a number of its own (section 2.20).
 
 When the start can't be measured (its play ended before the window, or nothing the measure selects is there yet, as
 in a task that adds it), a calibrated threshold anchors on the fix alone: `r - 0.25 * |r|` for `>`/`>=`,
@@ -247,21 +254,23 @@ can't be measured, or the start of a `start_times`/`start_plus` check can't, the
 it is required. A probe left without a threshold, this way or by a start and fix that measure the same, fails as
 `uncalibrated` on every side; one that isn't required is only a note (section 4).
 
-### 1.5 Touches
+### 1.3 Touches
 
 A task play may touch the screen as a phone's player does. Two inputs, each with a `finger` (the touch index, 0 to 9,
 0 unless said):
 
-- `{"t", "tap": <spot>, "hold": s, "finger": n}`: the finger goes down at the spot and lifts the next frame, or after
-  `hold` seconds (a long press, a button kept down).
-- `{"t", "drag": [<spot>, <spot>, ...], "over": s, "hold": s, "finger": n}` (2 to 16 spots): the finger goes down at
-  the first spot, moves through the others evenly over `over` seconds (at once without it), stays at the last for
-  `hold` seconds, then lifts: a swipe, a slider, a virtual stick pushed over and held there.
+- a tap, `{"t": 1.0, "tap": [0.5, 0.6], "hold": 0.5, "finger": 1}`: the finger goes down at the spot `tap` and lifts
+  the next frame, or after `hold` seconds (a long press, a button kept down).
+- a drag, `{"t": 2.0, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "over": 0.3, "hold": 2.0, "finger": 0}` (2 to 16
+  spots): the finger goes down at the first spot, moves through the others evenly over `over` seconds (at once
+  without it), stays at the last for `hold` seconds, then lifts: a swipe, a slider, a virtual stick pushed over and
+  held there.
 
-A spot is a point of the frame `[fx, fy]` in fractions 0-1 from its top left, or `{"widget": "<name>"}`: the centre
-of the first visible Control of some size whose node name (a wildcard) or class matches, whatever its kind (a button,
-a stick, a panel). Name the widget where you can: its place differs between landscape and portrait, its name does
-not. A widget's spot is found when its finger goes down, as the UI is laid out at that moment.
+A spot is a point of the screen `[fx, fy]` in fractions 0-1 from its top left, or `{"widget": "MoveStick"}`: the centre
+of the first visible, laid-out widget of that name (a wildcard) or type, whatever its kind (a button, a stick, a
+panel): a `Control` node, found as a `widgets` select finds one (section 2.6), by its node name first, then by its
+class. Name the widget where you can: its place differs between landscape and portrait, its name does not. A
+widget's spot is where it is when the finger goes down.
 
 Touches of different fingers may overlap in time (a stick held while a button is tapped, two fingers pinching). One
 finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and every touch is over by the
@@ -270,15 +279,17 @@ play's end: the validator refuses a task that asks otherwise. They reach the gam
 engine also makes mouse events of the first finger down (`emulate_mouse_from_touch`, which a mobile game keeps on),
 and that is what presses a `Button` node: **a `Button` presses for the first finger down alone**, while a control
 that reads the touch events itself takes any finger. So tap a `Button` with a finger that is alone on the screen, and
-expect a button meant to be pressed beside a held stick to read touches itself. A spot whose widget isn't on screen, a
-finger that is still down from an earlier touch and a finger outside 0-9 are listed in `probe.json` `inputs_missed`
-(kind `tap` or `drag`, with why).
+expect a button meant to be pressed beside a held stick to read touches itself. A touch that can't be made is a
+miss: a line in the play's `query_errors` (`inputs: the tap at 2.00 s missed: no visible widget matches
+'FireButton'`; a finger still down from an earlier touch; a finger outside 0-9) and a row of `probe.json`
+`inputs_missed` (kind `tap` or `drag`, with why), and nothing is touched.
 
-Android's back button is the key `Android_Back`: `{"t": 3.0, "key": "Android_Back", "press": true}` and its release.
-The press reaches the game as the phone sends it, the window's `go_back_requested` signal and
-`NOTIFICATION_WM_GO_BACK_REQUEST`, then the key `KEY_BACK`; a game that left `application/config/quit_on_go_back` on
-quits at it, as on a phone. A desktop game takes touches too, so they are allowed in any task; a mobile game is
-played by touch, so its tasks' plays drive it with touches and `Android_Back`, never with a key or the mouse.
+Android's back button is the key `<Keyboard>/escape`: `{"t": 3.0, "key": "<Keyboard>/escape", "press": true}` and its
+release. In a mobile game's play the press reaches the game as the phone sends it, the window's `go_back_requested`
+signal and `NOTIFICATION_WM_GO_BACK_REQUEST`, then the key `KEY_BACK`; a game that left
+`application/config/quit_on_go_back` on quits at it, as on a phone. In a desktop game's play it is the Escape key. A
+desktop game takes touches too when it reads them, so they are allowed in any task; a mobile game is played by touch,
+so its tasks' plays drive it with touches and the back button, never with another key, the mouse or a gamepad.
 
 ## 2. Measures
 
@@ -296,9 +307,9 @@ Which measure answers which question (each section has its fields, defaults and 
 | how bright the frame looks on screen | `screen` (2.15) |
 | what plays, how loud at the listener, a sound that starts | `audio` (2.16) |
 | what the HUD or a menu shows: text, a number, a clock, whether it updates | `ui` (2.18) |
-| what the renderer drew, against a budget: draw calls, triangles, texture memory | `render` (2.21) |
+| what the renderer drew, against a budget: draw calls, triangles, texture memory | `render` (2.20) |
 
-How a play gets there (keys, clicks, teleports, waits, touches): sections 1.1 and 1.5. Literal or calibrated:
+How a play gets there (keys, clicks, teleports, waits): section 1.1; touches: section 1.3. Literal or calibrated:
 section 1.2. Points and `near`: section 2.13. Why a probe has no value: section 3.
 
 ### 2.1 Common fields
@@ -720,7 +731,7 @@ stays for a widget's own state (a bar's percent, a picture).
   is drawn that way, read the value behind it with a `prop:` (section 2.4), or grade another outcome of the same
   issue.
 
-### 2.21 `render`: what the renderer drew
+### 2.20 `render`: what the renderer drew
 
 `{"probe": "render", "field": "draw_calls" | "triangles" | "texture_mb"}`: the readings a budget is checked by.
 `draw_calls` and `triangles` are the engine's counts of a frame (the totals its own monitors show: the 3D scene, its
@@ -857,7 +868,7 @@ task is void.
   input code at the seed before writing a task play.
 - **A `Button` presses for one finger.** The engine presses a `Button` node through the mouse it emulates from the
   first finger down. A tap on a `Button` while another finger holds a stick presses nothing: tap it when no other
-  finger is down, or expect such a button to read touch events itself (section 1.5).
+  finger is down, or expect such a button to read touch events itself (section 1.3).
 - **Check that a play really reaches the situation.** A probe of a moment the play never reaches measures nothing
   useful. Teleport to the spot (`teleport` input), use a scenario (`scene`/`args`) that starts there, and check on
   the fix that the play gets there before trusting its threshold: the fix's `probe.json` holds the player's `track`

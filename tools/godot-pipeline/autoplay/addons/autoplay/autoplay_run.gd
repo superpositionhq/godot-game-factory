@@ -41,6 +41,8 @@ var output_dir := ""
 var build_commit := ""
 var run_id := ""
 var game := ""
+var phone := false  # the game said it is a phone game (AutoPlay.phone)
+var phone_portrait := false
 var movie := false  # the engine writes a movie of this run (--write-movie)
 var fixed_fps := 0  # the movie's frames per second; 0 without a movie
 var args: PackedStringArray
@@ -122,6 +124,12 @@ func _parse() -> void:
 
 
 ## A flag's value among the game's own arguments: the next argument, unless that is another flag ("-5" is a value).
+## The game says it is a phone game (AutoPlay.phone), before the run's first frame.
+func set_phone(portrait: bool) -> void:
+	phone = true
+	phone_portrait = portrait
+
+
 func value(name: String) -> String:
 	return value_in(args, name)
 
@@ -266,7 +274,6 @@ func early_update() -> void:
 				if go or q >= _go_deadline_usec:
 					_begin_run(not go)
 		Phase.RUNNING:
-			input.update()
 			if max_seconds > 0.0 and now() - _go_time >= max_seconds:
 				_time_up()
 		Phase.HOLDING:
@@ -325,6 +332,8 @@ func _boot_frame() -> void:
 		"window": window, "viewport": viewport, "fullscreen_mode": mode, "scenario": scenario,
 		"scenario_name": scenario_name, "autoplay_version": host.VERSION,
 	}
+	if phone:
+		ready["phone"] = "portrait" if phone_portrait else "landscape"
 	ready.merge(stamp())
 	if not _write_file("ready.json", Json.text(ready) + "\n"):
 		error("ready.json could not be written")

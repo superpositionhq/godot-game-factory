@@ -37,21 +37,21 @@ READY; --replay names another):
     ReplayScripts/            the creation replay's package, its commit ids mapped; its verdict, PASS or FAIL, becomes
                               manifest.json replay_verification
     Screenshots/              the images the game's README.md shows, else Docs/screenshots/, else the recordings' stills
-    Build/                    a desktop game: the Windows release player (Windows/ of the build, <Project>.exe); a mobile
-                              game: the Android APK alone, Build/<Project>.apk, and no Windows player
+    Build/                    the Windows release player (Windows/ of the build, <Project>.exe); a mobile game's APK
+                              beside it, Build/<Project>.apk, when its build made one
     README.md, manifest.json
 
 The game's platform comes from the release commit's Platform.json, read by tools/validate-game.py read_platform and by
-nothing else: a game without the file is a desktop game, a mobile game is held landscape or portrait. manifest.json
-says it (platform, orientation), the videos are checked at its size (1920x1080; 1080x1920 for portrait), and a build
-or a recording made as another platform is not taken.
+nothing else: a game without the file is a desktop game, a mobile game is held landscape or portrait. A mobile game's
+manifest.json says it ("platform": {"kind": "mobile", "orientation": ...}) and names the APK in build, and its videos
+are checked at the phone's size (1920x1080; 1080x1920 for portrait).
 
 Status "complete" and Dataset.zip when Gameplay/ holds a video, ReplayScripts/ is there (a FAIL verdict too) and the
-player is there; "pending", listed in the manifest's pending, and Dataset.pending.zip while ReplayScripts/ is missing
-or a mobile game's build has no APK (Build/ pending: the machine that built it has no Android toolchain). A game
-without a gameplay video is rejected at upload: with no valid recording of the release commit nothing is packaged. A
-desktop game without a player, a pipeline build whose leak scan found anything, a player named after another project,
-and a running pipeline job of the game (its lock in <root>/builds/) refuse the package.
+player is there; "pending", listed in the manifest's pending, and Dataset.pending.zip while ReplayScripts/ is
+missing. A mobile game whose build made no APK (a machine without the Android toolchain) ships the Windows player
+alone, with a warning. A game without a gameplay video is rejected at upload: with no valid recording of the release
+commit nothing is packaged. A game without a player, a pipeline build whose leak scan found anything, a player named
+after another project, and a running pipeline job of the game (its lock in <root>/builds/) refuse the package.
 
 Every text file of the delivery is scrubbed (studio and tool names, agent, model and provider names, the account and
 machine name, e-mail addresses, git identities, the build machine's session folders and ids) and then scanned: a name
@@ -79,6 +79,7 @@ sys.path.insert(0, os.path.join(REPO, 'machine', 'lib'))
 import ggfroot  # noqa: E402
 
 LAYOUT = 'godot-dataset-layout/v1'
+PHONE_VIDEO = {'landscape': (1920, 1080), 'portrait': (1080, 1920)}   # a mobile game's gameplay videos, by how it is held
 with open(os.path.join(REPO, 'docs', 'dataset-layout-v1.json'), encoding='utf-8') as _f:
     LAYOUT_SPEC = json.load(_f)
 SECTIONS = ('Requirements', 'Package contents', 'Play the game', 'Replay the creation process',
@@ -996,41 +997,6 @@ def md_section(text, heading_rx):
     return '\n'.join(out).strip()
 
 
-def platform_at(repo, sha):
-    """How the game is held at a commit: 'landscape' or 'portrait' for a mobile game, None for a desktop game. Read by
-    the validator's read_platform, the one reader of Platform.json, from a copy of the commit's own file: never from
-    the working tree, which may be at another commit. ValueError, saying why, for a file that says anything else."""
-    vg = validator()
-    data = blob_at(repo, sha, vg.PLATFORM_FILE)
-    if data is None:
-        return None
-    import tempfile
-    with tempfile.TemporaryDirectory(prefix='ggf-platform-') as tmp:
-        write_bytes(os.path.join(tmp, vg.PLATFORM_FILE), data)
-        return vg.read_platform(tmp)
-
-
-def platform_words(orientation):
-    """'desktop', 'mobile landscape' or 'mobile portrait' (as tools/validate-game.py --platform prints it)."""
-    return f'mobile {orientation}' if orientation else 'desktop'
-
-
-def platform_problem(said, orientation):
-    """Why what a build_info.json or a bundle's metadata.json says of its platform (`platform`, `orientation`) is not the
-    game's, or None: when it says nothing, or the same."""
-    p, o = said.get('platform'), said.get('orientation') or None
-    if p is None and o is None:
-        return None
-    got = platform_words(o) if (p or 'mobile') == 'mobile' and o else str(p)
-    return None if got == platform_words(orientation) else f'made as {got}, but the game is {platform_words(orientation)}'
-
-
-def video_size(orientation):
-    """(width, height) of the game's videos: dataset-layout-v1.json gameplay_video sizes, by platform."""
-    w, h = LAYOUT_SPEC['gameplay_video']['sizes'][platform_words(orientation)]
-    return w, h
-
-
 def project_name(repo, sha, game):
     """The project's name at a commit (KilnRun), which a build's player carries: what the Windows export preset names
     the player (export_presets.cfg export_path, .../<Project>.exe), else the slug in PascalCase, as
@@ -1047,8 +1013,8 @@ def find_exe(build, project):
 
 
 def player_problem(player, project):
-    """Why the player (an exe or an APK) is not this game's, or None: an export is named after the project, as the
-    release commit's export preset names it (<Project>.exe, <Project>.apk)."""
+    """Why the player is not this game's, or None: an export is named after the project, as the release commit's
+    export preset names it (<Project>.exe)."""
     stem = os.path.splitext(player)[0]
     if stem.lower() != project.lower():
         return f'{player} is a player of "{stem}", not of this game ("{project}" at the commit)'
@@ -1090,7 +1056,7 @@ def pipeline_job(root, game):
 def pipeline_builds(root, game, lineage):
     """[(age, folder, build_info)] of the pipeline's release builds of the game in the release commit's history, nearest
     first (age: commits before the release commit, 0 = the release commit itself): <root>/builds/<game>/<sha8>/ with its
-    player in Windows/ (a mobile game's build has one too: the recordings are made with it) and build_info.json
+    player in Windows/ and build_info.json
     (godot-build/1) status "ok", config "release"."""
     base, out = os.path.join(root, 'builds', game), []
     if not os.path.isdir(lp(base)):
@@ -1117,10 +1083,12 @@ def find_ffprobe():
     return next((c for c in cands if c and os.path.isfile(c)), None)
 
 
-def probe_video(ffprobe, path, size):
-    """(why it is not the layout's gameplay video or None, seconds): an mp4 with one h264 stream of the game's size
-    (width, height: video_size) and aac audio (dataset-layout-v1.json gameplay_video)."""
-    want = LAYOUT_SPEC['gameplay_video']
+def probe_video(ffprobe, path, size=None):
+    """(why it is not the layout's gameplay video or None, seconds): an mp4 with one h264 1920x1080 stream and aac audio
+    (dataset-layout-v1.json gameplay_video); `size`: a mobile game's (width, height), the phone's for how it is held."""
+    want = dict(LAYOUT_SPEC['gameplay_video'])
+    if size:
+        want['width'], want['height'] = size
     try:
         r = subprocess.run([ffprobe, '-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width,height:format=format_name,duration',
                             '-of', 'json', path], capture_output=True, timeout=300)
@@ -1138,25 +1106,25 @@ def probe_video(ffprobe, path, size):
         return 'not readable as a video', seconds
     if want['container'] not in str(fmt.get('format_name', '')):
         return f'not an {want["container"]} ({fmt.get("format_name")})', seconds
-    if len(v) != 1 or v[0].get('codec_name') != want['video_codec'] or (v[0].get('width'), v[0].get('height')) != tuple(size):
+    if len(v) != 1 or v[0].get('codec_name') != want['video_codec'] or (v[0].get('width'), v[0].get('height')) != (want['width'], want['height']):
         return 'video ' + (', '.join(f'{s.get("codec_name")} {s.get("width")}x{s.get("height")}' for s in v) or 'missing'), seconds
     if want.get('audio_required') and (not a or a[0].get('codec_name') != want['audio_codec']):
         return 'audio ' + (', '.join(str(s.get('codec_name')) for s in a) or 'missing'), seconds
     return None, seconds
 
 
-def gameplay_runs(root, game, sha, exclude, ffprobe, orientation=None):
+def gameplay_runs(root, game, sha, exclude, ffprobe, size=None):
     """Per scenario, the first valid recording of the release commit, by run id (<game>_S<n>_<yyyyMMdd-HHmmss>_s<seed>:
     the earliest first): <root>/recordings/<game>/<run id>/ with metadata.json (godot-autoplay-bundle/v1) build.commit =
     the release commit, validation.json status ok or warn (written last, so a run still being written is not taken),
-    neither FAILED nor INVALID, made as the game's platform (orientation: None for a desktop game; the bundle's
-    platform, orientation and video size, where it names them), and its gameplay.mp4 (the layout's video at the game's
-    size, when ffprobe is here to check it). The result
+    neither FAILED nor INVALID, recorded at the game's size where the bundle names its video's (`size`: a mobile game's,
+    the phone's; else 1920x1080), and its gameplay.mp4 (the layout's video at that size, when ffprobe is here to check
+    it). The result
     (win, lose, timeout, abort) is metadata, never a reason to pick a run. Returns ([run], [(run id, why it is not
     taken)]), runs in scenario order."""
     base = os.path.join(root, 'recordings', game)
     chosen, skipped = {}, []
-    size = video_size(orientation)
+    want = tuple(size) if size else (LAYOUT_SPEC['gameplay_video']['width'], LAYOUT_SPEC['gameplay_video']['height'])
     if not os.path.isdir(lp(base)):
         return [], []
     for name in sorted(os.listdir(lp(base))):
@@ -1180,11 +1148,9 @@ def gameplay_runs(root, game, sha, exclude, ffprobe, orientation=None):
             why = f'validation {val.get("status")}'
         elif built != sha:
             why = f'recorded from {built[:8] or "an unknown build"}, not from the release commit'
-        elif platform_problem(meta, orientation):
-            why = platform_problem(meta, orientation)
         elif isinstance(meta.get('video'), dict) and meta['video'].get('width') and meta['video'].get('height') and \
-                (meta['video']['width'], meta['video']['height']) != size:
-            why = f'recorded at {meta["video"]["width"]}x{meta["video"]["height"]}, not at the game\'s {size[0]}x{size[1]}'
+                (meta['video']['width'], meta['video']['height']) != want:
+            why = f'recorded at {meta["video"]["width"]}x{meta["video"]["height"]}, not at the game\'s {want[0]}x{want[1]}'
         elif not isinstance(n, int) or isinstance(n, bool) or n < 1:
             why = 'no scenario number'
         elif n in chosen:
@@ -1715,8 +1681,7 @@ def main():
     ap.add_argument('--version', default='', help='the release version for the README and manifest.json, e.g. 1.0')
     ap.add_argument('--build', help='the player: a pipeline build folder (<root>/builds/<slug>/<sha8>, with build_info.json) or '
                                     'a player folder (default the newest pipeline release build of the release commit\'s '
-                                    'history, else <repo>/Build/Windows; for a mobile game the folder that holds '
-                                    '<Project>.apk, <repo>/Build/Android)')
+                                    'history, else <repo>/Build/Windows)')
     ap.add_argument('--brief', help='the brief as given (Brief/brief.md)')
     ap.add_argument('--design', help='the design doc (Brief/design.md)')
     ap.add_argument('--tasks-ref', default='', help='where Tasks/ comes from (default the branch tasks, else origin/tasks)')
@@ -1770,8 +1735,8 @@ def package(args):
         raise Refused(f'no game repo at {repo}')
     rules = check_rules(repo)
     if rules:
-        raise Refused("the game fails the game contract, the sound rule or a mobile game's settings: bring it up to them "
-                      'before packaging\n  '
+        raise Refused('the game fails the game contract, the sound rule or, a mobile game, its project settings: bring '
+                      'it up to them before packaging\n  '
                       + '\n  '.join(rules))
     recording = os.path.abspath(args.recording or os.path.join(ggfroot.root(), '.recording', game))
     out_root = os.path.abspath(args.out or repo)
@@ -1804,46 +1769,30 @@ def package(args):
     job = pipeline_job(root, game)
     if job:   # build.ps1 or record.ps1 is writing this game's player or a recording
         problems.append(f'error: the pipeline is working on {game} right now: {job}; package after it finishes')
-    try:   # a desktop game, or a mobile one held landscape or portrait: what the release commit's Platform.json says
-        orientation = platform_at(repo, sha)
-    except ValueError as e:
-        raise Refused(f'the release commit {sha[:8]}: {e}')
-    mobile = orientation is not None
+    # what the game is made for at the release commit: a desktop game, or an Android phone game (its Platform.json,
+    # read by the one reader of it, tools/validate-game.py)
+    orientation = None
+    said = blob_at(repo, sha, 'Platform.json')
+    if said is not None:
+        try:
+            orientation = validator().platform_said(said)
+        except ValueError as e:
+            problems.append(f'error: {e} (at the release commit)')
     project = project_name(repo, sha, game)
     lineage = {c: i for i, c in enumerate(git_text(repo, 'rev-list', sha).split())}
     build_info = None
-    sub = 'Android' if mobile else 'Windows'   # a mobile game ships its APK, and no Windows player
-    if args.build:   # a pipeline build folder (its player in Windows/ or Android/, build_info.json beside it), or a player folder
+    if args.build:   # a pipeline build folder (its player in Windows/, build_info.json beside it), or a player folder
         build = os.path.abspath(args.build)
-        for d, folder in ((build, os.path.join(build, sub)), (os.path.dirname(build), build)):
-            if os.path.isfile(lp(os.path.join(d, 'build_info.json'))) and (os.path.isdir(lp(folder)) or (mobile and d == build)):
+        for d, folder in ((build, os.path.join(build, 'Windows')), (os.path.dirname(build), build)):
+            if os.path.isfile(lp(os.path.join(d, 'build_info.json'))) and os.path.isdir(lp(folder)):
                 build, build_info = folder, read_json(os.path.join(d, 'build_info.json')) or {}
                 break
     else:
         cands = pipeline_builds(root, game, lineage)
-        build, build_info = (os.path.join(cands[0][1], sub), cands[0][2]) if cands else (os.path.join(repo, 'Build', sub), None)
-    exe, apk_facts, no_apk = None, {}, None
-    if mobile:   # the APK alone; a build without one (a machine without the Android toolchain) leaves Build/ pending
-        android = (build_info or {}).get('android')
-        android = android if isinstance(android, dict) else {}
-        player = f'{project}.apk'
-        if android.get('status') not in (None, 'ok'):
-            player, no_apk = None, f'the Android build was {android.get("status")}: {android.get("reason") or "no reason given"}'
-        elif not os.path.isfile(lp(os.path.join(build, player))):
-            player, no_apk = None, f'no {project}.apk in {build}'
-        else:
-            for k in ('package', 'min_sdk', 'target_sdk', 'abis'):
-                v = android.get(k)
-                if v not in (None, '', []):
-                    apk_facts[k] = int(v) if k.endswith('_sdk') and str(v).isdigit() else v
-            apk_facts['bytes'] = os.path.getsize(lp(os.path.join(build, player)))
-    else:
-        exe = player = find_exe(build, project) if os.path.isdir(build) else None
+        build, build_info = (os.path.join(cands[0][1], 'Windows'), cands[0][2]) if cands else (os.path.join(repo, 'Build', 'Windows'), None)
+    exe = player = find_exe(build, project) if os.path.isdir(build) else None
     build_commit, build_source = sha, "the game session's own player build (Scripts/godot.ps1 build); its commit is stated, not verified"
-    if mobile and not player:
-        warnings.append(f'Build/ stays pending: no Android APK of the release ({no_apk}). Install the Android toolchain with '
-                        f'machine/get-android.ps1, then build again (tools/godot-pipeline/build.ps1 {game} -Force)')
-    elif not player:
+    if not player:
         problems.append(f'error: no player build at {build} (no .exe): build the release commit (tools/godot-pipeline/build.ps1 '
                         f'{game} -Commit {sha[:8]}), or name a folder with --build')
     elif why := player_problem(player, project):
@@ -1860,9 +1809,6 @@ def package(args):
             h = hits[0] if isinstance(hits[0], dict) else {}
             problems.append(f'error: {build} has {len(hits)} leak-scan hit(s) in build_info.json (e.g. {h.get("file")}: {h.get("pattern")}): '
                             'a build with hits must not be handed out; find what names them in the game and build it again')
-        elif platform_problem(build_info, orientation):
-            problems.append(f'error: {build} was {platform_problem(build_info, orientation)} (build_info.json against '
-                            'Platform.json at the release commit): build the release commit again')
         else:
             build_commit = bc   # named in the manifest by its delivered id, once the history is rewritten
             build_source = 'the pipeline\'s release build of {} (tools/godot-pipeline/build.ps1)'
@@ -1878,7 +1824,8 @@ def package(args):
                             f'{later[0][0][:8]} "{later[0][2][:60]}"): build the release commit before packaging')
     ffprobe = find_ffprobe()
     exclude_runs = {s.strip() for s in args.exclude_runs.split(',') if s.strip()}
-    runs, skipped_runs = gameplay_runs(root, game, sha, exclude_runs, ffprobe, orientation)
+    runs, skipped_runs = gameplay_runs(root, game, sha, exclude_runs, ffprobe,
+                                       PHONE_VIDEO[orientation] if orientation else None)
     for name, why in skipped_runs:
         warnings.append(f'recording {name} not taken: {why}')
     ready = ready_scenarios(repo, sha)
@@ -1907,7 +1854,7 @@ def package(args):
     else:
         warnings.append(f'no creation replay of {sha[:8]} in {replay}: ReplayScripts/ stays pending '
                         f'(python tools/godot-replay/godot_replay.py release --game {game} makes it)')
-    pending = (['ReplayScripts'] if report is None else []) + (['Build'] if mobile and not player else [])
+    pending = ['ReplayScripts'] if report is None else []
     status = 'pending' if pending else 'complete'
     brief = find_brief(repo, sha, game, args.brief, 'brief', warnings)
     design = find_brief(repo, sha, game, args.design, 'design', warnings)
@@ -1934,8 +1881,8 @@ def package(args):
     if not os.path.isfile(os.path.join(recording, 'messages.jsonl')):
         warnings.append(f'no {os.path.join(recording, "messages.jsonl")}: History/sessions/ will hold no prompts or replies')
     zip_name = 'Dataset.zip' if status == 'complete' else 'Dataset.pending.zip'
-    step(f'{game} ({platform_words(orientation)}): commit {sha[:12]} ({commit_time.isoformat()}), '
-         f'build {build if player else "pending (no APK)" if mobile else "MISSING"}, '
+    step(f'{game}{f" (mobile, {orientation})" if orientation else ""}: commit {sha[:12]} ({commit_time.isoformat()}), '
+         f'build {build if player else "MISSING"}, '
          f'{len(task_files)} task(s) on {tasks_at[0] if tasks_at else "no tasks branch"}, '
          f'{len(runs)} scenario video(s), replay {"PASS" if report and report["verdict"]["pass"] else "FAIL" if report else "pending"}')
     errors = [p for p in problems if p.startswith('error:')]
@@ -2036,12 +1983,6 @@ def package(args):
     step('writing GodotProject/ and git.log')
     project_dir = os.path.join(stage, 'GodotProject')
     n_project = export_tree(bare, head, os.path.join(hist, 'lfs', 'objects'), project_dir, problems)   # the delivered objects
-    try:   # the delivered project says the platform the package was made for
-        delivered_as = validator().read_platform(project_dir)
-    except ValueError as e:
-        raise Refused(f'GodotProject/: {e}')
-    if delivered_as != orientation:
-        raise Refused(f'GodotProject/ is a {platform_words(delivered_as)} game, the release commit a {platform_words(orientation)} one')
     if not os.path.isfile(lp(os.path.join(project_dir, 'workflow.jsonl'))):
         problems.append('error: no workflow.jsonl at the commit')
     else:
@@ -2068,16 +2009,29 @@ def package(args):
     if runs:
         step('gameplay: ' + ', '.join(f'S{r["scenario"]} from {r["run"]} ({r["result"]}, {r["seconds"]:.0f} s)' for r in runs))
     n_build = 0
-    if mobile:   # the APK alone: the Windows player beside it in the build is what the recordings were made with
-        if player:
-            copy_file(os.path.join(build, player), os.path.join(stage, 'Build', player))
-            n_build = 1
-    else:
-        for d, dirs, fs in os.walk(lp(build)):
-            for f in fs:
-                full = os.path.join(d, f)
-                copy_file(full, os.path.join(stage, 'Build', os.path.relpath(full, lp(build))))
-                n_build += 1
+    for d, dirs, fs in os.walk(lp(build)):
+        for f in fs:
+            full = os.path.join(d, f)
+            copy_file(full, os.path.join(stage, 'Build', os.path.relpath(full, lp(build))))
+            n_build += 1
+    # a mobile game's APK, from the pipeline build that made the player (build_info.json apk, read back there from the
+    # APK itself); a build made on a machine without the Android toolchain has none, and the delivery says so
+    apk = None
+    if orientation:
+        made = (build_info or {}).get('apk') or {}
+        apk_src = (os.path.join(os.path.dirname(build), str(made.get('file') or '').replace('\\', os.sep))
+                   if made.get('status') == 'ok' else None)
+        if apk_src and os.path.isfile(lp(apk_src)):
+            if sha256_file(apk_src) != made.get('sha256'):
+                raise Refused(f'{apk_src} is not the APK build_info.json describes (its sha256 differs): build the release commit again')
+            apk = {'apk': os.path.basename(apk_src), **{k: made[k] for k in ('package', 'version_code', 'version_name', 'min_sdk', 'target_sdk')}}
+            copy_file(apk_src, os.path.join(stage, 'Build', apk['apk']))
+            n_build += 1
+            step(f'build: the APK {apk["apk"]} ({apk["package"]}, minSdk {apk["min_sdk"]}, targetSdk {apk["target_sdk"]})')
+        else:
+            warnings.append('a mobile game without its APK: ' + (str(made.get('reason')) if made.get('status') == 'skipped' else
+                            'the player is not a pipeline build that made one') + '. Build/ holds the Windows player alone; build the '
+                            'release commit on a machine with the Android toolchain (tools/godot-pipeline/build.ps1) and package again')
 
     # ---- Tasks ----
     step(f'tasks: {len(task_files)} from Tasks/ on {tasks_at[0]} ({tasks_at[1][:12]})')
@@ -2150,8 +2104,7 @@ def package(args):
     ses_files = [n for n in ('messages.jsonl', 'actions.jsonl') if os.path.isfile(lp(os.path.join(hist, 'sessions', n)))]
     ctx = dict(game=game, title=title, version=args.version, head=head, exe=exe, shots=shots, task_rows=task_rows,
                readme_src=readme_src, sessions=ses_files, engine=str(ggfroot.engine()['version']),
-               pending=pending, runs=runs, rv=rv, orientation=orientation, apk=player if mobile else None,
-               package=apk_facts.get('package'), size=video_size(orientation))
+               orientation=orientation, apk=apk, pending=pending, runs=runs, rv=rv)
     write_text(os.path.join(stage, 'README.md'), remap_text(apply_rules(dataset_readme(ctx, False), rules, False, False), cmap))
     step('scanning every file (paths and text; binaries as ASCII and UTF-16)')
     enforced = enforced_pattern(user, identities)
@@ -2238,19 +2191,17 @@ def package(args):
             s['capture_notes'] = r['capture_notes']
         scenarios.append(s)
     base = {'layout': LAYOUT, 'game': game, 'title': title, 'version': args.version, 'commit': head,
-            'platform': 'mobile' if mobile else 'desktop', 'orientation': orientation, 'status': status,
+            'status': status,
             'pending': list(pending), 'created': datetime.now().astimezone().isoformat(timespec='seconds'), 'replay_verification': rv,
             'scenarios': scenarios,
             'brief': {'brief': 'Brief/brief.md', 'design': 'Brief/design.md'}}
-    # the player: a desktop game's exe; a mobile game's APK with what the build says of it; neither while Build/ is pending
-    built = {'config': 'Release', 'commit': cmap.get(build_commit, head)}
-    if exe:
-        built['exe'] = f'Build/{exe}'
-    elif player:
-        built.update(apk=f'Build/{player}', **apk_facts)
-    built['source'] = (build_source.replace('{}', 'the release commit' if build_commit == sha else f'commit {cmap.get(build_commit, head)[:12]}')
-                       if player else 'pending: the release has no Android APK yet')
-    write_manifest(stage, dict(base, variant='full', history=history, build=built,
+    if orientation:   # a desktop game's manifest has no platform
+        base['platform'] = {'kind': 'mobile', 'orientation': orientation}
+    write_manifest(stage, dict(base, variant='full', history=history,
+                               build={'config': 'Release', 'commit': cmap.get(build_commit, head), 'exe': f'Build/{exe}',
+                                      'source': build_source.replace('{}', 'the release commit' if build_commit == sha else
+                                                                     f'commit {cmap.get(build_commit, head)[:12]}'),
+                                      **(apk or {})},
                                tasks={'count': len(task_rows), 'names': [r['name'] for r in task_rows], 'schema': 'game-task/1'}))
     mhits = [mm.group(0) for mm in enforced.finditer(read_bytes(os.path.join(stage, 'manifest.json')).decode('latin-1'))]
     if mhits:
@@ -2310,12 +2261,12 @@ def package(args):
     zip_bytes = os.path.getsize(zip_path) if zip_path else None
     with open(lp(os.path.join(ggfroot.out(), game, 'package-log.jsonl')), 'a', encoding='utf-8', newline='\n') as f:
         f.write(json.dumps({'time': datetime.now().astimezone().isoformat(timespec='seconds'), 'game': game, 'commit': sha,
-                            'delivered_commit': head, 'version': args.version, 'platform': platform_words(orientation),
+                            'delivered_commit': head, 'version': args.version,
                             'status': status, 'pending': pending,
                             'zip': zip_path, 'zip_bytes': zip_bytes, 'files': len(files_under(stage)),
                             'release_tag': release_tag,
                             'scenarios': [r['run'] for r in runs], 'replay': None if rv is None else ('PASS' if rv['pass'] else 'FAIL'),
-                            'build': build_source.replace('{}', (cmap.get(build_commit) or head)[:12]) if player else None,
+                            'build': build_source.replace('{}', (cmap.get(build_commit) or head)[:12]),
                             'scrubbed_files': len(touched), 'warnings': warnings, 'audit': audit,
                             'duration_s': round(time.time() - t0, 1)}, ensure_ascii=False) + '\n')
 
@@ -2662,7 +2613,6 @@ def tasks_readme(game, rows):
 def dataset_readme(c, repo):
     """README.md of the delivery (repo: of the game repo's Dataset/ folder), sections in the layout's order."""
     game, title, shots, runs, rv, pending = c['game'], c['title'], c['shots'], c['runs'], c['rv'], c['pending']
-    orientation, apk, (width, height) = c['orientation'], c['apk'], c['size']   # a mobile game: how it is held, its APK
     opening = (f'in Godot {c["engine"]} (import its `project.godot`; the first open imports the assets and rebuilds the '
                '`.godot/` cache) and press **Run Project** (F5)')
     a = [f'# {title}', '']
@@ -2670,21 +2620,19 @@ def dataset_readme(c, repo):
         a += [f'![{shots[0][1]}](Screenshots/{shots[0][0]})', '']
     if pending:
         what = [{'ReplayScripts': '`ReplayScripts/` (the replay of the creation process)',
-                 'Gameplay': '`Gameplay/` (the scenario videos)',
-                 'Build': '`Build/` (the Android APK)'}.get(p, f'`{p}/`') for p in pending]
+                 'Gameplay': '`Gameplay/` (the scenario videos)'}.get(p, f'`{p}/`') for p in pending]
         a += [f'> **Pending:** {" and ".join(what)} {"are" if len(what) > 1 else "is"} not in this delivery yet; everything else is',
               '> complete. This delivery is replaced by the complete one when they land.', '']
     intro = re.sub(r'(?s)<!--.*?-->', '', c['readme_src'].split('\n## ')[0])   # the template's notes are for the session
     intro = '\n'.join(l for l in intro.splitlines()[1:] if not re.match(r'\s*(!\[|<img)', l)).strip()
     if intro:
         a += [intro, '']
-    if orientation:
-        a += [f'An Android phone game, held {orientation} and played by touch.', '']
     a += [f'Version {c["version"] or "(not numbered)"}, release commit `{c["head"]}`.', '',
           '## Requirements', '',
           f'- Godot {c["engine"]} (the standard build) to open the project' + ('.' if repo else '; nothing to run the built player.'),
-          '- An arm64 Android phone with Android 8.0 (API 26) or later for the built game, and `adb` to install it.' if orientation else
           '- 64-bit Windows 10/11 for the built player.', '- `git` and `git-lfs` to restore the history.']
+    if c.get('apk'):
+        a.insert(-1, f'- An Android phone (arm64, Android API level {c["apk"]["min_sdk"]} or later) for the APK.')
     if rv:
         a.append(f'- Python 3.10+ and Godot {c["engine"]} to run the creation replay (`ReplayScripts/README.md`).')
     a += ['', '## Package contents', '']
@@ -2711,31 +2659,26 @@ def dataset_readme(c, repo):
         a.append(f'- `Tasks/` — {len(c["task_rows"])} task(s) on this game for a game-creation environment (`Tasks/README.md`).')
     if runs:
         a.append(f'- `Gameplay/` — {"a video of one scenario" if len(runs) == 1 else f"videos of {len(runs)} scenarios"} of this version, played '
-                 'through by the game\'s AutoPlay bot with the game audio' +
-                 (f', recorded on a PC with the Mobile renderer at the phone\'s size and played by touch events ({width}x{height}, 60 fps, '
-                  'H.264 and AAC).' if orientation else f' ({width}x{height}, 60 fps, H.264 and AAC).'))
+                 'through by the game\'s AutoPlay bot with the game audio ('
+                 + ('{}x{}'.format(*PHONE_VIDEO[c['orientation']]) if c.get('orientation') else '1920x1080') + ', 60 fps, H.264 and AAC).'
+                 + (' The game is an Android phone game: the videos are of its Windows player at the phone\'s size, '
+                    'played by touch.' if c.get('orientation') else ''))
     else:
         a.append('- `Gameplay/` — videos of the recorded scenarios, played through with the game audio. *(pending)*')
     if not repo:
-        if not orientation:
-            a.append(f'- `Build/` — the Windows release player (`Build/{c["exe"]}`).')
-        elif apk:
-            a.append(f'- `Build/` — the Android release APK (`Build/{apk}`' + (f', package `{c["package"]}`' if c['package'] else '') +
-                     '; arm64, Android 8.0 or later).')
-        else:
-            a.append('- `Build/` — the Android release APK. *(pending)*')
+        a.append(f'- `Build/` — the Windows release player (`Build/{c["exe"]}`)'
+                 + (f' and the Android APK (`Build/{c["apk"]["apk"]}`, arm64, package `{c["apk"]["package"]}`).' if c.get('apk') else
+                    '; the Android APK is not in this delivery (it was built on a machine without the Android toolchain).'
+                    if c.get('orientation') else '.'))
     a += ['- `Screenshots/` — the images in this README.', '- `manifest.json` — path, size and sha256 of every file, and the release metadata.', '',
           'Keep these files and folders together.', '', '## Play the game', '']
     if repo:
         a.append(f'Open the repository root {opening}.')
-    elif not orientation:
-        a.append(f'Run `Build/{c["exe"]}` (no installation), or open `GodotProject/` {opening}.')
-    elif apk:
-        a += [f'Install the APK on an arm64 Android phone with Android 8.0 (API 26) or later and start it from the launcher; it is held '
-              f'{orientation} and played by touch:', '', '```', f'adb install Build/{apk}', '```', '',
-              f'Or open `GodotProject/` {opening}.']
     else:
-        a.append(f'The Android APK is pending. Open `GodotProject/` {opening}.')
+        a.append(f'Run `Build/{c["exe"]}` (no installation), or open `GodotProject/` {opening}.'
+                 + (f' The game is made for an Android phone held in {c["orientation"]}: the Windows player opens at '
+                    'the phone\'s size and the mouse is the finger' + (f'; `Build/{c["apk"]["apk"]}` installs on a phone '
+                    '(`adb install`).' if c.get('apk') else '.') if c.get('orientation') else ''))
     play = md_section(c['readme_src'], r'^(how to )?play|^controls')
     if play:
         a += ['', '\n'.join(l for l in play.splitlines() if not re.search(r'Build[/\\]', l)).strip()]

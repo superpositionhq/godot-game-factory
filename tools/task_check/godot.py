@@ -12,7 +12,8 @@ Godot, its console exe (machine/lib/ggfroot.py `godot_exe`).
 - play: python desk.py <godot> --path <copy> --log-file <copy>/Logs/TaskProbe/play.log [scene] -- -taskProbe <spec>
   <play args>, in one of the limiter's GPU slots: one spec file (godot-probe-play/1) says everything about the play
   (the frame's size, seconds, screenshots, sampling, the clock's frames a second, scene, sound, player, inputs,
-  queries). A desktop game is played at 960x540, a mobile game (its copy has a Platform.json) at the phone's size. desk.py starts the game on a Windows
+  queries). A desktop game is played at 960x540, a mobile game (its copy has a Platform.json) at the phone's size, by how
+  it is held (MOBILE_SIZE), its spec saying `touch` too. desk.py starts the game on a Windows
   desktop of its own, so the play shows nothing on the user's screen and never takes the keyboard or the mouse
   cursor."""
 
@@ -407,6 +408,8 @@ class Project:
                 "sound": probes.hears(queries),
                 "player": player, "inputs": list(inputs or []),
                 "queries": queries or {"format": probes.QUERIES_FORMAT, "every": every, "queries": []}}
+        if mobile:  # a phone's play: <Keyboard>/escape is its back button (a desktop game's spec has no such key)
+            spec["touch"] = True
         asked = _fresh(logs / SPEC)  # beside the play's folder, so it isn't one of the files the play wrote
         asked.write_text(json.dumps(spec, indent=2), encoding="utf-8")
         seeds.forget_saves(self.folder)

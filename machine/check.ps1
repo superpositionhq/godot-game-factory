@@ -298,12 +298,14 @@ Try-Check 'Game repos record commits' {
 # Every piece is a WARN when missing: a mobile game is made, played, recorded and task-checked without it, and only
 # the APK step is skipped.
 $apkNote = 'mobile games still work without it, except the APK'
-Try-Check 'Android toolchain' {
+Try-Check 'Android toolchain (mobile games)' {
+    # A mobile game's APK: every piece of the toolchain (lib\ggf-root.ps1 Get-GGFAndroid, what
+    # tools\godot-pipeline\build.ps1 asks before its APK step). A WARN, never a FAIL: only a mobile game's release
+    # needs it, and without it that step is skipped and says so.
     $parts = @(Get-GGFAndroidParts $cfg)
-    foreach ($p in $parts) {
-        if ($p.present) { Add-Result PASS "Android $($p.name)" $p.detail }
-        else { Add-Result WARN "Android $($p.name)" "missing: $($p.detail) ($apkNote)" 'machine\get-android.ps1' }
-    }
+    $gone = @($parts | Where-Object { -not $_.present })
+    if (-not $gone.Count) { Add-Result PASS 'Android toolchain (mobile games)' (@($parts | ForEach-Object { $_.name }) -join ', ') }
+    else { Add-Result WARN 'Android toolchain (mobile games)' "missing: $(@($gone | ForEach-Object { "$($_.name) ($($_.detail))" }) -join '; ')" "only for a mobile game's APK (its release build skips the APK without it): machine\get-android.ps1 (docs/new-machine.md, section 3)" }
     $a = Get-GGFAndroid $cfg
     if (-not $a) { return }
     if ($a.godot -ne $eng.version) { Add-Result WARN 'Android toolchain version' "installed for Godot $($a.godot), the factory pins $($eng.version) (its build template may need other SDK packages)" 'machine\get-android.ps1' }

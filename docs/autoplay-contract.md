@@ -108,6 +108,10 @@ the drop-in leaves both alone, and `-goTimeout` defaults to 0.
 
 ## 2. Frame, time and input (enforced by the drop-in)
 
+- **A mobile game** (an Android phone game: its `game/phone.gd`, the autoload `Phone` from the mobile template, calls
+  `AutoPlay.phone(portrait)` at boot) is recorded as its Windows player at the phone's size: 1920x1080 held on its
+  side, **1080x1920** held upright. The recorder starts it so (`-size 1080x1920`, from the build's
+  `build_info.json`). Its bot plays by touch (section 4).
 - **Exact frame size.** With `-size <W>x<H>` the root window scales its content in viewport mode at that size and
   keeps the aspect (`content_scale_mode = VIEWPORT`, `content_scale_size = (W, H)`, `content_scale_aspect = KEEP`), so
   the game renders exactly W x H pixels whatever the window is: 1920x1080 for a desktop game and a landscape phone
@@ -125,8 +129,8 @@ the drop-in leaves both alone, and `-goTimeout` defaults to 0.
 - **Two clocks.** The machine's clock stamps every row (section 5). **The run's own time** counts the run: the time
   the engine has stepped, summed frame by frame (the frame's delta with the game's `Engine.time_scale` taken out, so
   a slow-motion effect does not slow the run's clock). In a movie it is `frames / 60`, the video's time; in a run in
-  real time (a hand test) it follows the machine's clock. `-maxSeconds`, the result hold and a tap's or a drag's
-  seconds are in the run's own time; `-goTimeout` and the watchdog are on the machine's clock.
+  real time (a hand test) it follows the machine's clock. `-maxSeconds` and the result hold are in the run's
+  own time; `-goTimeout` and the watchdog are on the machine's clock.
 - **Vsync off; 60 fps cap in real time**: the drop-in turns vsync off at boot and keeps it off, so frame pacing never
   depends on the monitor, and in a run that is not a movie it holds `Engine.max_fps` at 60.
 - **Never pause or mute on focus loss.** A recorded game's window is never the foreground window. The game's
@@ -183,12 +187,9 @@ the drop-in leaves both alone, and `-goTimeout` defaults to 0.
   `"<Gamepad>/dpad/up"`, `"<Gamepad>/rightTrigger"` with 0..1, `"<Gamepad>/leftStick"` with a `Vector2`),
   `AutoPlay.release_all()`, `AutoPlay.mouse_delta(Vector2)` for look (viewport pixels of one frame; call it every
   frame the bot turns), `AutoPlay.scroll(y)`, `AutoPlay.set_cursor(pos)` for pointing, and for a touch screen
-  `AutoPlay.touch_down(finger, pos)`, `touch_move(finger, pos)`, `touch_up(finger)`, `tap(pos, hold_s, finger)`,
-  `drag(points, over_s, hold_s, finger)` and `back()`. Never call gameplay methods to act (no `spawn_tower()`, no
-  teleporting, no setting velocity), and never send input events yourself (they would not be logged). Reading game
+  `AutoPlay.touch(finger, pos)` and `AutoPlay.touch_up(finger)`. Never call gameplay methods to act (no
+  `spawn_tower()`, no teleporting, no setting velocity), and never send input events yourself (they would not be logged). Reading game
   state directly is fine.
-- **A desktop game's bot plays by keys, mouse and gamepad; a mobile game's bot plays by touch only**, as its players
-  do.
 - A control path is written as an input-system path, so `inputs.jsonl` reads alike across engines: `<Keyboard>/` and a
   key (`a`..`z`, `0`..`9`, `space`, `enter`, `escape`, `tab`, `backspace`, `leftShift`, `leftCtrl`, `leftAlt`,
   `upArrow`, `downArrow`, `leftArrow`, `rightArrow`, `f1`..`f12`, `numpad0`..`numpad9`, `comma`, `period`, `slash`,
@@ -196,25 +197,24 @@ the drop-in leaves both alone, and `-goTimeout` defaults to 0.
   `leftButton`, `rightButton`, `middleButton`, `forwardButton`, `backButton`; `<Gamepad>/` `buttonSouth`,
   `buttonEast`, `buttonWest`, `buttonNorth` (or their aliases `a`, `b`, `x`, `y`, `cross`, `circle`, `square`,
   `triangle`), `leftShoulder`, `rightShoulder`, `leftTrigger`, `rightTrigger`, `start`, `select`, `leftStickPress`,
-  `rightStickPress`, `dpad/up|down|left|right`, `leftStick`, `rightStick`; `<Touchscreen>/touch0` .. `touch9` (a
-  finger) and `<Touchscreen>/back`. Any other path does nothing and writes one `error` telemetry row per path.
+  `rightStickPress`, `dpad/up|down|left|right`, `leftStick`, `rightStick`. Any other path does nothing and writes one `error` telemetry row per path.
 - **Positions and directions are Godot's own**: a position is in viewport pixels, origin top left (what
   `get_viewport().get_mouse_position()` and an event's `position` read), x right and y down; a mouse delta and a
   stick are x right, y down too.
 - A held control stays down until released (`hold` with 0, or `Vector2.ZERO` for a stick, releases it too); the
   drop-in logs `down`, `hold` (once per frame while it is held, with the current value) and `up`.
-- **Touch.** `touch_down` / `touch_move` / `touch_up` are one finger's contact, sent as `InputEventScreenTouch` and
-  `InputEventScreenDrag` with the finger as `index`; a held finger is logged like a held control, its value the
-  position. `tap(pos, hold_s := 0.0, finger := 0)` puts a finger down and lifts it the next frame, or after `hold_s`
-  seconds (a long press, a button kept down). `drag(points, over_s, hold_s := 0.0, finger := 0)` puts it down at the
-  first point, moves it through the others evenly over `over_s` seconds, keeps it at the last for `hold_s` seconds,
-  then lifts it: a swipe, a slider, a virtual stick pushed over and held there. The drop-in carries a tap or a drag
-  out by itself, frame by frame; taps and drags of different fingers overlap (two thumbs), and a new touch of a finger
-  ends that finger's earlier one. With `input_devices/pointing/emulate_mouse_from_touch` on (the template's setting),
-  a touch presses the `Control` under it as on a phone.
-- **The back button.** `back()` is Android's back button: the go-back request a phone sends
-  (`NOTIFICATION_WM_GO_BACK_REQUEST` to every node, and the root window's `go_back_requested`), then the key
-  `KEY_BACK` down for one frame. It is logged as `<Touchscreen>/back`.
+- **A mobile game's bot plays with fingers.** `AutoPlay.touch(finger, pos)` puts finger 0..9 down at a viewport
+  position, or moves it there when it is down already; `AutoPlay.touch_up(finger)` lifts it. A tap is a `touch` in
+  one frame and its `touch_up` in a later one; a virtual stick is a finger put down on it and moved; two thumbs are
+  two finger numbers. The fingers reach the game as `InputEventScreenTouch` and `InputEventScreenDrag` with the
+  finger as `index`: `Control` nodes, `_input` handlers and `TouchScreenButton`s read them as they read a phone's
+  (with `input_devices/pointing/emulate_mouse_from_touch` on, the template's setting, the first finger presses the
+  `Control` under it as on a phone). In a phone game's run the drop-in refuses everything else but
+  `"<Keyboard>/escape"`, which is Android's back button there: its press sends what a phone sends, the go-back
+  request (`NOTIFICATION_WM_GO_BACK_REQUEST` to every node, and the root window's `go_back_requested`) and the key
+  `KEY_BACK`, and its release the key's release. Any other key, the mouse (`mouse_delta`, `scroll`, `set_cursor`)
+  and the gamepad do nothing and write one `error` telemetry row per control ("a phone game is played by touch"). A
+  desktop game's bot may touch too.
 - The gamepad is device 0. A game that shows button prompts for the device last used switches them when the bot first
   uses a gamepad control.
 - Every decision the bot needs must be reachable by input. If something is only reachable by clicking UI (build
@@ -253,20 +253,22 @@ then renamed into place, so whoever waits for one never reads half of it.
 {"t_ns":...,"qpc":...,"frame":242,"t":3.0,"type":"cursor","key":"<Mouse>/position","value":[960.0,540.0]}
 {"t_ns":...,"qpc":...,"frame":254,"t":3.2,"type":"inject","key":"<Gamepad>/leftStick","value":[0.5,-1.0],"edge":"down"}
 {"t_ns":...,"qpc":...,"frame":92,"t":0.5,"type":"inject","key":"<Touchscreen>/touch0","value":[540.0,1536.0],"edge":"down"}
-{"t_ns":...,"qpc":...,"frame":93,"t":0.516667,"type":"inject","key":"<Touchscreen>/touch0","value":[540.0,1526.4],"edge":"hold"}
+{"t_ns":...,"qpc":...,"frame":93,"t":0.516667,"type":"inject","key":"<Touchscreen>/touch0","value":[540.0,1526.4],"edge":"move"}
 {"t_ns":...,"qpc":...,"frame":184,"t":2.033333,"type":"inject","key":"<Touchscreen>/touch0","value":[540.0,672.0],"edge":"up"}
-{"t_ns":...,"qpc":...,"frame":332,"t":4.5,"type":"inject","key":"<Touchscreen>/back","value":1,"edge":"down"}
+{"t_ns":...,"qpc":...,"frame":332,"t":4.5,"type":"inject","key":"<Keyboard>/escape","value":1,"edge":"down"}
 {"t_ns":...,"qpc":...,"frame":422,"t":6.0,"type":"release","key":"<Keyboard>/w","value":0,"edge":"up"}
 ```
 
 `type`: `header` | `control_info` (the bot's first use of a control: the game's input actions it drives, as the
-`InputMap` names them) | `inject` (`edge` = `down` when a control is pressed or a finger put down, `hold` once per
-frame while it is held (written at the end of the frame, or at once when its value changes: a finger that moved), `up`
-when it is released, `impulse` for a mouse delta or scroll, which last one frame) | `release` (an `up` the drop-in
+`InputMap` names them) | `inject` (`edge` = `down` when a control is pressed, `hold` once per frame while it is
+held (from the frame after its `down`, written at the end of the frame), `up` when it is released, `impulse` for a
+mouse delta or scroll, which last one frame; a finger's `down` when it touches, `move` when it moved, `hold` and `up`
+as a key's) | `release` (an `up` the drop-in
 writes itself for a control still held when the run ends) | `cursor` (a `set_cursor` that moved the pointer). `key` is
 the control's path in its canonical spelling (`<Gamepad>/a` is logged as `<Gamepad>/buttonSouth`); `value` is what the
-bot put into the control (1/0 for a key or button, 0..1 for a trigger, `[x, y]` for a stick, a mouse delta, a scroll, a
-position or a finger; a finger's `up` carries where it was lifted).
+bot put into the control (1/0 for a key or button, 0..1 for a trigger, `[x, y]` for a stick, a mouse delta, a scroll or a
+position; a finger's `key` is `<Touchscreen>/touch<n>` and its value its viewport position `[x, y]`, its `up`
+carrying where it was lifted).
 
 ### `telemetry.jsonl` (drop-in rows + your game's rows)
 
@@ -322,7 +324,8 @@ ended early has the samples it reached (`start`, ..., `end`).
 ### `ready.json`, `go`, `game.log`, `watchdog.json`, the movie
 
 `ready.json` {`pid`, `title`, `window` [w, h], `viewport` [w, h], `fullscreen_mode`, `scenario`, `scenario_name`,
-`autoplay_version`, `t_ns`, `qpc`, `frame`, `t`}; `go` (any content) from the pipeline; `game.log`, the engine's log
+`autoplay_version`, `phone` (`landscape` or `portrait`, in a mobile game's run only), `t_ns`, `qpc`, `frame`, `t`};
+`go` (any content) from the pipeline; `game.log`, the engine's log
 (`--log-file`), where the drop-in's own lines start with `AutoPlay:`; `watchdog.json` only from the exit watchdog;
 `movie.avi`, the engine's movie when the recorder asked for one. Kept in the raw run directory, not part of the
 dataset bundle. The drop-in writes no sound file: a recording's sound is the movie's.
@@ -346,14 +349,14 @@ Scenarios.started()                                  # AutoPlay.scenario_started
 AutoPlay.finish_run("win", score, {"stars": 2})
 ```
 
-`AutoPlay.is_active`, `scenario_argument`, `scenario`, `scenario_name`, `seed`, `skill`, `max_seconds` and
-`output_dir` can be read from anywhere at any time (the command line is read when the autoload is made, before any
+`AutoPlay.is_active`, `is_phone`, `scenario_argument`, `scenario`, `scenario_name`, `seed`, `skill`, `max_seconds`
+and `output_dir` can be read from anywhere at any time (the command line is read when the autoload is made, before any
 other autoload). Outside AutoPlay every call does nothing, so the game's code calls them unconditionally.
 
 The bot is the game's own node, added when the scenario starts in AutoPlay, acting only while `AutoPlay.is_running`,
 reading game state and calling the input API of section 4, scaled by `AutoPlay.skill` and human-like: eased camera
-turns (no snapping), reaction delays, aim noise, no jump spam; on a mobile game, taps and drags on the game's own
-controls. It counts its time from the `delta` of `_process`, which is the run's time.
+turns (no snapping), reaction delays, aim noise, no jump spam; on a mobile game, fingers on the game's own controls
+(`touch`, `touch_up`) and the back button. It counts its time from the `delta` of `_process`, which is the run's time.
 
 ## 7. Testing by hand and declaring readiness
 
