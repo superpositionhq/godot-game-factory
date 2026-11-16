@@ -498,7 +498,8 @@ lists them without refusing, to review a refusal), except where it is allowed: t
 (`opus_*`, `libopus`, `audio/opus`, Authenticode's `SpcSpOpusInfo`, the bare codec name), "opus" spelled by compressed
 bytes, the short terms (claude, openai, opus, the account name) inside a media file's compressed payload (an MP4's
 `mdat` of video and audio tracks, a WAV `data` chunk, Matroska blocks; never their metadata), the account name in a
-`zh_` locale id, and the single hits a person reviewed (`--reviewed-hits`, default `tools/package-reviewed-hits.tsv`:
+`zh_` locale id or as a Chinese language's whole name (`<Name> Chinese`: the engine's own locale tables, which every
+player carries), and the single hits a person reviewed (`--reviewed-hits`, default `tools/package-reviewed-hits.tsv`:
 the file's sha256, the offset and the word). "opus" counts only as a word of its own inside a string; so does a short
 account name (under 6 letters), which refuses in a string of 8 or more printable characters or as a whole C string and
 is only listed as a few letters among random bytes. The history's people refuse in binaries too: their full names,

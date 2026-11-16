@@ -1474,6 +1474,21 @@ def binary_needles(user, identities, emails):
     return out
 
 
+def locale_form(buf, at, nl, w):
+    """Whether the account name at `at` (nl characters of w bytes) is a Chinese language in a binary's locale data: a
+    locale id, zh_<name> or zh-<name> (the engine's own table of variants writes zh__<NAME>), or the language's name
+    as a whole string, "<Name> Chinese". The Godot player carries both tables, so an account named like one of those
+    languages (Xiang, Gan, Wu, Yue) is in every build."""
+    a = at
+    while a >= w and buf[a - w] in b'_-' and at - a < 2 * w:
+        a -= w
+    if a < at and a >= 2 * w and buf[a - 2 * w] | 0x20 == ord('z') and buf[a - w] | 0x20 == ord('h'):
+        return True
+    end, tail = at + nl * w, ' Chinese'.encode('utf-16-le' if w == 2 else 'ascii')
+    return buf[end:end + len(tail)] == tail and not any(buf[end + len(tail):end + len(tail) + w]) \
+        and (at < w or not any(buf[at - w:at]))
+
+
 def scan_binary(path, needles, payload=None, stream_terms=()):
     """Every needle found in a binary file as ASCII or UTF-16LE, any case: [(offset, needle, category, run, word, kind)].
     run = the printable characters in a row around the hit (compiled-in strings run long, compressed data seldom past 8);
@@ -1514,9 +1529,8 @@ def scan_binary(path, needles, payload=None, stream_terms=()):
                                 continue   # the codec name and random bytes spell it outside strings all the time
                             word = bin_word(buf, at, nl, w)
                             kind = 'binary'
-                            p3 = at - 3 * w
-                            if cat == 'username' and p3 >= 0 and buf[p3] | 0x20 == ord('z') and buf[p3 + w] | 0x20 == ord('h') and buf[p3 + 2 * w] in b'_-':
-                                kind = 'allowed-locale'   # a zh_<name> / zh-<name> locale id
+                            if cat == 'username' and locale_form(buf, at, nl, w):
+                                kind = 'allowed-locale'   # a zh_<name> locale id, or the language's name
                             elif ALLOW_BIN.match(word):
                                 kind = 'allowed-codec'
                             elif payload and n in stream_terms and stream_hits < MAX_STREAM_HITS and in_ranges(payload, off, off + len(pat)):

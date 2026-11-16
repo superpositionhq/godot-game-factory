@@ -1013,10 +1013,16 @@ class Scan(unittest.TestCase):
 
     def test_a_short_account_name(self):
         out = self.scan({'Build/locale.bin': b'\0\1zh_nora\0\1',        # a locale id
+                         'Build/variant.bin': b'\0zh__NORA\0hsn\0',    # the engine's table of locale variants
+                         'Build/language.bin': b'\0Upper Sorbian\0Nora Chinese\0Haitian\0',   # its table of language names
+                         'Build/sentence.bin': b'\0Nora Chinese food\0',   # not the whole name of a language
                          'Build/cstring.bin': b'\x01\x02\0Nora\0\x03',  # a whole C string, however short
                          'Build/random.bin': b'\x01\x02\x7fNora\x03',   # a few letters among random bytes: listed only
                          'Build/word.bin': b'\0Manor.Minoratoria\0'})    # inside longer words: no hit
         self.assertEqual(self.kinds(out, 'Build/locale.bin'), ['allowed-locale'])
+        self.assertEqual(self.kinds(out, 'Build/variant.bin'), ['allowed-locale'])
+        self.assertEqual(self.kinds(out, 'Build/language.bin'), ['allowed-locale'])
+        self.assertEqual(self.kinds(out, 'Build/sentence.bin'), ['binary'])
         self.assertEqual(self.kinds(out, 'Build/cstring.bin'), ['binary'])
         self.assertEqual(self.kinds(out, 'Build/random.bin'), ['binary-info'])
         self.assertEqual(self.kinds(out, 'Build/word.bin'), [])
