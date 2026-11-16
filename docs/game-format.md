@@ -83,7 +83,7 @@ Everything needed to rebuild the game from the repo alone, tracked in git (binar
 |---|---|
 | `project.godot` | the project: its name, main scene (`run/main_scene`, a committed scene), renderer, window size, autoloads and input map; `config/features` names Godot `4.7` |
 | `export_presets.cfg` | the export presets: `Windows Desktop`, and `Android` in a mobile game |
-| `scenes/`, `game/`, `assets/`, `addons/` | everything the game is made of: at least one scene (`.tscn`), its GDScript, its art, sound and fonts, its addons (the AutoPlay drop-in `addons/autoplay/` among them); store packs in any folder under `assets/` or `addons/` (e.g. `assets/ThirdParty/<Pack>/`), never git-ignored; **every imported file with its `.import` and every script with its `.uid`** (below) |
+| `scenes/`, `game/`, `assets/`, `addons/` | everything the game is made of: at least one scene (`.tscn`), its GDScript, its art, sound and fonts, its addons (the AutoPlay drop-in `addons/autoplay/` among them); store packs in any folder under `assets/` or `addons/` (e.g. `assets/third_party/<Pack>/`), never git-ignored; **every imported file with its `.import` and every script with its `.uid`** (below) |
 | `steps/` | every generator script that ran (`Scripts/godot.ps1 step`), unchanged after it ran |
 | `Scripts/godot.ps1` | from the template |
 | `workflow.jsonl` | the creation record, one row per operation, written when it happened (`godot-workflow/v0` rows: ids unique, `seq` strictly increasing, every `"direction"` naming an earlier `user.direction` row) |
@@ -155,7 +155,7 @@ that every file the game uses is committed, so a clone opens and builds the game
 { "schema": "assets-manifest/v1", "project": "MyGame", "assets": [
   { "name": "Modular Warehouse", "source": "Kenney", "url": "https://kenney.nl/assets/...",
     "licence": "CC0 1.0", "version": "2.1", "store": false,
-    "files": ["assets/ThirdParty/Warehouse/"], "used_for": "level kit", "changes": "materials re-tinted" } ] }
+    "files": ["assets/third_party/warehouse/"], "used_for": "level kit", "changes": "materials re-tinted" } ] }
 ```
 
 Every asset needs an https `url` (its listing or source page), except one made in-house by the studio (e.g. the

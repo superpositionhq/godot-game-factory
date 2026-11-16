@@ -131,13 +131,13 @@ def make_game(repo):
         write(repo, f'{folder}/.gdignore', '')
     asset(repo, 'scenes/Main.tscn', SCENE.format('Main'))
     asset(repo, 'game/kiln.gd', code('Kiln', 30))
-    asset(repo, 'assets/ThirdParty/Kenney/crate.png', b'\x89PNG\r\n\x1a\n' + b'\0' * 64)
+    asset(repo, 'assets/third_party/kenney/crate.png', b'\x89PNG\r\n\x1a\n' + b'\0' * 64)
     write(repo, 'assets/.drafts/ignored.gd', 'extends Node\n')            # the engine skips .name folders: no .uid
     write(repo, 'Docs/screenshots/hero.jpg', b'\xff\xd8\xff' + b'\1' * 64)   # under a .gdignore: no .import
     write(repo, 'README.md', '# Kiln Run\n\n![Kiln Run](Docs/screenshots/hero.jpg)\n\nA game.\n')
     write(repo, 'assets.manifest.json', json.dumps({'schema': 'assets-manifest/v1', 'project': 'KilnRun', 'assets': [
         {'name': 'Crates', 'source': 'Kenney', 'url': 'https://kenney.nl/assets', 'licence': 'CC0 1.0',
-         'files': ['assets/ThirdParty/Kenney/']}]}, indent=2))
+         'files': ['assets/third_party/kenney/']}]}, indent=2))
     write(repo, 'workflow.jsonl', workflow_row(1) + '\n' + workflow_row(
         2, op='user.direction', actor='user', target='design', params={'direction': 'Keep the hero on the ground.',
                                                                     'via': 'direct'},
@@ -288,11 +288,11 @@ class ValidGame(Base):
 class Sidecars(Base):
     def test_missing_sidecar(self):
         os.remove(os.path.join(self.repo, 'game/kiln.gd.uid'))
-        os.remove(os.path.join(self.repo, 'assets/ThirdParty/Kenney/crate.png.import'))
+        os.remove(os.path.join(self.repo, 'assets/third_party/kenney/crate.png.import'))
         commit(self.repo, 'Lose two sidecars')
         errs = errors(self.check(), 'repo: sidecars')
         self.assertTrue(any(e.startswith('game/kiln.gd: no .uid tracked') for e in errs), errs)
-        self.assertTrue(any(e.startswith('assets/ThirdParty/Kenney/crate.png: no .import tracked') for e in errs), errs)
+        self.assertTrue(any(e.startswith('assets/third_party/kenney/crate.png: no .import tracked') for e in errs), errs)
         self.assertEqual(len(errs), 2, errs)
 
     def test_orphan_sidecar(self):
@@ -386,11 +386,11 @@ class RepoRules(Base):
 
     def test_gitignore_hides_assets(self):
         with open(os.path.join(self.repo, '.gitignore'), 'a') as f:
-            f.write('Build/\nassets/ThirdParty/\n*.import\n')
+            f.write('Build/\nassets/third_party/\n*.import\n')
         commit(self.repo, 'Ignore too much')
         errs = errors(self.check(), 'repo: .gitignore')
         self.assertTrue(any(e.startswith('game/_probe_/Build/probe.gd would be git-ignored') for e in errs), errs)
-        self.assertTrue(any(e.startswith('assets/ThirdParty/_probe_/Probe.glb') for e in errs), errs)
+        self.assertTrue(any(e.startswith('assets/third_party/_probe_/Probe.glb') for e in errs), errs)
         self.assertTrue(any(e.startswith('assets/_probe_/Probe.png.import') for e in errs), errs)
 
     def test_generated_folder_tracked_and_not_ignored(self):
@@ -417,7 +417,7 @@ class RepoRules(Base):
         self.assertIn('scenes/Main.tscn', git(self.repo, 'lfs', 'ls-files', '--name-only'))
         errs = errors(self.check(), 'repo: LFS')
         self.assertEqual(sorted(errs), sorted(
-            [f'binary tracked in plain git: {f}' for f in ('assets/ThirdParty/Kenney/crate.png', 'assets/art/plain.png')] +
+            [f'binary tracked in plain git: {f}' for f in ('assets/third_party/kenney/crate.png', 'assets/art/plain.png')] +
             [f"Godot text or GDScript in LFS: {f} (it loses its diffs and merges; .gitattributes must keep it plain git "
              "text, as the template's does)" for f in ('scenes/Crate.tscn', 'scenes/Hero.tscn', 'scenes/Main.tscn')]))
         self.assertIn(('warning', 'repo: LFS', 'binary content in plain git: assets/data/packed.tres (give its type an '
@@ -437,7 +437,7 @@ class RepoRules(Base):
         data = json.loads(read(os.path.join(self.repo, 'assets.manifest.json')))
         data['assets'].append({'name': 'Gone', 'source': 'x', 'url': 'https://x', 'licence': 'CC0',
                                'files': ['Content/Gone/', 'assets/Gone.glb']})
-        crate = 'assets/ThirdParty/Kenney/crate.png'
+        crate = 'assets/third_party/kenney/crate.png'
         data['assets'] += [{'name': 'Ours', 'source': 'the studio', 'origin': 'studio', 'licence': 'own',
                             'files': [crate]},     # the schema's if: studio needs a description
                            {'name': 'Theirs', 'source': 'x', 'licence': 'CC0', 'files': [crate]}]   # else: an https url
@@ -694,7 +694,7 @@ class Units(unittest.TestCase):
                      'addons/task_probe/task_probe.gd', 'export_presets.cfg', 'Platform.json', 'gameplay/notes.md'):
             self.assertIsNone(vg.GAME_FILE.search(path), path)
         numstat = ('40\t0\tsteps/build_yard.gd\n1\t0\tsteps/build_yard.gd.uid\n'
-                   '9\t3\tscenes/Yard.tscn\n-\t-\tassets/art/crate.png\n30\t0\tassets/ThirdParty/Pack/pack.gd\n'
+                   '9\t3\tscenes/Yard.tscn\n-\t-\tassets/art/crate.png\n30\t0\tassets/third_party/pack/pack.gd\n'
                    '25\t5\tgame/hero.gd\n')
         self.assertEqual(vg.thread_size(numstat), (40 + 25 + 5, 3))   # code, scene, material
 
@@ -1661,7 +1661,7 @@ class Dataset(Base):
             t = json.loads(read(g))
             t['milestones'] = []
             write(ds, os.path.relpath(g, ds).replace('\\', '/'), json.dumps(t))
-            shutil.rmtree(os.path.join(ds, 'GodotProject', 'assets', 'ThirdParty', 'Kenney'))
+            shutil.rmtree(os.path.join(ds, 'GodotProject', 'assets', 'third_party', 'kenney'))
             with open(os.path.join(ds, 'workflow.jsonl'), 'a', encoding='utf-8') as f:
                 f.write(workflow_row(3, reason='Asked Claude to tidy the HUD') + '\n')
             os.remove(os.path.join(ds, 'GodotProject', 'project.godot'))
@@ -1673,7 +1673,7 @@ class Dataset(Base):
                      'banned name (?i)\\bclaude\\b x1', 'Tasks/: 4 task(s): a game ships at least 5',
                      f'Tasks/: 2 hard task(s): a game needs at least 4 hard tasks (medium: {SLUG}-{TASKS[3]}, {SLUG}-{TASKS[2]})'):
             self.assertIn(what, errs)
-        self.assertIn('listed asset file not present: Crates: assets/ThirdParty/Kenney/', errs)
+        self.assertIn('listed asset file not present: Crates: assets/third_party/kenney/', errs)
         if shutil.which('powershell') or shutil.which('pwsh'):
             rep = vg.Report()
             vg.run_layout_validator(rep, z, False)

@@ -93,7 +93,7 @@
       "game/_probe_/Logs/probe.txt",
       "assets/_probe_/Probe.png",
       "assets/_probe_/Probe.png.import",
-      "assets/ThirdParty/_probe_/Probe.glb",
+      "assets/third_party/_probe_/Probe.glb",
       "assets/_probe_/android/Probe.png",
       "addons/_probe_/plugin.cfg",
       "steps/_probe_.gd",

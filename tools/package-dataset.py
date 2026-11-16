@@ -1193,7 +1193,7 @@ def gameplay_runs(root, game, sha, exclude, ffprobe, orientation=None):
             why = f'result {meta.get("result")!r} is not one of {", ".join(RESULTS)}'
         elif not os.path.isfile(lp(mp4)):
             err = ((meta.get('gameplay_mp4') or {}).get('error') or 'never written')
-            why = f'no gameplay.mp4 ({err}): tools/godot-pipeline/gameplay-mp4.ps1 {game} -RunId {name} writes it'
+            why = f'no gameplay.mp4 ({err}): record the scenario again (tools/godot-pipeline/pipeline.ps1 {game})'
         if why:
             skipped.append((name, why))
             continue
@@ -1202,16 +1202,11 @@ def gameplay_runs(root, game, sha, exclude, ffprobe, orientation=None):
         if ffprobe:
             bad, probed = probe_video(ffprobe, lp(mp4), size)
             if bad:
-                skipped.append((name, f'gameplay.mp4 is not the layout\'s video ({bad}): tools/godot-pipeline/gameplay-mp4.ps1 '
-                                      f'{game} -RunId {name} -Force writes it again'))
+                skipped.append((name, f'gameplay.mp4 is not the layout\'s video ({bad}): record the scenario again '
+                                      f'(tools/godot-pipeline/pipeline.ps1 {game})'))
                 continue
             seconds = seconds or probed
         offset = gm.get('audio_offset_s')
-        if offset is None:
-            try:
-                offset = (float((meta.get('system_audio') or {}).get('start_offset_ns')) - float(meta.get('video_start_offset_ns'))) / 1e9
-            except (TypeError, ValueError):
-                offset = None
         stills = sorted(glob.glob(os.path.join(glob.escape(os.path.join(base, '_stills')), glob.escape(name) + '_*.jpg')))
         if not stills:   # the bundle's own stills\NN.jpg, delivered under the run's name as _stills\ has them
             stills = sorted(glob.glob(os.path.join(glob.escape(d), 'stills', '*.jpg')))

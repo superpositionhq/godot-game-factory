@@ -1058,7 +1058,7 @@ MIN_THREAD_COMMITS = 4     # commits from seed.commit to seed.reference that cha
 MIN_THREAD_CODE_LINES = 100   # code lines added plus removed from start to reference
 MIN_THREAD_SYSTEMS = 2        # systems the change crosses, as thread_size counts them
 CODE_FILE = re.compile(r'\.(gd|gdshader|gdshaderinc|cs|cpp|h|hpp|c|cc|inl|py|ps1|bat|cmd|sh|js)$', re.I)
-NOT_CODE_DIR = re.compile(r'^(Dataset|Docs)/|/ThirdParty/')   # store packs' own code is not the thread's
+NOT_CODE_DIR = re.compile(r'^(Dataset|Docs)/|/third_party/')   # store packs' own code is not the thread's
 # the game itself, not its records or docs: scenes/, game/, assets/, the addons but the AutoPlay drop-in and the task
 # probe, and project.godot. The steps are the creation's record, and an .import or .uid follows its file (its import
 # settings and its uid)
