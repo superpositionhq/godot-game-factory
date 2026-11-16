@@ -75,8 +75,10 @@ Run `measure` on every clip you keep and reject or trim what is wrong for its cu
   `Scripts/godot.ps1 import` and writes its `<file>.wav.import`: commit every WAV with its `.import`, never one
   without the other.
 - A clip's import settings are the `[params]` of its `.import` file: `edit/loop_mode` (0 as the file says, 1 off, 2
-  forward: set 2 for ambience and any sound that loops) and `force/mono`. Change the value there, run
-  `Scripts/godot.ps1 import` again and commit the `.import`, with one workflow row. Leave the rest of the file as the
+  forward: set 2 for ambience and any sound that loops) and `force/mono`. Change the value there with your own file tools
+  (Write/Edit, apply_patch; never a shell one-liner: the replay takes a `.import` from your commit only when the
+  recording shows you editing it), run `Scripts/godot.ps1 import` again and commit the `.import`, with one workflow
+  row. Leave the rest of the file as the
   engine wrote it.
 - **Imported files only.** Every sound the game plays is an audio file the engine imported (a Freesound clip, or a
   WAV a committed script generated, then imported like the rest), so it has an asset name the grader can tell apart.

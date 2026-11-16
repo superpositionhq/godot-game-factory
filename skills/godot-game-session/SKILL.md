@@ -307,7 +307,8 @@ generates (`.import` and `.uid` files, a step's outputs) is compared with what y
   `Scripts/godot.ps1 import` and commit the new sidecar files). Change a step's output later only by a new step or in
   a later commit of its own.
 - **Never write a `.import` or `.uid` file by hand**: the engine generates them, and the replay generates them again.
-  To change how a file is imported, edit the settings in its `.import` (its `[params]`), run the import and commit.
+  To change how a file is imported, edit the settings in its `.import` (its `[params]`) with your own file tools,
+  never a shell one-liner, run the import and commit: the replay keeps an edit the recording shows you making.
 - **`ReplayConfig.json` stays as the template made it** unless docs/godot-replay.md tells you to set something.
 - **Never amend or rebase** a commit you made: the replay follows the recorded commits.
 

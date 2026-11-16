@@ -58,7 +58,8 @@ is the one that applies.
 - **Budgets, for a mid-range phone, in any view the player can reach:** at most **500,000 triangles** drawn, at most
   **700 draw calls**, at most **1 GB of textures** in memory. Design to them from the first scene: fewer, merged and
   instanced meshes (`MultiMeshInstance3D`), texture sizes chosen on purpose, few translucent layers, few dynamic
-  lights and shadow casters (each shadowed light draws the scene again).
+  lights and shadow casters (each shadowed light draws the scene again). The engine's frame totals include the 2D
+  canvas, so the HUD's and the touch controls' draws count toward the 700.
 - **How to read them.** The engine counts them itself: `Performance.get_monitor()` with
   `Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME`, `RENDER_TOTAL_DRAW_CALLS_IN_FRAME` and `RENDER_TEXTURE_MEM_USED`
   (bytes), the same numbers `RenderingServer.get_rendering_info()` gives. Log them from a git-ignored debug flag of
@@ -82,7 +83,8 @@ is the one that applies.
   button tapped with the other both work. **A `Button`'s `pressed` signal fires for the first finger down only**:
   the engine makes its mouse click from that finger alone (`emulate_mouse_from_touch`), so a `Button` tapped while
   another finger holds the stick does nothing. That is fine for a menu, never for play: a control used during play
-  (jump, fire, dash) reads `InputEventScreenTouch` itself in `_gui_input`, for any finger. The task check's own drive
+  (jump, fire, dash) reads `InputEventScreenTouch` (and `InputEventScreenDrag`) itself in `_gui_input`, for any
+  finger, as the template's `game/touch_button.gd` does: a second finger never reaches a plain `Button`. The task check's own drive
   holds the stick with one finger and taps at the lower right with a second. The AutoPlay bot and the task plays send these same
   events, so a game that reads the mouse position or polls the keyboard takes none of their input.
 - **The back button.** Android's back button reaches the game as `NOTIFICATION_WM_GO_BACK_REQUEST` (handle it in
