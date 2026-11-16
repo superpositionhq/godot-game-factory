@@ -47,8 +47,10 @@ The user's standing rule: **every session commits its work continuously.**
   time` (ISO 8601 ms + offset), `actor:"agent", op, target, params, reason` (intent at that moment),
   `reason_source:"agent_note", status` (`observed`/`failed`/`reverted`), `source {script, sha256, commit}`).
 - A game's content is text you write with your file tools, so most rows are yours to write:
-  `powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 row -Op <op> -Target <t> -Reason "..." [-Params '<json>'] [-Direction <id>]`
-  appends one valid row with the next id and `seq` (`-Op scene.write -Target scenes/Harbor.tscn`). One row per
+  `powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 row -Op <op> -Target <t> -Reason "..." [-Params <file>] [-Direction <id>] [-Status failed]`
+  appends one valid row with the next id and `seq` (`-Op scene.write -Target scenes/Harbor.tscn`). `-Params` takes
+  the path of a file that holds the JSON object (a git-ignored one, e.g. under `Logs/`): JSON typed inline loses its
+  quotes when PowerShell passes it on. One row per
   operation (a scene written, a script added, a setting changed, an asset brought in), at the moment you do it, not
   one per commit. `Scripts/godot.ps1 step` and `build` write their own rows.
 - Commit `workflow.jsonl` together with the work it describes; the row ids go in the message. Many games also log an

@@ -77,7 +77,8 @@ both. The platform is chosen with the person before the project exists and never
   pictures come from `Scripts/godot.ps1 play -Shots <n>`.
 - **Never open the editor window on the project yourself.** Nothing a session does needs it: content is text files,
   and the engine runs headless or as the game. The person may open the editor to look or to adjust; what they save is
-  ordinary text you commit, with a `workflow.jsonl` row saying what they changed.
+  text you commit, with a `workflow.jsonl` row saying what they changed. The recording cannot explain such a change,
+  so the replay takes the file from the commit and lists it: keep editor changes rare.
 - Never edit anything under `<GGF_ROOT>\.recording\`.
 
 ## Engine runs: `Scripts/godot.ps1`
@@ -88,7 +89,7 @@ Every engine run of your game goes through the game's own script (docs/godot-pip
 |---|---|
 | `import` | the headless import; fails on any script error or parse error in the log. This is "the project compiles": run it after writing scripts, scenes or new assets, and commit the `.import` and `.uid` files it wrote |
 | `step -Script steps/<x>.gd -Reason "..."` | runs one committed generator script headless and appends its `workflow.jsonl` row (op `editor.step`, the script's path and the sha256 of its text as it ran) |
-| `row -Op <op> -Target <t> -Reason "..." [-Params '<json>'] [-Direction <id>]` | appends one valid `workflow.jsonl` row: how you log what you did by hand |
+| `row -Op <op> -Target <t> -Reason "..." [-Params <file>] [-Direction <id>] [-Status failed]` | appends one valid `workflow.jsonl` row: how you log what you did by hand. `-Params` is the path of a file holding the JSON object (inline JSON loses its quotes in PowerShell) |
 | `build [-Android] [-Reason "..."]` | the release export of the Windows player to `Build/Windows/<Project>.exe`; `-Android` is the mobile game's APK (godot-mobile-game skill); one `build.player` row |
 | `play [-Scenario <n>] [-Seconds 60] [-Shots <n>] [-Extra "..."] [-Tag <name>]` | the project run from source, rendered at the game's exact frame size, with `-scenario <n>`; `-Shots n` saves n evenly spaced PNG frames to `Logs/godot-ps1/<tag>/`; stopped after `-Seconds` |
 | `autoplay [-Scenario <n>] [-MaxSeconds 120] [-Seed 0] [-Skill 1] [-Extra "..."]` | the hand test of the AutoPlay contract on the built player; the run's files go to `Logs/autoplay/<time>_s<n>/` |
@@ -283,7 +284,8 @@ are fine: `workflow.jsonl` stays in the repo, row ids in commit messages are fin
 
 ## Replay-friendly work
 
-The dataset's `ReplayScripts/` rebuilds your game from its history (docs/godot-replay.md). A Godot game's history is
+The dataset's `ReplayScripts/` rebuilds your game from its history (docs/godot-replay.md; its section 3 has these
+rules). A Godot game's history is
 text files in git plus what the engine generates from them, so the replay goes commit by commit: it writes the files
 each commit adds or changes, runs the import, and runs again, headless and in order, every generator step the
 recording shows between that commit and the one before, with the step's text as it stood then. What the engine
@@ -298,7 +300,9 @@ generates (`.import` and `.uid` files, a step's outputs) is compared with what y
 - **Never edit a step that ran**: write `build_town_v2.gd` (a new file), so its rows' `source.sha256` still match the
   code that ran.
 - **A step makes the same content every time**: seed every random number, use no clock and no network, and reach
-  files through the project (`res://...`), never an absolute path to `games\<slug>`.
+  files through the project (`res://...`), never an absolute path to `games\<slug>`. It ends itself on every path,
+  `quit()` when done and `quit(1)` when it failed: a step that never quits runs into the script's time limit. In a
+  step's `_init()` the autoloads are not there yet (`steps/README.md` says what to do instead).
 - **Commit a step with what it wrote**, as it wrote it, in the first commit after the run (then run
   `Scripts/godot.ps1 import` and commit the new sidecar files). Change a step's output later only by a new step or in
   a later commit of its own.

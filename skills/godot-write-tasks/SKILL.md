@@ -362,7 +362,8 @@ A probe names one measurement and its threshold:
  "expect": {"op": ">=", "calibrate": 0.5}}
 ```
 
-Godot's 3D world is Y-up and in metres: height is `y`, distances are m, speeds m/s.
+Godot's 3D world is Y-up and in metres, with -Z forward: height is `y`, distances are m, speeds m/s; a positive pitch
+looks up and a positive yaw turns left.
 
 - `play`: `look` (20 s idle), `drive` (22 s: `<Keyboard>/w` 1-6 s, `<Keyboard>/d` 6-8 s, `<Keyboard>/w` 8-13 s with
   `<Keyboard>/space` at 9 s, `<Keyboard>/a` 13-15 s, `<Keyboard>/w` 15-21 s; on a mobile game the same route by
@@ -387,8 +388,8 @@ Godot's 3D world is Y-up and in metres: height is `y`, distances are m, speeds m
   - `camera`: the player's camera against the player (distance, height, pitch, yaw, fov, occluded, player on screen);
   - `objects`: nodes, selected by `name` (a wildcard), `tag` (a group), `component` (an engine class, a script's
     `class_name` or its file name), `near` a point, `where` (a property's value) or `has` (what it carries): how
-    many, where, shown or hidden, and a variable of the node's script by `prop:` (`prop:health`, or
-    `prop:<Class>.<member>`);
+    many, where, shown or hidden, and a variable of the node's own by `prop:` (`prop:health`, `prop:position.y`;
+    `prop:<Class>.<member>` reads it on a node of that class below the matched one);
   - `components`: the nodes of a class wherever they sit (lights, particle effects, mesh instances, audio players),
     by what they are rather than by a name;
   - `widgets`: a `Control`'s own state (visible, text, a bar's percent, a slider's value);

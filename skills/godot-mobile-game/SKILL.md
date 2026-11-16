@@ -78,9 +78,12 @@ is the one that applies.
   `TouchScreenButton`: it is not a `Control`.
 - **Read touches as the engine sends them:** `InputEventScreenTouch` (a finger down or up, with its `index` and
   `position`) and `InputEventScreenDrag` (a finger moving), in a control's `_gui_input` for what the control owns and
-  in `_unhandled_input` for touches on the world. A plain button needs only its `pressed` signal: with
-  `emulate_mouse_from_touch` on, a touch reaches a `Control` as a click. Track fingers by `index`, so a stick held
-  with one thumb and a button tapped with the other both work. The AutoPlay bot and the task plays send these same
+  in `_unhandled_input` for touches on the world. Track fingers by `index`, so a stick held with one thumb and a
+  button tapped with the other both work. **A `Button`'s `pressed` signal fires for the first finger down only**:
+  the engine makes its mouse click from that finger alone (`emulate_mouse_from_touch`), so a `Button` tapped while
+  another finger holds the stick does nothing. That is fine for a menu, never for play: a control used during play
+  (jump, fire, dash) reads `InputEventScreenTouch` itself in `_gui_input`, for any finger. The task check's own drive
+  holds the stick with one finger and taps at the lower right with a second. The AutoPlay bot and the task plays send these same
   events, so a game that reads the mouse position or polls the keyboard takes none of their input.
 - **The back button.** Android's back button reaches the game as `NOTIFICATION_WM_GO_BACK_REQUEST` (handle it in
   `_notification` of a node that is always in the tree). It does what Escape does on a desktop game: it opens the
