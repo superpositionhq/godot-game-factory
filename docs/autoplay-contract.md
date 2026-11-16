@@ -4,8 +4,8 @@
 > game as `addons/autoplay/` and named as the autoload `AutoPlay` ([Getting the drop-in](#getting-the-drop-in)). A game
 > implements its side (section 6), tests one scenario by hand (section 7) and tags `milestone/autoplay-<n>`. The
 > recorder and the run checker (`tools/godot-pipeline/validate-run.ps1`) are the recording pipeline's
-> ([godot-pipeline.md](godot-pipeline.md)); a session sends the coordinator what is ready, and the coordinator records
-> it ([Pipeline](godot-pipeline.md#pipeline)).
+> ([godot-pipeline.md](godot-pipeline.md)); a session that has reached its milestone records the scenarios itself
+> ([Pipeline](godot-pipeline.md#pipeline)).
 
 **Scenario** = a defined start state plus a win/lose condition, numbered 1..n in the game's design doc and named by the
 game. It may be a level, a chapter, a race stage or an open-world start setup. A run plays exactly one scenario from
@@ -374,8 +374,12 @@ controls. It counts its time from the `delta` of `_process`, which is the run's 
    up a release.
 4. When scenario 1 passes, commit and tag it `milestone/autoplay-1` (later: `milestone/autoplay-<n>` = scenarios 1..n
    work; the pipeline records scenarios 1..n of the newest such tag reachable from the commit), take the
-   framing-gate screenshots (godot-game-session skill) and report to the coordinator what is ready (the commit, the
-   tag, the scenarios, the run checker's result, the screenshot paths).
+   framing-gate screenshots (godot-game-session skill) and record the scenarios yourself:
+   `powershell -ExecutionPolicy Bypass -File <root>\godot-game-factory\tools\godot-pipeline\pipeline.ps1 <slug> -Scenarios <n,...>`
+   ([godot-pipeline.md](godot-pipeline.md#pipeline)). A recording does not need the screen, so it waits for nobody;
+   the game's lock and the limiter keep runs apart. One run per scenario, never again to improve how the bot plays.
+   A coordinated session then reports the result to the coordinator (the commit, the tag, the scenarios, the bundle
+   paths).
 
 Changes to this contract go through the coordinating session; the drop-in's version (`autoplay_version`, 1) goes up
 when the files change shape, and every game then runs `install.ps1` again. The files are `autoplay-inputs/2`,

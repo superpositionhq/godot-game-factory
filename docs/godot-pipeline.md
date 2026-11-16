@@ -9,8 +9,8 @@ are `tools/godot-pipeline/` (Windows PowerShell 5.1).
 > **What runs:** a game's `Scripts/godot.ps1`, the machine-wide job limiter, the recording pipeline below, the
 > creation replay ([Creation replay](#creation-replay)) and the dataset packager
 > ([Dataset packager](#dataset-packager)). A game is recorded once its scenario wiring and bot are in
-> ([autoplay-contract.md](autoplay-contract.md)); a session sends the coordinator what is ready and the coordinator
-> runs the pipeline ([Pipeline](#pipeline)). The recorder makes each scenario's gameplay video and the creation
+> ([autoplay-contract.md](autoplay-contract.md)); a session that has reached its AutoPlay milestone runs the pipeline
+> itself ([Pipeline](#pipeline)). The recorder makes each scenario's gameplay video and the creation
 > replay makes `ReplayScripts/`; the packager takes both, with the pipeline's release build, into a complete
 > `Dataset.zip`, and nobody assembles a dataset by hand. The task checker's own plays (a scratch copy played from its
 > source, on a Windows desktop of its own) are in [task-check.md](task-check.md).
@@ -23,6 +23,7 @@ are `tools/godot-pipeline/` (Windows PowerShell 5.1).
 | `validate-run.ps1 <outputDir>` | contract check of one run's files, no video (for game sessions testing by hand) |
 | `mark-invalid.ps1 <game> -Commit sha \| -RunId id -Reason text` | exclude bundles from the dataset (INVALID file, validation status `invalid`); files kept |
 | `leak-scan.ps1 <dir> [-Patterns ..]` | byte search (ASCII + UTF-16) for the user name or other strings that must not ship |
+| `scrub-import-paths.py <game> [--apply \| --verify]` | the account and agent names out of a project's binary assets, byte for byte ([Names that must not reach the games](#names-that-must-not-reach-the-games)) |
 | `scrub-lfs-history.py <game> [--apply]` | the account and agent names out of a game repo's own Git LFS history: patched objects, every commit repointed, archived first |
 | `scrub-history.ps1 <game> [-Apply]` | the studio and tool names out of a game repo's own history: text blobs, messages, identities; archived first |
 | `export-lfs-history.py <repo> <out>` | every LFS object of a history, with patched copies where one names the account (the dataset packager uses it) |
@@ -356,8 +357,9 @@ problems and notes and exits 1 on FAIL. The sound is checked on a recording, who
 a good run (status `ok`/`warn`, not invalidated) of that commit unless `-Force`, then runs `build.ps1` and `record.ps1`
 once per scenario: one recorded run per scenario is enough (AGENTS.md, "Priorities"). Each step takes the game's lock
 itself, and every engine run waits for its slot in the limiter, so several pipelines and the sessions' own runs sort
-themselves out: there is no queue. Game sessions do not run it; they send the coordinator what is ready (commit sha,
-tag, scenarios, `validate-run.ps1` result, screenshot paths), and the coordinator runs:
+themselves out: there is no queue. A recording does not need the screen, so a game session that has reached its
+AutoPlay milestone runs it itself, one run per scenario and never again to improve how the bot plays; a coordinated
+session then reports the result to the coordinator (commit, tag, scenarios, bundle paths):
 
 ```
 powershell -ExecutionPolicy Bypass -File %GGF_ROOT%\godot-game-factory\tools\godot-pipeline\pipeline.ps1 <game> -Scenarios 1,2
@@ -434,7 +436,8 @@ account name, and `build.ps1`'s leak scan checks every file of a release build f
 - The pipeline's own files (`.recording\*.jsonl`, `build_info.json`, bundle `metadata.json`, docs) may name things
   freely.
 - A game repo that names them can be cleaned in place, each tool a dry run first and archiving the original history
-  before it changes anything: `tools/godot-pipeline/scrub-lfs-history.py <slug>` (the account and agent names in the
-  history's LFS objects, every commit repointed: `--apply`) and `scrub-history.ps1 <slug>` (the studio and tool names
-  in text blobs, messages and identities: `-Apply`). Neither pushes. The dataset packager needs neither: it delivers
-  a scrubbed and patched copy.
+  before it changes anything: `tools/godot-pipeline/scrub-import-paths.py <slug>` (the account and agent names in
+  binary assets, byte for byte: `--apply`, then `--verify`), `scrub-lfs-history.py <slug>` (the same in the
+  history's LFS objects, every commit repointed: `--apply`) and `scrub-history.ps1 <slug>` (the studio and tool
+  names in text blobs, messages and identities: `-Apply`). None of them pushes. The dataset packager needs none of
+  them: it delivers a scrubbed and patched copy.
