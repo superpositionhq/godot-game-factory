@@ -337,7 +337,9 @@ release step 1, "Ensure AutoPlay"), and no game is released without it.
   through the drop-in's input calls while `AutoPlay.is_running`, scaled by `AutoPlay.skill` and human-like (eased
   camera turns, reaction delays, no snapping camera, no jump spam). A desktop game's bot plays by keys, mouse and
   gamepad (`hold`, `release`, `mouse_delta`, `scroll`, `set_cursor`), a mobile game's by touch only (`tap`, `drag`,
-  `touch_down`, `touch_move`, `touch_up`, `back`). The design doc lists scenarios 1..n (start state, win/lose).
+  `back`). The bot counts its time from the `delta` of `_process`, never from the system clock: a recording is
+  rendered offline, frame by frame, not in real time. And while `AutoPlay.is_active` nothing in the game pauses,
+  opens a menu or mutes because the window lost focus: a recorded game's window is never the foreground one. The design doc lists scenarios 1..n (start state, win/lose).
 - Test once by hand: `Scripts/godot.ps1 build`, then `Scripts/godot.ps1 autoplay -Scenario <n>` (the bot plays the
   built player; the run's files go to `Logs/autoplay/<time>_s<n>/`). Its summary and the run checker,
   `powershell -ExecutionPolicy Bypass -File <GGF_ROOT>\godot-game-factory\tools\godot-pipeline\validate-run.ps1 <that folder>`,

@@ -103,7 +103,8 @@ is the one that applies.
   sends `NOTIFICATION_APPLICATION_PAUSED` when Android puts the app in the background, and
   `NOTIFICATION_APPLICATION_FOCUS_OUT` when it loses focus. Pause on the first; treat a focus loss the same only on
   the phone itself (`OS.has_feature("android")`). On this PC the game's window is often not the focused one (a
-  recording, a task play, a session's own run), and a game that paused there would record its pause menu.
+  recording, a task play, a session's own run), and a game that paused there would record its pause menu. And
+  never pause, open a menu or mute from any of these while `AutoPlay.is_active` (docs/autoplay-contract.md).
 
 ## Quality bar
 
@@ -120,8 +121,8 @@ is the one that applies.
 
 ## AutoPlay on a mobile game
 
-The bot plays by touch only, through the drop-in's touch calls: `AutoPlay.tap(pos)`, `AutoPlay.drag(points, over_s)`,
-`touch_down` / `touch_move` / `touch_up` for a finger it holds, and `AutoPlay.back()` for the back button. Positions
+The bot plays by touch only, through the drop-in's touch calls: `AutoPlay.tap(pos)` (with a hold for a long press),
+`AutoPlay.drag(points, over_s)` (with a hold for a stick kept pushed over) and `AutoPlay.back()` for the back button. Positions
 are pixels of the game's frame from its top left; take a control's place from the node itself
 (`get_global_rect().get_center()`), never from a number written down, so the bot still finds it after a layout
 change. Never `hold` a key or move the mouse in a mobile game's bot.
