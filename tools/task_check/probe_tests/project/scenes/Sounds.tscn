@@ -1,0 +1,22 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/sounds.gd" id="1"]
+
+[node name="Sounds" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Camera" type="Camera3D" parent="."]
+position = Vector3(0, 6, 8)
+current = true
+
+[node name="Placed" type="AudioStreamPlayer3D" parent="."]
+position = Vector3(30, 0, 0)
+max_distance = 5.0
+
+[node name="Close" type="AudioStreamPlayer3D" parent="."]
+position = Vector3(0, 6, 4)
+unit_size = 4.0
+
+[node name="Muted" type="AudioStreamPlayer" parent="."]
+
+[node name="Long" type="AudioStreamPlayer" parent="."]

@@ -1262,6 +1262,18 @@ class Schema(unittest.TestCase):
                     {'t': 1, 'tap': [0.5, 0.5], 'hold': 0}, {'t': 9, 'key': 'Android_Back', 'press': True}):
             self.assertNotEqual(self.ok(dict(play, inputs=[bad]), 'TaskPlay'), [], bad)
 
+    def test_sounds_that_start(self):
+        near = {'near': {'point': {'object': {'tag': 'door'}}, 'radius': 3}, 'sound_class': 'SFX'}
+        for field in ('started', 'started_audible', 'sounds', 'repeats'):   # how many started: a literal value
+            c = probe_check({'probe': 'audio', 'select': near, 'field': field, 'window': [2, 3]}, 'look',
+                            {'op': '>=', 'value': 1})
+            self.assertEqual(self.ok(c, 'Probe'), [], field)
+            self.assertEqual(vg.probe_errors(c, {'commit': 'a'}, 'b', {}), [], field)
+        self.assertNotEqual(self.ok(probe_check({'probe': 'audio', 'field': 'takes'}), 'Probe'), [])
+        banded = dict(near, near={'point': {'xyz': [0, 0, 0]}, 'radius': 3, 'y_min': 2, 'y_max': 1})
+        c = probe_check({'probe': 'audio', 'select': banded, 'field': 'started'}, 'look', {'op': '>=', 'value': 1})
+        self.assertEqual(vg.probe_errors(c, {'commit': 'a'}, 'b', {}), ['check p: a near band has y_min < y_max'])
+
     def test_contact_stages(self):
         live = {'tag': 'foe', 'where': [{'prop': 'dead', 'op': '==', 'value': False}]}
         play = {'name': 'duel', 'seconds': 12, 'inputs': [

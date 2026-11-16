@@ -314,6 +314,38 @@ def check_contact(c, found):
     c.eq("no error", errors(found), [])
 
 
+def check_sounds(c, found):
+    if not ended(c, found, 7.5):
+        return
+
+    def heard(qid, t0, t1):
+        """(started, started_audible, the names in order) of a query's samples after t0 up to t1."""
+        picked = [s["value"] for s in samples(found, qid) if t0 < s["t"] <= t1 + 1e-6]
+        starts = sorted((r for v in picked for r in v["starts"]), key=lambda r: r["t"])
+        return (sum(v["started"] for v in picked), sum(v["started_audible"] for v in picked), [r["sound"] for r in starts])
+
+    c.eq("nothing starts before a key", heard("all", 0, 1.0), (0, 0, []))
+    c.eq("one-shots that start and end between two samples", heard("all", 1.0, 1.5), (3, 3, ["shot_a", "shot_a", "shot_b"]))
+    c.eq("none plays at the samples around them", [s["value"]["count"] for s in samples(found, "all") if s["t"] <= 2.0],
+         [0, 0, 0, 0, 0])
+    c.eq("a sound shorter than a frame", heard("all", 2.0, 2.5), (1, 1, ["tick"]))
+    c.eq("a placed sound out of earshot starts unheard", heard("all", 3.0, 3.5), (1, 0, ["far"]))
+    c.eq("one beside the camera is heard", heard("all", 3.5, 4.0), (1, 1, ["close"]))
+    c.eq("one on a muted bus is not", heard("all", 4.0, 4.5), (1, 0, ["hush"]))
+    c.eq("a sound started again while it plays", heard("all", 5.0, 5.5), (2, 2, ["long", "long"]))
+    last = [r for s in samples(found, "all") if 6.0 < s["t"] <= 6.5 for r in s["value"]["starts"]]
+    c.eq("a stream without a name", [(r["sound"], r["named"]) for r in last], [("", False)])
+    c.eq("every start of the play, each once", heard("all", 0, 9), (10, 8, [
+        "shot_a", "shot_a", "shot_b", "tick", "far", "close", "hush", "long", "long", ""]))
+    c.eq("the starts a sample lists are all of them", {s["value"]["starts_total"] - len(s["value"]["starts"])
+                                                      for s in samples(found, "all")}, {0})
+    c.eq("selected by their stream's name", heard("shots", 0, 9), (3, 3, ["shot_a", "shot_a", "shot_b"]))
+    c.eq("near a point: the sounds that start there", heard("there", 0, 9), (1, 0, ["far"]))
+    c.eq("by their owner", heard("placed", 0, 9), (1, 0, ["far"]))
+    c.eq("by their bus", heard("muted", 0, 9), (1, 0, ["hush"]))
+    c.eq("no error", errors(found), [])
+
+
 def check_errors(c, found):
     if not ended(c, found, 1.5):
         return
@@ -394,6 +426,7 @@ PLAYS = {
     "touch": {"check": check_touch, "twice": True},
     "second": {"check": check_second, "twice": True},
     "contact": {"check": check_contact, "twice": True},
+    "sounds": {"check": check_sounds},
     "errors": {"check": check_errors},
     "refuse": {"check": check_refuse, "spec": "wait", "format": "other-probe-play/1"},
     "idle": {"check": check_idle, "spec": "wait", "flag": False, "engine_args": ["--quit-after", "30"]},

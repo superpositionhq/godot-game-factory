@@ -1,0 +1,35 @@
+{
+  "seconds": 7,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/Sounds.tscn",
+  "inputs": [
+    {"t": 1.1, "key": "<Keyboard>/1", "press": true},
+    {"t": 1.15, "key": "<Keyboard>/1", "press": false},
+    {"t": 1.2, "key": "<Keyboard>/1", "press": true},
+    {"t": 1.25, "key": "<Keyboard>/1", "press": false},
+    {"t": 1.3, "key": "<Keyboard>/2", "press": true},
+    {"t": 1.35, "key": "<Keyboard>/2", "press": false},
+    {"t": 2.1, "key": "<Keyboard>/3", "press": true},
+    {"t": 2.15, "key": "<Keyboard>/3", "press": false},
+    {"t": 3.1, "key": "<Keyboard>/4", "press": true},
+    {"t": 3.15, "key": "<Keyboard>/4", "press": false},
+    {"t": 3.6, "key": "<Keyboard>/5", "press": true},
+    {"t": 3.65, "key": "<Keyboard>/5", "press": false},
+    {"t": 4.1, "key": "<Keyboard>/6", "press": true},
+    {"t": 4.15, "key": "<Keyboard>/6", "press": false},
+    {"t": 5.1, "key": "<Keyboard>/7", "press": true},
+    {"t": 5.15, "key": "<Keyboard>/7", "press": false},
+    {"t": 5.3, "key": "<Keyboard>/7", "press": true},
+    {"t": 5.35, "key": "<Keyboard>/7", "press": false},
+    {"t": 6.1, "key": "<Keyboard>/8", "press": true},
+    {"t": 6.15, "key": "<Keyboard>/8", "press": false}
+  ],
+  "queries": [
+    {"id": "all", "kind": "audio", "select": {}},
+    {"id": "shots", "kind": "audio", "select": {"sound": "shot_*"}},
+    {"id": "there", "kind": "audio", "select": {"near": {"point": {"xyz": [30.0, 0.0, 0.0]}, "radius": 2.0}}},
+    {"id": "placed", "kind": "audio", "select": {"owner": {"name": "Placed"}}},
+    {"id": "muted", "kind": "audio", "select": {"sound_class": "Mute"}}
+  ]
+}

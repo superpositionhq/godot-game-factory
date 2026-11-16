@@ -17,7 +17,8 @@ REFS = ("tasks", "origin/tasks")  # where a game's tasks live (validate-game.py 
 STILL_WORKS = "still_works"  # the milestone of what a task must leave working (godot-write-tasks section 5)
 SAMPLED = ("player", "camera", "objects", "widgets", "components", "screen", "spawns", "audio", "ui", "render",
            "world")
-AUDIO_STARTED = ("started",)  # counted per sample's interval, summed by default (as spawns)
+AUDIO_STARTED = ("started", "started_audible")  # counted per sample's interval, summed by default (as spawns)
+AUDIO_NAMED = ("sounds", "repeats")  # read from the names of the streams that started (probes._heard_names)
 WHOLE_SCREEN = [0.0, 0.0, 1.0, 1.0]
 ANGLES = ("yaw", "pitch", "roll", "world_yaw", "world_pitch")  # world_yaw, world_pitch: components fields
 ANGLE_PREFIXES = ("rel_yaw:", "world_yaw:", "world_pitch:", "world_roll:")

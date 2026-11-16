@@ -495,6 +495,37 @@ class MoreFairReadings(unittest.TestCase):
         self.assertIsNone(probes.reduce(jungle, {"measures": {qid: sampled([None])}}),
                           "a play that measured no audio measures nothing, never 0")
 
+    def test_the_sounds_that_start_are_counted_per_interval_and_by_name(self):
+        hit = m(probe="audio", select={"near": {"point": {"xyz": [1.2, 1.0, 0]}, "radius": 0.8}}, field="started_audible",
+                window=[2, 3])
+        (query,) = probes.needs(hit)
+        self.assertEqual(query["select"], {"near": {"point": {"xyz": [1.2, 1.0, 0.0]}, "radius": 0.8}})
+        qid = probes.query_id(query)
+        values = [{"started": 0, "started_audible": 0}, {"started": 1, "started_audible": 1},
+                  {"started": 2, "started_audible": 1}, {"started": 0, "started_audible": 0}]
+        play = {"measures": {qid: [{"t": 2.0 + i * 0.5, "value": v} for i, v in enumerate(values)]}}
+        self.assertEqual(probes.reduce(hit, play), 2, "summed by default")
+        self.assertEqual(probes.reduce({**hit, "field": "started"}, play), 3)
+        names = m(probe="audio", field="sounds")
+        nid = probes.query_id(probes.needs(names)[0])
+        starts = [{"t": 1.2, "sound": "gun_b", "named": True}, {"t": 1.0, "sound": "gun_a", "named": True},
+                  {"t": 1.4, "sound": "gun_b", "named": True}]
+        heard = {"measures": {nid: sampled([{"starts": [], "starts_total": 0}, {"starts": starts, "starts_total": 3}])}}
+        self.assertEqual(probes.reduce(names, heard), 2)
+        repeats = m(probe="audio", field="repeats")
+        self.assertEqual(probes.reduce(repeats, heard), 1, "in the order they started")
+        self.assertEqual(probes.reduce(m(probe="audio", field="repeats", window=[0, 0.2]), heard), 0, "none started: 0")
+        made = {"measures": {nid: sampled([{"starts": [{"t": 1.0, "sound": "", "named": False}], "starts_total": 1}])}}
+        self.assertEqual(probes.measured(names, made), (None, "a sound that started has a stream made in code (no file, "
+                                                              "no name): no name tells it apart"))
+        many = {"measures": {nid: sampled([{"starts": starts, "starts_total": 70}])}}
+        self.assertIsNone(probes.reduce(names, many), "more started than the probe lists")
+        self.assertIsNone(probes.reduce(names, {"measures": {nid: sampled([None])}}))
+        self.assertEqual(probes.measured(m(probe="audio", field="sounds", window=[30, 40]), {**heard, "seconds": 1.0})[1],
+                         "no samples in the window (the play ended at 1 s)")
+        for field in ("sounds", "repeats", "started_audible"):  # how many started is a fact: a literal value
+            task_with(probe(measure={"probe": "audio", "field": field}, expect={"op": ">=", "value": 1}))
+
     def test_a_task_play_teleports_next_to_an_object(self):
         play = {"name": "ore", "seconds": 12, "inputs": [
             {"t": 1, "teleport_to": {"tag": "Ore"}},

@@ -403,7 +403,8 @@ looks up and a positive yaw turns left.
   - `ui`: what the UI shows on screen, element by element (the text, pictures and boxes that are drawn, their count
     and place; `match` for a text);
   - `screen`: the frame's mean luminance, never a literal threshold;
-  - `audio`: the players that play and how loud the listener hears them, the mix's level, the sounds that start;
+  - `audio`: the players that play and how loud the listener hears them, the mix's level, and the sounds that
+    start, however short (`started`, `started_audible`, and by their streams' names `sounds` and `repeats`);
   - `spawns`: nodes of a class appearing and going;
   - `log`: a line in the play's log;
   - `render`: what the renderer drew, against a budget: draw calls, triangles, texture memory (`draw_calls` and
@@ -513,10 +514,10 @@ no check at all, naming the task and the sentence. Fix what you find in the task
     "Put each generator in the group generators so QA can find it."
   _(failure: tasks were reworked by writing the check's read target into the ticket, which hands the solver the
   answer)_
-- **A sound ask** is checked by a sound starting when the event happens (the `audio` reads near the source, rising in
-  a window right after the event; the stream's file name when the ticket asks for distinct sounds, "each gun has its
-  own sound"). What the sound is, how it sounds, is never checked. Games import every sound (godot-game-session
-  skill), so every sound has a file name.
+- **A sound ask** is checked by a sound starting when the event happens: `audio` `started_audible`, `near` the
+  source when a placed player plays it, in a window right after the event; `sounds` or `repeats` (by the stream's
+  file name) when the ticket asks for distinct sounds, "each gun has its own sound". What the sound is, how it
+  sounds, is never checked. Games import every sound (godot-game-session skill), so every sound has a file name.
 - **An ask that cannot be checked fairly** comes out: rewrite the instruction so it no longer asks for it, rather than
   ship an ask nothing checks. The instruction stays plain prose, never fields.
 

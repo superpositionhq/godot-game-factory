@@ -347,7 +347,8 @@ fix's play.
 **Read it deterministically**, in a probe one sentence explains:
 
 - a thing gone or there (an `objects` `count`, `hidden`), a state or property the start names (`prop:`);
-- a sound that started (`audio` `started` over a window right after the contact, section 2.16);
+- a sound that started (`audio` `started_audible` in a window right after the contact, `near` the place it lands
+  when a placed player plays it, section 2.16);
 - **a hit stop** (0.05 to 0.1 s: no screenshot shows it), by the wording of the ask. "The one struck freezes for
   an instant": `objects` `frozen` of it (section 2.4), `"agg": "max"` over a tight window right after the contact.
   It reads the stop however a build makes it: the object's own script holding it, the tree paused, or the game's
@@ -739,7 +740,9 @@ in the scene.
   own name, else its file's name without the extension: `amb_jungle_01` for `amb_jungle_01.ogg`; a stream made in
   code, or a copy of one, has no name unless the code gives it one), `sound_class` a wildcard on the name of the bus
   the player plays on (`Master`, `Music`, `SFX`: that bus's own name), `owner` an object select: the player is a
-  matching node or under one (as a components `owner`, section 2.5).
+  matching node or under one (as a components `owner`, section 2.5), `near` a point and radius (section 2.13): a
+  placed player (`AudioStreamPlayer2D`, `AudioStreamPlayer3D`) within it, where it plays, or for the fields of the
+  sounds that start where it started; a plain `AudioStreamPlayer` has no place and is near nothing.
 - Each player reads its **volume at the listener**: its own volume (`volume_db`, as a linear gain), times for a
   placed one its fall-off with distance. An `AudioStreamPlayer3D`: by its attenuation model over its unit size at
   its distance from the listener (the current `AudioListener3D`, else the current `Camera3D`), never louder than
@@ -748,17 +751,37 @@ in the scene.
   volume changes `level`, never `volume`).
 - `field`: `count` (how many players), `audible` (how many at 0.001, -60 dB, or louder), `volume` (their volumes'
   sum), `max_volume` (the loudest), `level` (the RMS of the Master bus's mixed output since the previous sample,
-  buses and effects included: everything the player would hear, whatever plays it) and `started` (how many
-  matching players began to play since the previous sample: read it with `"agg": "sum"` over a window, "a sound
-  starts when the door opens"). `count`, `audible`, `volume` and `max_volume` are of the players playing at the
-  sample itself, so a sound shorter than the time between two samples can fall between them: sample oftener (a task
-  play's `every`), or read `level` or `started`, which cover the whole time since the previous sample. A player
-  started again while it still plays doesn't count as started. A sample before which nothing was mixed (a play's
-  first sample can be one) has no `level`, while silence reads 0.
+  buses and effects included: everything the player would hear, whatever plays it). `count`, `audible`, `volume`
+  and `max_volume` are of the players playing at the sample itself, so a sound shorter than the time between two
+  samples can fall between them: read `level`, or the sounds that start (next item), which cover the whole time
+  since the previous sample. A sample before which nothing was mixed (a play's first sample can be one) has no
+  `level`, while silence reads 0.
+- The sounds that **start**, every one however short, watched every frame whatever the samples: a matching player
+  that begins to play (one a script makes for a single shot and frees when it ends too), one started again while it
+  still plays (a stream from a file that doesn't loop), and one that began and ended between two frames.
+  - `started`: how many started in each sample's interval; `started_audible`: how many of them were audible at the
+    listener as they started (its volume at the listener times the gain of its bus and of the buses that one sends
+    to, at 0.001 or louder; none of those buses muted; a placed one within its max distance). Both are summed over
+    the window by default (`"agg": "sum"`).
+  - `sounds`: how many differently named streams started in the window; `repeats`: how often a sound started right
+    after a start of the same stream ("never the same take twice"). They read the names of the streams that
+    started, in the order they started, over the samples the `window` or `at` picks, and take no `agg`. A stream's
+    name is its file's (`sound`, above): a game's sounds are imported files, so each has one. When a stream that
+    started has no name (one made in code), or more than 64 started in one sample's interval, there is no value.
+  - A sound ask reads "a sound starts when the event happens": `started_audible`, `near` the source when it is a
+    placed player, in a window right after the event. What the sound is, how it sounds, is never checked.
+  - Not seen: what starts inside a player that already plays (a voice of an `AudioStreamPolyphonic` started through
+    its playback's `play_stream`, frames pushed into an `AudioStreamGenerator`): the engine tells of neither, so
+    read `level` there. A looping stream started again while it plays, and a player started and stopped again
+    within one frame. A player whose stream is an `AudioStreamRandomizer` starts under the randomizer's own name,
+    whichever take it picks, so `repeats` can't tell its takes apart. A seek backward in a playing sound reads as
+    a start.
+  - Sounds already playing when the play's clock starts are not counted as started.
 - The sample's value also holds `loudest` (the loudest player's stream name), `peak` and `listener` (its node's
   name), for the logs.
 - **A `volume`, `max_volume` or `level` threshold is calibrated or relative to the start, never a literal value**: how
-  loud depends on the sounds a build chose. `count`, `audible` and `started` take a literal. Compare places by their
+  loud depends on the sounds a build chose. `count`, `audible`, `started`, `started_audible`, `sounds` and `repeats`
+  take a literal. Compare places by their
   own plays or windows: teleport into each zone (section 1.1) and read the zone's sound there.
 - No play is heard on the machine: the checker starts every play with the engine's dummy audio driver, which mixes
   the sound as always and plays it nowhere. A play with an `audio` measure is paced to real time (still 30 fps), so
@@ -1024,7 +1047,8 @@ task is void.
 - **The screen includes the UI.** A `screen` rect over the HUD measures the HUD: keep it on the scene.
 - **A sound made in code has no name.** A stream a script builds, or a copy of a stream, has no file behind it, so
   no `sound` select finds it: read `level` (calibrated or relative to the start) in a play that hears it, select
-  its player by `owner`, or count it with `started`.
+  its player by `owner`, or count it with `started` or `started_audible`; `sounds` and `repeats` have no value
+  for it.
 - **A contact is staged, never waited for.** No fixed play is sure to bring a foe within reach: `pin` it ahead of
   the player and press the task's own attack key, or `damage` the one struck at a time the play knows, then read
   the window right after it (section 1.4). Check the fix's `probe.log` and `inputs_missed` for what each stage

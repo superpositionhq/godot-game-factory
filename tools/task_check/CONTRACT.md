@@ -87,7 +87,8 @@ Selects and points:
   `inactive`.
 - Widget select: `component`, `name`, `text` (a regular expression on its text), `visible`.
 - UI select: `kind` (`text`, `box`, `image`), `text`, `rect`.
-- Audio select: `sound` (a wildcard on the stream's name), `sound_class` (a wildcard on the bus's name), `owner`.
+- Audio select: `sound` (a wildcard on the stream's name), `sound_class` (a wildcard on the bus's name), `owner`,
+  `near`.
 - A name a wildcard reads (`name`, `mesh`, `sound`, `sound_class`) may hold parentheses and spaces:
   `^[A-Za-z0-9_.*?() -]{1,120}$`.
 - Points: `{"xyz": [x, y, z]}`, `{"player": true, "offset": [x, y, z]}`, `{"camera": true, "forward": m}`,
@@ -102,7 +103,8 @@ Measures:
   dots and slashes (`anim:conditions/jump`, `anim:Blend2/blend_amount`).
 - `components` fields include `prop:<path>` (on the node itself); the measure takes `match` (a `prop:` string).
 - `spawns`: `{"probe": "spawns", "component": "<class>", "field": "spawned|destroyed"}`.
-- `audio` fields: `count`, `audible`, `volume`, `max_volume`, `level`, `started`.
+- `audio` fields: `count`, `audible`, `volume`, `max_volume`, `level`, `started`, `started_audible`, `sounds`,
+  `repeats`.
 - `render`: `{"probe": "render", "field": "draw_calls|triangles|texture_mb"}`.
 - `world`: `{"probe": "world", "field": "time_scale|flow|paused"}`.
 
@@ -264,10 +266,24 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   when it has a max distance, 0 beyond it), and for a 2D one `(1 - distance / max_distance) ^ attenuation` from the
   middle of the screen. Bus volumes are left out. `level` and `peak` are the RMS and the peak of the Master bus since
   the previous sample, from an `AudioEffectCapture` the probe adds to that bus when a play has an audio query
-  (drained every frame, shared by every audio query); null when no audio was mixed since. `started` counts the
-  matching players that weren't playing in the frame before and are now, since the previous sample (a player started
-  again while it plays isn't seen). The value also holds `loudest` (the loudest player's stream name) and `listener`
-  (its node's name). A play that measures audio is paced to real time (the spec's `sound`); no play is heard, since
+  (drained every frame, shared by every audio query); null when no audio was mixed since. A select's `near` keeps a
+  2D or 3D player whose place is within it (`Find.within`), never an `AudioStreamPlayer`. The value also holds
+  `loudest` (the loudest player's stream name) and `listener` (its node's name).
+  The sounds that start are watched once for every audio query (`_watch`, each pass of every frame, a wait's too):
+  the probe knows every player node (those in the tree at its first look, then each the tree's `node_added` brings)
+  and connects its `finished` signal. A start is noted (`_note`) when a player plays that didn't the pass before;
+  when its stream is an `AudioStreamWAV` without a loop, or an `AudioStreamOggVorbis` or `AudioStreamMP3` whose
+  `loop` is off, and its `get_playback_position()` fell back by more than 0.0001 s (`_restarts`); or when its
+  `finished` comes and no pass saw that sound play (`_ended`; a player that stopped without ending is no longer
+  waited for after `IDLE_PASSES`, 4, silent passes). Players playing at the first look are not noted. A start
+  holds the play time, the stream's name (`Find.resource_name`) and whether it has one, the bus, the place (a 2D or
+  3D player's) and whether it was audible: its volume at the listener times the gain of its bus and of every bus on
+  the way to Master (`_bus_gain`; 0 when one is muted) at `AUDIBLE` or more. Each query takes the starts its select
+  matches, in order (`_follow`: the stream's name, the bus, the owner while the node lives, the place within
+  `near`), and a sample holds those since the previous one: `started`, `started_audible`, `starts` (the first
+  `MAX_STARTS`, 64, as `{"t", "sound", "named"}`) and `starts_total`. `sounds` and `repeats` are the checker's
+  (`probes._heard_names`): over the samples picked, the starts by their time; no value when a sample lists fewer
+  than started or a start has no name. A play that measures audio is paced to real time (the spec's `sound`); no play is heard, since
   the checker starts every play with `--audio-driver Dummy`, under which the engine still mixes.
 - **render** (`queries/render.gd`): `RenderingServer.get_rendering_info` read every frame for the frame drawn before
   it, `RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME` and `RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME`, the highest since
