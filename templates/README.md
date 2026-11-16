@@ -38,7 +38,7 @@ What the skeleton carries, and why:
 | `scenes/Main.tscn`, `icon.svg` | a first scene that runs and shows something: a lit block, a camera, the game's title |
 | `game/scenarios.gd` | the autoload `Scenarios`, the scenario list: scenario n's scene and name, loaded from `-- -scenario <n>` and from AutoPlay's `start_scenario` (docs/autoplay-contract.md, section 6) |
 | `steps/README.md` | where generator scripts go and the rules that keep them replayable |
-| `Scripts/godot.ps1` | `import`, `step`, `row`, `build`, `play`, `autoplay`: the game's engine runs through the machine's job limiter, logs in `Logs/godot-ps1/`; `step` and `row` write `workflow.jsonl` rows; `autoplay` is the AutoPlay hand test (docs/autoplay-contract.md, section 7) |
+| `Scripts/godot.ps1` | `import`, `step`, `row`, `build`, `play`, `autoplay`: the game's engine runs through the machine's job limiter, logs in `Logs/godot-ps1/`; `import` is the engine's import followed by a pass that loads every `.gd` of the project and fails on one that does not parse (the import alone parses only the scripts the editor opens); `step` and `row` write `workflow.jsonl` rows; `autoplay` is the AutoPlay hand test (docs/autoplay-contract.md, section 7) |
 | `ReplayConfig.json` | the creation replay's settings for the game (docs/godot-replay.md) |
 | `.gdignore` in `Brief/`, `Docs/`, `Dataset/`, `Scripts/` | an empty file that keeps the engine out of a folder: nothing there is imported or exported (briefs, README images, the dataset's videos) |
 | `.gitignore` | the engine's cache (`.godot/`), root-anchored output (`/Build/`, `/Logs/`, `/android/`), local results, and secrets and keystores anywhere: everything else is committed, `*.import` and `*.uid` included |

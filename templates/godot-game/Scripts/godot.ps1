@@ -1,10 +1,12 @@
 # __TITLE__: the game's engine runs, through the machine-wide limiter (<root>\tools\godot-heavy.ps1).
-#   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 import                      (import; fails on a script error: "the project compiles")
+#   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 import                      (import, then every script loaded: "the project compiles")
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 step -Script steps/<name>.gd -Reason "..." [-TimeoutSeconds 600]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 row -Op <area.verb> -Target <what> -Reason "..." [-Params '<json>'] [-Direction <id>] [-Status failed]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 build [-Android] [-Reason "..."]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 play [-Scenario <n>] [-Seconds 60] [-Shots <n>] [-Extra "..."] [-Tag <name>]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 autoplay [-Scenario <n>] [-MaxSeconds 120] [-Seed 0] [-Skill 1] [-Audible] [-Extra "..."]
+# `import` runs the engine's import, then loads every .gd of the project once (the import alone parses only the scripts
+# the editor opens): it fails on a script that does not parse or compile, and prints the lines that say which and why.
 # `step` runs one generator script (steps/<name>.gd, a SceneTree script that ends with quit()) headless and appends its
 # workflow.jsonl row: op editor.step, the script's path and the sha256 of its text as it ran, the status from the exit
 # code. A step that has not ended after -TimeoutSeconds is stopped (exit code 124, a failed row): a script that hits an
@@ -149,6 +151,37 @@ if (-not $Godot) { Write-Error 'the Godot editor was not found: run machine/get-
 $GodotConsole = Get-GGFGodot -Console
 $Logs = Join-Path $Proj 'Logs\godot-ps1'
 New-Item -ItemType Directory -Force $Logs | Out-Null
+# the engine never imports what is kept under Logs/ (the frames of `play -Shots`, the scripts written here)
+$ignore = Join-Path $Proj 'Logs\.gdignore'
+if (-not (Test-Path -LiteralPath $ignore)) { [IO.File]::WriteAllText($ignore, '') }
+
+# `import`, second pass: every script of the project loaded once the autoloads exist (a script may name one), in the
+# folders the engine reads (none with a .gdignore, none that starts with a dot). Loading a script runs none of it. The
+# engine logs each one that does not parse; the pass prints SCRIPT_FAILED and the path for one the engine gave nothing
+# for, then SCRIPTS_DONE and how many.
+$ScriptsPass = @'
+extends SceneTree
+
+
+func _initialize() -> void:
+	var bad := 0
+	var todo: Array[String] = ["res://"]
+	while not todo.is_empty():
+		var folder: String = todo.pop_back()
+		var dir := DirAccess.open(folder)
+		if dir == null:
+			continue
+		for sub in dir.get_directories():
+			var path := folder.path_join(sub)
+			if not sub.begins_with(".") and not FileAccess.file_exists(path.path_join(".gdignore")):
+				todo.append(path)
+		for file in dir.get_files():
+			if file.get_extension() == "gd" and ResourceLoader.load(folder.path_join(file)) == null:
+				bad += 1
+				print("SCRIPT_FAILED ", folder.path_join(file))
+	print("SCRIPTS_DONE ", bad)
+	quit(1 if bad else 0)
+'@
 
 function Join-Arguments([string[]]$List) {
   return ($List | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' '
@@ -337,6 +370,28 @@ switch ($Mode) {
     $code = Invoke-Godot 'import' $log @('--import')
     $bad = Show-Errors $log
     if ($code -eq 0 -and $bad -gt 0) { Write-Host "the import ended, but $bad line(s) of its log are script errors: the project does not compile"; $code = 1 }
+    if ($code -ne 0) { Done $code }
+    # every script loaded once, under a step's time limit. Not every SCRIPT ERROR of this log counts: the autoloads
+    # wake in this run with no scene to play, and one may fail at run time for that alone.
+    $pass = Join-Path $Logs 'scripts_pass.gd'
+    [IO.File]::WriteAllText($pass, ($ScriptsPass -replace "`r`n", "`n"), $utf8)
+    $log = Join-Path $Logs 'import_scripts.log'
+    $code = Invoke-Godot 'import scripts' $log @('--script', $pass) $TimeoutSeconds
+    $failed = @()
+    if (Test-Path $log) {
+      $lines = @(Get-Content -LiteralPath $log)
+      for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match 'SCRIPT ERROR: (?:Parse|Compile) Error|Failed to load script|^SCRIPT_FAILED ') {
+          $failed += $lines[$i].Trim()
+          if ($i + 1 -lt $lines.Count -and $lines[$i + 1] -match '^\s+at: ') { $failed += '  ' + $lines[$i + 1].Trim() }
+        }
+      }
+    }
+    $failed | Select-Object -First 60 | ForEach-Object { Write-Host $_ }
+    $done = (Test-Path $log) -and (Select-String -Path $log -Pattern '^SCRIPTS_DONE ' -Quiet)
+    if ($code -eq 124) { Write-Host "stopped after $TimeoutSeconds s: loading the project's scripts did not end (Logs/godot-ps1/import_scripts.log)" }
+    elseif ($failed.Count) { Write-Host 'the project does not compile: the scripts above do not parse'; if ($code -eq 0) { $code = 1 } }
+    elseif (-not $done) { Write-Host 'the pass that loads every script did not finish (Logs/godot-ps1/import_scripts.log)'; if ($code -eq 0) { $code = 1 } }
     Done $code
   }
   'step' {
