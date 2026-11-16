@@ -29,6 +29,10 @@ window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=__ORIENTATION__
 
+[editor]
+
+movie_writer/video_quality=0.9
+
 [input_devices]
 
 pointing/emulate_touch_from_mouse=false

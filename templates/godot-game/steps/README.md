@@ -16,8 +16,11 @@ The creation replay runs these steps again to rebuild the project from its histo
 - commit every step you run, here, together with what it wrote (and every new file's `.import` or `.uid`);
 - reach files through the project (`res://scenes/Harbor.tscn`), never an absolute path to this folder;
 - a step makes the same content from the same inputs every time: seed every random number, no clock, no network;
-- a step ends itself: `quit()` when it is done, `quit(1)` when it failed (after `push_error` with the reason), so
-  the run's exit code and the row's status say so;
+- a step ends itself on every path: `quit()` when it is done, `quit(1)` when it failed (after `push_error` with the
+  reason), so the run's exit code and the row's status say so. A script error does not end a headless run: a step
+  that hits one before its `quit()` (a `FileAccess.open` into a missing folder returns null, and the next call on it
+  fails) runs on until `godot.ps1` stops it after `-TimeoutSeconds` (default 600) with a failed row. Check what a
+  call returns before using it;
 - a step draws nothing: `--headless` has no renderer, and a viewport read back there is empty. Screenshots come from
   `Scripts/godot.ps1 play -Shots <n>`.
 

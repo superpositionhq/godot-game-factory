@@ -1,13 +1,14 @@
 # __TITLE__: the game's engine runs, through the machine-wide limiter (<root>\tools\godot-heavy.ps1).
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 import                      (import; fails on a script error: "the project compiles")
-#   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 step -Script steps/<name>.gd -Reason "..."
+#   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 step -Script steps/<name>.gd -Reason "..." [-TimeoutSeconds 600]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 row -Op <area.verb> -Target <what> -Reason "..." [-Params '<json>'] [-Direction <id>] [-Status failed]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 build [-Android] [-Reason "..."]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 play [-Scenario <n>] [-Seconds 60] [-Shots <n>] [-Extra "..."] [-Tag <name>]
 #   powershell -ExecutionPolicy Bypass -File Scripts/godot.ps1 autoplay [-Scenario <n>] [-MaxSeconds 120] [-Seed 0] [-Skill 1] [-Audible] [-Extra "..."]
 # `step` runs one generator script (steps/<name>.gd, a SceneTree script that ends with quit()) headless and appends its
 # workflow.jsonl row: op editor.step, the script's path and the sha256 of its text as it ran, the status from the exit
-# code. Keep this call shape: the creation replay recognises "godot.ps1 step -Script <path>" in the recorded command.
+# code. A step that has not ended after -TimeoutSeconds is stopped (exit code 124, a failed row): a script that hits an
+# error before its quit() never ends by itself. Keep this call shape: the creation replay recognises "godot.ps1 step -Script <path>" in the recorded command.
 # `row` appends one workflow.jsonl row for work done by hand (a scene written, a script edited, a setting changed), with
 # the id and seq that follow the file's last row. -Params is a JSON object, or the path of a file that holds one. An op
 # user.direction is written as the user's row (params {"direction": "...", "via": "..."}).
@@ -26,6 +27,7 @@
 param(
   [Parameter(Position = 0)][ValidateSet('import', 'step', 'row', 'build', 'play', 'autoplay')][string]$Mode,
   [string]$Script = '',
+  [int]$TimeoutSeconds = 600,
   [string]$Reason = '',
   [string]$Op = '',
   [string]$Target = '',
@@ -138,8 +140,8 @@ if ($Mode -eq 'row') {
 $Root = if ($env:GGF_ROOT) { $env:GGF_ROOT } else { Split-Path (Split-Path $Proj -Parent) -Parent }
 $Heavy = Join-Path $Root 'tools\godot-heavy.ps1'
 if (-not (Test-Path $Heavy)) { Write-Error "job limiter not found: $Heavy (run machine/bootstrap.ps1)"; exit 2 }
-$Lib = @((Join-Path $Root 'tools\ggf-root.ps1'), (Join-Path $Root 'godot-game-factory\machine\lib\ggf-root.ps1')) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $Lib) { Write-Error "ggf-root.ps1 not found in $Root\tools (run machine/bootstrap.ps1)"; exit 2 }
+$Lib = Join-Path $Root 'tools\ggf-root.ps1'
+if (-not (Test-Path $Lib)) { Write-Error "ggf-root.ps1 not found: $Lib (run machine/bootstrap.ps1)"; exit 2 }
 . $Lib
 # the editor exe renders (play); its console wrapper waits for the engine and passes its exit code on (headless runs)
 $Godot = Get-GGFGodot
@@ -154,7 +156,7 @@ function Join-Arguments([string[]]$List) {
 # One job through the limiter; returns its exit code. The limiter runs in a process of its own whose output is read
 # and dropped: the engine writes its progress to the console it inherits, and the job's log is the file. Exit code 125
 # is the limiter's own (it could not run the job): then what it said is printed.
-function Invoke-Heavy([string]$Label, [string[]]$Command, [switch]$Gpu) {
+function Invoke-Heavy([string]$Label, [string[]]$Command, [switch]$Gpu, [int]$Limit = 0) {
   # the call as PowerShell text, every word a quoted literal, passed encoded so no shell reads its quotes or its "--"
   $call = "& '$($Heavy -replace "'", "''")' -Label '$(("__SLUG__ $Label") -replace "'", "''")'$(if ($Gpu) { ' -Gpu' }) -- " +
     (($Command | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ' ') + '; exit $LASTEXITCODE'
@@ -162,6 +164,10 @@ function Invoke-Heavy([string]$Label, [string[]]$Command, [switch]$Gpu) {
   $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
   $p = [Diagnostics.Process]::Start($psi)
   $out = $p.StandardOutput.ReadToEndAsync(); $err = $p.StandardError.ReadToEndAsync()
+  if ($Limit -gt 0 -and -not $p.WaitForExit($Limit * 1000)) {
+    & taskkill /PID $p.Id /T /F *> $null   # the limiter and the engine under it; the slot's mutex frees itself
+    return 124
+  }
   $p.WaitForExit()
   if ($p.ExitCode -eq 125) {
     Write-Host 'the job limiter could not run the job (exit code 125):'
@@ -169,9 +175,9 @@ function Invoke-Heavy([string]$Label, [string[]]$Command, [switch]$Gpu) {
   }
   return $p.ExitCode
 }
-function Invoke-Godot([string]$Label, [string]$Log, [string[]]$More) {
+function Invoke-Godot([string]$Label, [string]$Log, [string[]]$More, [int]$Limit = 0) {
   Remove-Item -LiteralPath $Log -ErrorAction SilentlyContinue   # an engine that never starts must not show an old log
-  return (Invoke-Heavy $Label (@($GodotConsole, '--headless', '--path', $Proj, '--log-file', $Log) + $More))
+  return (Invoke-Heavy $Label (@($GodotConsole, '--headless', '--path', $Proj, '--log-file', $Log) + $More) -Limit $Limit)
 }
 # Prints the log's lines that matter and returns how many of them are script errors (the engine ends with exit code 0
 # after a script that does not parse).
@@ -342,13 +348,18 @@ switch ($Mode) {
     $name = [IO.Path]::GetFileNameWithoutExtension($rel)
     $log = Join-Path $Logs "step_$name.log"
     $start = Get-Date
-    $code = Invoke-Godot "step $name" $log @('--script', "res://$rel")
+    if ($TimeoutSeconds -lt 1) { Write-Error 'pass -TimeoutSeconds 1 or more'; exit 2 }
+    $code = Invoke-Godot "step $name" $log @('--script', "res://$rel") $TimeoutSeconds
     # what the step printed (the engine's first line is its version)
     if (Test-Path $log) { Get-Content -LiteralPath $log | Where-Object { $_.Trim() -and $_ -notmatch '^Godot Engine v' } | Select-Object -Last 40 | ForEach-Object { Write-Host $_.TrimEnd() } }
     $bad = Show-Errors $log -Quiet
     if ($code -eq 0 -and $bad -gt 0) { $code = 1 }   # a script error does not change the engine's exit code
     $p = [ordered]@{ exit_code = $code; seconds = [int]((Get-Date) - $start).TotalSeconds }
     if ($code -ne 0) { $p['error'] = Get-FirstError $log }
+    if ($code -eq 124) {
+      $p['error'] = "stopped after $TimeoutSeconds s: the step did not end (a script that hits an error before its quit() never does). $($p['error'])".Trim()
+      Write-Host "stopped after $TimeoutSeconds s: the step did not end. Every path of a step script must reach quit(); a longer step takes -TimeoutSeconds <n>."
+    }
     [void](Add-Row 'editor.step' $rel $p $Reason $(if ($code -eq 0) { 'observed' } else { 'failed' }) $rel $sha)
     Done $code
   }

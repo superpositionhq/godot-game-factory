@@ -30,7 +30,7 @@ __DESCRIPTION__
 | `project.godot`, `export_presets.cfg` | project settings (name, first scene, renderer, frame size, autoloads, input map) and the export presets |
 | `scenes/` | the game's scenes; `Main.tscn` is the first one |
 | `game/` | gameplay GDScript, with `scenarios.gd`: the scenario list (scenario n's scene and name) |
-| `assets/` | art, sound and fonts, each imported file with its `.import`; a pack made by others in a folder of its own |
+| `assets/` | art, sound and fonts, each imported file with its `.import`; sounds in `assets/audio/`, a pack made by others in `assets/third_party/<pack>/` |
 | `addons/autoplay/` | the AutoPlay drop-in, unchanged: scripted play by an in-game bot for the gameplay recordings |
 | `steps/` | every generator script that was run to build content, kept unchanged |
 | `Scripts/godot.ps1` | the game's engine runs: import, generator steps, workflow rows, player build, plays, AutoPlay runs |
