@@ -97,7 +97,7 @@ A thread qualifies only when all of these hold (the validator enforces the numbe
    reference changes at least 5 game files against the start (a generator step under `steps/` is the creation's
    record and a `.import` or `.uid` follows its file: neither is a game file), with at least 100 code lines added
    plus removed (any code file of the repo: GDScript, shaders (`.gdshader`, `.gdshaderinc`), scripts such as `.ps1`
-   or `.py`, generator steps included; not under `Dataset/`, `Docs/` or a store pack's folder, so store packs' own
+   or `.py`, generator steps included; not under `Dataset/`, `Docs/` or a `third_party/` folder, so store packs' own
    code doesn't count). Status, docs and `workflow.jsonl` commits don't count. Assets and binary files don't count as
    code lines (scenes and resources neither, even though they are text).
 2. **Several systems.** The change spans at least two of: config (`project.godot`), an addon (anything under
