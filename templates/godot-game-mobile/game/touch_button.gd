@@ -1,21 +1,18 @@
 extends Button
 ## The first scene's on-screen button: counts the taps it gets, so a new project shows that touch reaches the game.
-## A touch reaches a Control as a mouse click (project setting emulate_mouse_from_touch), so `pressed` is all a
-## button needs; _gui_input below reads the touch itself, as a control that tracks a finger does.
+## It reads the touches themselves in _gui_input, for any finger: the click a touch is also turned into (project
+## setting emulate_mouse_from_touch) comes from the first finger alone, so a control that relies on `pressed` never
+## sees a second finger that goes down while another is held.
 
 var taps := 0
-var touches := 0
-
-
-func _ready() -> void:
-	pressed.connect(_on_pressed)
-
-
-func _on_pressed() -> void:
-	taps += 1
-	text = "Taps: %d" % taps
+## The fingers that are down on this button, by index.
+var fingers := {}
 
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch and event.pressed:
-		touches += 1
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			fingers[event.index] = true
+		elif fingers.erase(event.index):
+			taps += 1
+			text = "Taps: %d" % taps
