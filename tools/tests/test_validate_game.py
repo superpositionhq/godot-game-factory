@@ -656,6 +656,19 @@ class TaskRules(Base):
                      "seed.game 'other' is not this game"):
             self.assertTrue(any(what in e for e in errs), (what, errs))
 
+    def test_a_weight_0_guard_is_no_outcome(self):
+        ms = task(self.start, self.ref)['milestones']
+        self.assertEqual(self.tasks(milestones=ms), [])
+        ms[2]['checks'][2]['weight'] = 0   # a guard: it gates and pays nothing
+        self.assertEqual(self.tasks(milestones=ms),
+                         [f'tasks:Tasks/{SLUG}-{TASKS[0]}.json: 2 required outcome probe(s) outside still_works, fewer '
+                          'than 3 (a required probe of weight 0 is a guard, not an outcome) (godot-write-tasks section 1: '
+                          'only long threads of multiple edits)'])
+        guard = dict(ms[2]['checks'][2], name='hud_kept_guard')
+        ms[2]['checks'][2]['weight'] = 1
+        ms[2]['checks'].append(guard)      # a guard beside three outcomes
+        self.assertEqual(self.tasks(milestones=ms), [])
+
     def test_probe_rules(self):
         t = task(self.start, self.ref)
         checks = t['milestones'][2]['checks']

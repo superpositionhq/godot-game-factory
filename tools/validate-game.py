@@ -1094,7 +1094,7 @@ def task_warnings(t):
 
 
 # The bar every task meets: only long threads of multiple edits qualify (godot-write-tasks sections 1, 6)
-MIN_OUTCOME_PROBES = 3     # required probes outside still_works: one per issue the thread settled
+MIN_OUTCOME_PROBES = 3     # required probes of weight above 0 outside still_works: one per issue the thread settled
 MIN_THREAD_FILES = 5       # game files the reference changes against the start
 MIN_THREAD_COMMITS = 4     # commits from seed.commit to seed.reference that change the game (a seed on main)
 MIN_THREAD_CODE_LINES = 100   # code lines added plus removed from start to reference
@@ -1109,8 +1109,15 @@ GAME_PATHS = ('scenes', 'game', 'assets', 'addons', 'project.godot', ':(exclude)
               ':(exclude)addons/task_probe', ':(exclude)*.import', ':(exclude)*.uid')
 
 
+def outcome_weight(c):
+    """Whether a check carries weight (1 unless it says): a required probe of weight 0 is a guard, not an outcome."""
+    weight = c.get('weight', 1)
+    return isinstance(weight, (int, float)) and not isinstance(weight, bool) and weight > 0
+
+
 def thread_errors(t, outcomes):
-    """Why task `t` (with `outcomes` required probes outside still_works) is not a long thread, from the task alone."""
+    """Why task `t` (with `outcomes` required probes of weight above 0 outside still_works) is not a long thread, from
+    the task alone."""
     errs = []
     if t.get('difficulty') == 'easy':
         errs.append('difficulty \'easy\': a task is "hard" or "medium" (a game needs at least 4 "hard")')
@@ -1119,7 +1126,8 @@ def thread_errors(t, outcomes):
     if not (isinstance(t.get('seed'), dict) and t['seed'].get('reference')):
         errs.append("no seed.reference: every task ends at the game's own accepted fix of the thread")
     if outcomes < MIN_OUTCOME_PROBES:
-        errs.append(f'{outcomes} required outcome probe(s) outside still_works, fewer than {MIN_OUTCOME_PROBES}')
+        errs.append(f'{outcomes} required outcome probe(s) outside still_works, fewer than {MIN_OUTCOME_PROBES} '
+                    '(a required probe of weight 0 is a guard, not an outcome)')
     return errs + noop_errors(t)
 
 
@@ -1253,7 +1261,7 @@ def check_task(rep, a, label, t, game, has_commit):
         rep.error(a, f'{label}: no required probe check: pass/fail must be deterministic (godot-write-tasks section 5)')
     outcomes = [c for m in t.get('milestones') or [] if isinstance(m, dict) and m.get('name') != 'still_works'
                 for c in m.get('checks') or [] if isinstance(c, dict) and c.get('kind') == 'probe'
-                and c.get('required', True)]
+                and c.get('required', True) and outcome_weight(c)]
     for e in thread_errors(t, len(outcomes)):
         rep.error(a, f'{label}: {e} (godot-write-tasks section 1: only long threads of multiple edits)')
     if judged:

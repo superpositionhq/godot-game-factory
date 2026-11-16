@@ -107,7 +107,8 @@ A thread qualifies only when all of these hold (the validator enforces the numbe
    validator counts them over the game files of item 1 (so a generator step is no system), by path and extension. A
    long thread confined to one function is a short task in disguise.
 3. **Several outcomes.** At least 3 required outcome probes, one per issue the thread settled, so partial work earns
-   partial credit (a compound ticket). A thread that settled only one observable thing is rarely long enough.
+   partial credit (a compound ticket). A required probe of weight 0 is a guard, not an outcome: it gates, and isn't
+   counted. A thread that settled only one observable thing is rarely long enough.
 4. **The first attempt didn't hold, or the cause is far from the symptom.** The thread had a fix that was undone,
    complained about again ("still too low") or broke something else; or the symptom shows in one system and the cause
    sits in another (a HUD symptom from a tuning resource, a camera symptom from collision layers, a fault only in the
@@ -523,8 +524,8 @@ no check at all, naming the task and the sentence. Fix what you find in the task
   It is your own estimate of the thread; our runs of the task decide its difficulty (last item below).
 - `limits`: 400 turns, 480 min, 150 USD, 1800 s tool timeout unless the task needs more; a long thread needs room.
 - `tools/validate-game.py` fails a game with fewer than 5 tasks or fewer than 4 `hard` ones, and a task that is
-  `easy`, has no `seed.reference`, has fewer than 3 required probes
-  outside `still_works`, or whose reference changes fewer than 5 game files, fewer than 100 code lines or fewer than 2
+  `easy`, has no `seed.reference`, has fewer than 3 required probes of weight above 0
+  outside `still_works` (a required probe of weight 0 is a guard, not an outcome), or whose reference changes fewer than 5 game files, fewer than 100 code lines or fewer than 2
   systems against its start; for a seed on main it also fails fewer than 4 game-changing commits from `seed.commit` to
   `seed.reference`, and any required probe that names a class, group, scene or asset the reference has
   and the start doesn't (section 5). These are floors, not targets: pick the longest threads the history has. It also

@@ -149,7 +149,9 @@ A task is **VALID** when all of this holds:
 - with a reference: the reference builds, boots (every `boot` check) and passes every **required** probe;
 - the start fails every required probe outside `still_works` (or doesn't build by design): each is one issue of the
   thread, and one the start already passes rewards no work. A required check of `"weight": 0` is a guard wherever it
-  sits (it rewards nothing), so the start may pass it; that lets a task hold more guards than `still_works`' 32;
+  sits (it rewards nothing), so the start may pass it; that lets a task hold more guards than `still_works`' 32. A
+  required probe of weight 0 is a guard, not an outcome: `tools/validate-game.py` doesn't count it toward a task's
+  3 required outcome probes;
 - every required probe in the `still_works` milestone already passes at the start. What must keep working has to work
   before the change, or the probe is broken and would fail every correct solution. A still-works probe the start has
   no samples for (its play crashed or ended early, which is often the task's own bug) doesn't count against it; one

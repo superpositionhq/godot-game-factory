@@ -276,7 +276,7 @@ start branch `starts/<task name>` and Godot `4.7` projects as committed (`projec
 the branch shares no history with main, and that main tracks nothing under `Tasks/`. At least 4 of a game's tasks are
 `hard`; the others may be `medium` (what a task that names no difficulty is), none easier. It also holds each task to
 the bar of a long thread: tagged `long-thread`, with `seed.reference`, at least 3 required outcome probes outside
-`still_works`, and from start to reference at least 5 game files (`scenes/`, `game/`, `assets/`, `addons/` but the
+`still_works` (a required probe of weight 0 is a guard, not an outcome), and from start to reference at least 5 game files (`scenes/`, `game/`, `assets/`, `addons/` but the
 AutoPlay drop-in and the task probe, and `project.godot`; a step script, an `.import` or a `.uid` is not one), 100
 code lines and 2 systems, and for a seed on main 4 commits that change the game (`tools/validate-game.py` holds the
 numbers).
