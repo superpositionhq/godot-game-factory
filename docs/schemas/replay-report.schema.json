@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "godot-replay.verification/v1",
+  "title": "ReplayScripts/Verification/report.json",
+  "description": "The creation replay's verification: the project rebuilt headless from ReplayScripts/ and compared with the game at its final commit (every tracked file byte-identical, the structure dumps of both projects equal). Written by the replay tool. A complete dataset needs this report; verdict.pass (true or false) is metadata.",
+  "type": "object",
+  "required": [
+    "schema",
+    "game",
+    "final_commit",
+    "time",
+    "files",
+    "structure",
+    "runs",
+    "windows",
+    "verdict"
+  ],
+  "properties": {
+    "schema": {
+      "const": "godot-replay.verification/v1"
+    },
+    "game": {
+      "type": "string",
+      "minLength": 1
+    },
+    "final_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "time": {
+      "type": "string"
+    },
+    "files": {
+      "type": "object",
+      "required": [
+        "identical",
+        "differs",
+        "missing",
+        "extra"
+      ],
+      "properties": {
+        "identical": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "differs": {
+          "type": "array"
+        },
+        "missing": {
+          "type": "array"
+        },
+        "extra": {
+          "type": "array"
+        },
+        "ignored": {
+          "type": "array"
+        }
+      },
+      "description": "byte comparison of every tracked file: the count of identical files, the paths that differ or are missing, the files the commit does not have (extra) and the git-ignored ones among them (ignored)"
+    },
+    "structure": {
+      "type": "object",
+      "required": [
+        "total"
+      ],
+      "description": "comparison of the two structure dumps: total and by_kind (scenes, resources, imported) counts of same / differs / missing / extra, and diffs"
+    },
+    "runs": {
+      "type": "object",
+      "description": "each replayed step run against the original: exit code, step text"
+    },
+    "windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "window",
+          "commit"
+        ],
+        "properties": {
+          "window": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          }
+        }
+      },
+      "description": "one per commit, in order"
+    },
+    "verdict": {
+      "type": "object",
+      "required": [
+        "pass",
+        "criteria"
+      ],
+      "properties": {
+        "pass": {
+          "type": "boolean"
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "text",
+              "pass"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "pass": {
+                "type": "boolean"
+              },
+              "result": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "exclusions": {
+          "type": [
+            "array",
+            "object"
+          ]
+        },
+        "informational": {
+          "type": [
+            "array",
+            "object"
+          ]
+        }
+      }
+    },
+    "deviations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array"
+          }
+        }
+      }
+    }
+  }
+}

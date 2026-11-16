@@ -1,0 +1,9 @@
+{
+  "game": "__SLUG__",
+  "repo": "{root}/games/__SLUG__",
+  "recording": "{root}/.recording/__SLUG__",
+  "final": "HEAD",
+  "work_root": "{root}/godot-replay/__SLUG__",
+  "run_timeout_s": 3600,
+  "content_ext": []
+}
