@@ -1,0 +1,27 @@
+# The engine's cache, build output and local results only, anchored to the repo root where a name could also be a
+# folder of the game. Everything the game is made of is committed, every imported file with its .import and every
+# script with its .uid; binaries go through LFS (.gitattributes).
+.godot/
+/Build/
+/Logs/
+# the Gradle build template the Android export installs (Scripts/godot.ps1 build -Android puts it back)
+/android/
+# compiled translations, regenerated at import
+*.translation
+# the full dataset delivery and its packaging scratch: local only, too big for git
+/Dataset.zip
+/Dataset.pending.zip
+/.dataset/
+# the task checker's results (tools/task-check.py): local only
+/.task-checks/
+# tools/scrub-workflow-rows.py writes this and swaps it in; a scrub killed between the two leaves it behind
+/workflow.jsonl.tmp
+# generated export for review (recreate with git log); the dataset's own git.log is Dataset/git.log, which the packager writes
+/git.log
+__pycache__/
+*.pyc
+.DS_Store
+# secrets and keystores, anywhere: never committed, and the WIP auto-commit stages everything not ignored
+.env
+*.keystore
+*.jks
