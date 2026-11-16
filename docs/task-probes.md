@@ -823,8 +823,8 @@ screenshots the judge would be shown: its `shots` evenly spaced ones of each pla
 the 6 of `look` and the 8 of `drive` for a check without `plays` (the developer's `route` isn't played locally). They
 go under `<task>\judge-shots\<check>\start\` and `reference\`, named `<play>_<nn>.png` in the order taken, with
 `ask.md` (the brief, the question, the rubric, what each picture is) and a blind copy: `blind\A\` and `blind\B\` hold
-the same pictures, and `blind\key.json` says which side each is. A play a probe names is the same play and is played
-once.
+the pictures both sides have, and `blind\key.json` says which side each is. Each side's own picture count and notes
+are in `sides.md`, opened with the key. A play a probe names is the same play and is played once.
 
 Look at them yourself before calling a task with a required judge VALID, blind: score every rubric item for A and for
 B first, then open the key. The start must fail every required rubric item and the reference must pass every one.

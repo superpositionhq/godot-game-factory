@@ -458,7 +458,8 @@ and on the reference and saves the screenshots the cloud's judge would be shown 
 `.task-checks\<task>\judge-shots\<check>\` (`start\`, `reference\`, and a blind copy in `blind\A\` and `blind\B\`
 whose sides are in `blind\key.json`), with `ask.md` holding the brief, the question and the rubric; `progress.txt` says
 `judge <check>: shots saved for start/reference, answer needed`. Before you call a task with a required judge VALID,
-look at the pictures yourself, blind: score every rubric item for A and for B from 0 to 1 first, then open the key.
+look at the pictures yourself, blind: score every rubric item for A and for B from 0 to 1 first, then open the key
+and `sides.md` (each side's own picture count and notes; the blind folders hold only the pictures both sides have).
 The start must fail every required rubric item (below 0.5) and the reference must pass every one; if either doesn't,
 reword the item or fix the plays so the pictures show the state, never by asking less of the solution. Write both
 sides' scores in the task's notes (its `tasks-workflow.jsonl` row).
