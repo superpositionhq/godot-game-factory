@@ -291,9 +291,10 @@ each commit adds or changes, runs the import, and runs again, headless and in or
 recording shows between that commit and the one before, with the step's text as it stood then. What the engine
 generates (`.import` and `.uid` files, a step's outputs) is compared with what you committed. So:
 
-- **Write content as text, with your own file tools** (Write/Edit, apply_patch), and never rewrite a script or a step
-  with `sed -i`, `perl -i` or a Python one-off: the replay rebuilds a step's text at the time it ran from your
-  recorded writes and edits, and a rewrite by another program hides it.
+- **Write content as text, with your own file tools** (Write/Edit, apply_patch): scenes and resources (`.tscn`,
+  `.tres`) as much as scripts, shaders and steps. Never rewrite one with `sed -i`, `perl -i` or a Python one-off: the
+  replay rebuilds each file, and a step's text at the time it ran, from your recorded writes and edits. A scene or
+  resource that no recorded write and no step explains is taken from the commit and listed as a deviation.
 - **Every generator step committed** under `steps/` and run only as
   `Scripts/godot.ps1 step -Script steps/<name>.gd -Reason "..."`. Never run a step from a scratch or temp folder, and
   never start the engine with `--script` yourself.
@@ -306,10 +307,11 @@ generates (`.import` and `.uid` files, a step's outputs) is compared with what y
 - **Commit a step with what it wrote**, as it wrote it, in the first commit after the run (then run
   `Scripts/godot.ps1 import` and commit the new sidecar files). Change a step's output later only by a new step or in
   a later commit of its own.
-- **Never write a `.import` or `.uid` file by hand**: the engine generates them, and the replay generates them again.
-  To change how a file is imported, edit the settings in its `.import` (its `[params]`) with your own file tools,
-  never a shell one-liner, run the import and commit: the replay keeps an edit the recording shows you making.
-- **`ReplayConfig.json` stays as the template made it** unless docs/godot-replay.md tells you to set something.
+- **Never write a `.uid` file by hand, and never create a `.import` yourself**: the engine generates them, and the
+  replay generates them again. To change how a file is imported, edit the settings in its `.import` (its `[params]`)
+  with your own file tools, never a shell one-liner, run `Scripts/godot.ps1 import` and commit the file: the replay
+  keeps an edit the recording shows you making.
+- **`ReplayConfig.json` stays as the template made it**: a session has nothing to set in it.
 - **Never amend or rebase** a commit you made: the replay follows the recorded commits.
 
 ## AutoPlay and recordings
