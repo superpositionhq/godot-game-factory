@@ -56,6 +56,11 @@ def needs(measure):
         return [{"kind": "ui", "select": measure["select"], "fields": list(fields)}]
     if probe == "spawns":
         return [{"kind": "spawns", "component": measure["component"]}]
+    if probe == "pieces":
+        return [{"kind": "pieces", "select": measure["select"]}]
+    if probe == "ground":
+        place = {"xz": measure["xz"]} if measure["xz"] is not None else {"box": measure["box"], "grid": measure["grid"]}
+        return [{"kind": "ground", **place, **({"select": measure["select"]} if measure["select"] is not None else {})}]
     if probe == "drawn":  # the probe draws only what the fields ask for
         place = {"near": measure["near"]} if measure["near"] is not None else {"line": measure["line"]}
         return [{"kind": "drawn", **place, "fields": [field]}]
@@ -458,7 +463,7 @@ def series(measure, probe):
                                              for r in rows], measure["of"])))
         return out
     values = [(s["t"], s.get("value") if isinstance(s.get("value"), dict) else {}) for s in samples]
-    if probe_kind in ("camera", "screen", "audio", "drawn", "render", "world"):
+    if probe_kind in ("camera", "pieces", "screen", "audio", "ground", "drawn", "render", "world"):
         return [(t, number(v.get(field))) for t, v in values]
     if probe_kind == "spawns":  # cumulative counts since the play started -> the count in each sample's interval
         out, before = [], 0.0

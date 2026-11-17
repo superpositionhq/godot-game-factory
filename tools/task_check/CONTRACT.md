@@ -120,7 +120,10 @@ The validator's rules beyond the schema include:
 - the task's `player` select names no `player` and no point on the player (it says which node the player is);
 - a project path (the task's `play_scene`, a task play's `scene`) has no `.` or `..` part and no empty one;
 - an audio measure's `sounds` or `repeats` takes no `agg` (`AUDIO_NAMED`);
-- a drawn measure takes `near` or `line`, one of them, and the fields of that one (`DRAWN_NEAR`, `DRAWN_LINE`);
+- a drawn measure takes `near` or `line`, one of them, and the fields of that one (`DRAWN_NEAR`, `DRAWN_LINE`); a
+  ground measure takes `xz` or `box`, one of them, and the fields of that one (`GROUND_POINT`, `GROUND_BOX`), a box
+  with x0 < x1 and z0 < z1;
+- a task play's mouse `move` ends within the play (`t` + `over` at most its `seconds`);
 - a play that takes a `render` measure takes no reading that can make the probe draw: no `drawn` measure, no objects
   or components measure of `lit` or `glow` and no select with `has.lit`, in its measures or its inputs, and the task's `player`
   select has no `has.lit` when any play takes one (`captures`, `render_errors`);
@@ -132,7 +135,7 @@ The validator's rules beyond the schema include:
 
 Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's `NEVER_LITERAL`):
 objects `spread`, `bounds_change`, `pose_change`, `glow`, `spin`; components `intensity`, `extent_*`, `glow`, `spin`;
-drawn (all but `drawn`); `screen` (all); audio `volume`, `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its
+pieces `triangles`, `visible_triangles`; ground `range`; drawn (all but `drawn`); `screen` (all); audio `volume`, `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its
 own. Objects `spread`, `bounds_change` and `pose_change` and drawn `base_change` are calibrated only, never relative
 to the start (`CALIBRATE_ONLY`): they read 0 at the start in the usual case.
 
@@ -330,10 +333,33 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   Control by `UiScan.reachable` instead: shown and the `modulate` alphas above the floor, inside the frame (a
   Control of no size counts), its own `self_modulate` and clipping not counted, so an invisible hit area a player
   presses is pressed. How text is read: task-probes.md 2.6.
+- **pieces** (`queries/pieces.gd`): over every node in the tree (`Find.all_nodes`, not the probe's own): a
+  `MeshInstance3D` whose mesh has faces (`Mesh.get_faces().size() / 3` triangles, read once a mesh a sample) is one
+  piece at its global position; a `MultiMeshInstance3D` is one piece an instance (`instance_count`) at its global
+  transform times `get_instance_transform(i).origin`, the first `visible_instance_count` (all at -1) drawn; a
+  `GridMap` is one piece a used cell whose item's mesh (`mesh_library.get_item_mesh`) has faces, at
+  `to_global(map_to_local(cell))`. A `GeometryInstance3D` whose `visibility_range_begin` is above 0 is skipped (a
+  farther level of detail). Drawn: `Find.shown`, and a `GeometryInstance3D` with `layers` not 0, `transparency` below
+  1, not shadows-only. `component` is `Find.is_a`, `name` and `mesh` (`Find.resource_name`) wildcards, `owner` the
+  node or a node above it among `Find.objects(owner)`, `near` `Find.within` by each piece's place. The value:
+  `count`, `visible`, `components` and `objects` (the nodes that hold a counted piece), `triangles`,
+  `visible_triangles`; null when `near` doesn't resolve or `component` names no class (said once). With a dummy
+  rendering server (`--headless`) `get_instance_transform` reads the identity, so every instance stands at its
+  multimesh's own place.
+- **ground** (`queries/ground.gd`): the game camera's `World3D` (else the window's) `direct_space_state`; a
+  `PhysicsRayQueryParameters3D` from (x, 2000, z) to (x, -2000, z), `collide_with_areas` false; a hit on the player
+  or a node below it, or with `select` on a node that neither the select's matches nor a node below them is, is
+  added to `exclude` and the ray cast again (`MAX_THROUGH`, 32, at most). `xz`: `height` (the hit's y, null with
+  none) and `hit`; `box` (sorted to x0 < x1, z0 < z1) on a `grid` x `grid` lattice (rounded, 2-32): `min`, `max`,
+  `mean`, `range`, `hits`, `points`. Read at the sample, after the game's scripts of that frame.
 - **ui** (`queries/ui.gd`, `ui_scan.gd`): the elements on screen at the sample, a row for each thing a drawn Control
   draws (`UiScan.kinds`, in this order: `box`, `image`, `text`). Drawn (`UiScan.drawn`): visible as above and of
-  some size. Rows carry `source` (`control`) and `kind`. What a script draws itself (`_draw`, a `draw_string`) is no
-  element: the engine keeps no list of it. `signature`, `number` and `clock` are computed by the checker from the rows
+  some size. Then, when the select takes text, each `Label3D` the game's camera (`probe.view()`, a `Camera3D`) shows:
+  `Find.shown`, `layers` meeting the camera's `cull_mask`, `modulate` alpha above the floor, text not blank, none of
+  its box's 8 corners (`global_transform * get_aabb()`) `is_position_behind` the camera, the rectangle around their
+  `unproject_position` meeting the frame; that rectangle in fractions of the frame is its `x`, `y`, `w`, `h`, `source`
+  `label3d`, `kind` `text`. What stands in front of it isn't looked at. Rows carry `source` (`control`, `label3d`)
+  and `kind`. What a script draws itself (`_draw`, a `draw_string`) is no element: the engine keeps no list of it. `signature`, `number` and `clock` are computed by the checker from the rows
   (`probes.ui_signature`, `ui_number`, `ui_clock`).
 - **screen** (`queries/screen.gd`): the frame as displayed, read back once it is drawn (`RenderingServer`'s
   `frame_post_draw`, the root viewport's texture), every UI on it included, over `rect`: whole pixels, rounded out.
@@ -548,6 +574,12 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
   holds whatever stretches the frame to the window (`UiScan.to_window`).
+- move: `{"t", "move": [dx, dy], "over": s}`: without `over` (or 0) one `InputEventMouseMotion` whose `relative` is
+  [dx, dy] in the frame's pixels, through the root window's `get_final_transform()` (`basis_xform`) so the game's
+  viewport gives it back in the frame's pixels; with `over`, in every frame from `t` the part due by then
+  (`(elapsed - t) / over` of it, less what was sent), until all of it was. The event's position is the cursor's,
+  which doesn't move. Played headless at 960x540, a move of [300, 0] over 1 s reads 300 summed in the game's `_input`
+  over 30 events, 150 half way.
 - tap, drag: `{"t": 2.0, "tap": [0.5, 0.25], "finger": 1, "hold": 0.5}`, `{"t": 3.0, "drag": [{"widget":
   "MoveStick"}, [0.2, 0.6]], "finger": 0, "over": 0.3, "hold": 2.0}` (the checker writes `finger`, 0 when unset;
   `hold` and `over` only when set; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
@@ -812,6 +844,8 @@ stops its processing.
 | `queries/screen.gd` | `screen` |
 | `queries/spawns.gd` | `spawns` |
 | `queries/audio.gd` | `audio` |
+| `queries/pieces.gd` | `pieces` |
+| `queries/ground.gd` | `ground` |
 | `queries/drawn.gd` | `drawn` |
 | `queries/render.gd` | `render` |
 | `queries/world.gd` | `world` |

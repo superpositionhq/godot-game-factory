@@ -488,6 +488,21 @@ class MoreFairReadings(unittest.TestCase):
         on_screen = m(probe="widgets", select={"name": "Warn*", "visible": True}, field="visible", of="first")
         self.assertEqual(probes.needs(on_screen)[0]["select"], {"name": "Warn*"}, "the select says: on screen")
 
+    def test_pieces_and_ground_ask_for_their_select_and_place(self):
+        """A pieces measure's query is its select; a ground measure's its point or its box with the grid (8 by
+        default) and a select only when it has one; both read one value a sample. A mouse move keeps its `over` only
+        when it has one."""
+        trees = m(probe="pieces", select={"component": "MultiMeshInstance3D"}, field="visible")
+        self.assertEqual(probes.needs(trees), [{"kind": "pieces", "select": {"component": "MultiMeshInstance3D"}}])
+        relief = m(probe="ground", box=[0, 0, 10, 10], field="range")
+        self.assertEqual(probes.needs(relief), [{"kind": "ground", "box": [0.0, 0.0, 10.0, 10.0], "grid": 8}])
+        spot = m(probe="ground", xz=[1, 2], select={"name": "Terrain"}, field="height")
+        self.assertEqual(probes.needs(spot), [{"kind": "ground", "xz": [1.0, 2.0], "select": {"name": "Terrain"}}])
+        found = {"measures": {probes.query_id(probes.needs(relief)[0]): sampled([{"range": 2.0, "hits": 64}, {"range": None}])}}
+        self.assertEqual(probes.measured(m(probe="ground", box=[0, 0, 10, 10], field="range", agg="max"), found)[0], 2.0)
+        self.assertEqual(tasks.inputs([{"t": 1, "move": [300, 0], "over": 1}, {"t": 2, "move": [0, -5]}]),
+                         [{"t": 1.0, "move": [300.0, 0.0], "over": 1.0}, {"t": 2.0, "move": [0.0, -5.0]}])
+
     def test_drawn_asks_the_probe_for_its_place_and_reads_its_value(self):
         """A drawn measure's query holds its place (near a point, or a line) and its field; the value is one number a
         sample, and a sample the probe couldn't draw says why in the measure's own query line."""

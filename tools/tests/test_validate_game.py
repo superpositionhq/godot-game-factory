@@ -581,6 +581,26 @@ class TaskRules(Base):
             self.assertTrue(any('never a literal' in e for e in vg.probe_errors(c, {}, 'r', {})), field)
 
 
+    def test_pieces_triangles_and_ground_range_are_never_literal(self):
+        """How many triangles a fair build's pieces hold and how much its ground rises and falls depend on what it chose;
+        counts of pieces and heights take a literal. A mouse move spread over seconds is a task play's input."""
+        schema = vg.SCHEMAS['game-task']
+        for m, literal in (({'probe': 'pieces', 'select': {'component': 'MultiMeshInstance3D'}, 'field': 'triangles'}, False),
+                           ({'probe': 'pieces', 'select': {}, 'field': 'visible_triangles'}, False),
+                           ({'probe': 'ground', 'box': [0, 0, 10, 10], 'grid': 12, 'field': 'range'}, False),
+                           ({'probe': 'pieces', 'select': {'mesh': 'Rock*', 'owner': {'tag': 'yard'}}, 'field': 'count'}, True),
+                           ({'probe': 'ground', 'xz': [1, 2], 'select': {'name': 'Terrain'}, 'field': 'height'}, True)):
+            c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'measure': m,
+                 'expect': {'op': '>', 'value': 1}}
+            self.assertEqual(list(vg.check_schema(c, schema['$defs']['Probe'], schema)), [], m)
+            self.assertEqual(not any('never a literal' in e for e in vg.probe_errors(c, {}, 'r', {})), literal, m)
+        play = {'name': 'look_about', 'seconds': 5, 'inputs': [{'t': 1, 'move': [300, -40], 'over': 2},
+                                                               {'t': 4, 'move': [-10, 0]}]}
+        c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': play, 'measure': {'probe': 'player', 'field': 'y'},
+             'expect': {'op': '>', 'value': 1}}
+        self.assertEqual(list(vg.check_schema(c, schema['$defs']['Probe'], schema)), [])
+        self.assertEqual(vg.probe_errors(c, {}, 'r', {}), [])
+
     def test_drawn_takes_a_place_and_only_drawn_is_literal(self):
         """A drawn measure: near a point or along a line, valid by the schema; every field but `drawn` depends on what a
         build drew, so it is calibrated or relative to the start."""
@@ -858,6 +878,13 @@ class Units(unittest.TestCase):
         key, wait = {'t': 5, 'key': '<Keyboard>/w', 'press': True}, {'t': 1, 'wait': 200}
         line = {'from': {'xyz': [0, 0, 0]}, 'to': {'xyz': [0, 0, 5]}, 'radius': 0.5}
         for check, said in (
+                (probe({'probe': 'ground', 'field': 'hits', 'xz': [0, 0]}), 'check p: a ground measure at a point reads'),
+                (probe({'probe': 'ground', 'field': 'hit', 'box': [0, 0, 1, 1]}), 'check p: a ground measure over a box'),
+                (probe({'probe': 'ground', 'field': 'hits', 'box': [10, 0, 0, 10]}),
+                 'check p: a ground box is [x0, z0, x1, z1] with x0 < x1 and z0 < z1'),
+                (probe({'probe': 'ground', 'field': 'height'}), 'check p: a ground measure takes a point `xz` or a `box`'),
+                (probe(x, {'name': 'look_about', 'seconds': 5, 'inputs': [{'t': 4, 'move': [100, 0], 'over': 2}]}),
+                 'check p: play look_about has a mouse move that ends after the play (5 s)'),
                 (probe({'probe': 'drawn', 'field': 'drawn'}), 'check p: a drawn measure takes `near` (a point) or a `line`'),
                 (probe({'probe': 'drawn', 'field': 'reach', 'near': near}), 'check p: a drawn measure near a point reads'),
                 (probe({'probe': 'drawn', 'field': 'drawn', 'line': line, 'near': near}), 'one of them'),
@@ -1311,8 +1338,8 @@ def probe_check(measure, play='look', expect=None):
 
 class Schema(unittest.TestCase):
     S = vg.SCHEMAS['game-task']
-    KINDS = ('player', 'camera', 'objects', 'components', 'widgets', 'ui', 'screen', 'spawns', 'log', 'audio',
-             'drawn', 'render', 'world')   # the probe kinds
+    KINDS = ('player', 'camera', 'objects', 'components', 'pieces', 'widgets', 'ui', 'screen', 'spawns', 'log', 'audio',
+             'ground', 'drawn', 'render', 'world')   # the probe kinds
     MEASURE = {kind: ref.split('/')[-1]
                for kind, ref in S['$defs']['Probe']['properties']['measure']['discriminator']['mapping'].items()}
     SHAPE = {kind: ref.split('/')[-1]   # the check kinds' definitions
@@ -1337,14 +1364,15 @@ class Schema(unittest.TestCase):
         self.assertEqual(sorted(self.SHAPE), sorted(self.CHECKS))
         extra = {'objects': {'select': {'component': 'Enemy'}}, 'components': {'select': {'component': 'Light3D'}},
                  'widgets': {'select': {'component': 'Slider'}}, 'spawns': {'component': 'Projectile'},
-                 'log': {'pattern': 'Error'}, 'drawn': {'near': {'point': {'xyz': [0, 0, 0]}, 'radius': 1}}}
+                 'log': {'pattern': 'Error'}, 'drawn': {'near': {'point': {'xyz': [0, 0, 0]}, 'radius': 1}},
+                 'ground': {'xz': [0, 0]}, 'pieces': {'select': {'mesh': 'Rock*'}}}
         fields = {'player': 'y', 'camera': 'yaw', 'objects': 'count', 'components': 'count', 'widgets': 'count',
                   'ui': 'count', 'screen': 'luminance', 'spawns': 'spawned', 'log': 'count', 'audio': 'count',
-                  'drawn': 'drawn', 'render': 'draw_calls', 'world': 'time_scale'}
+                  'drawn': 'drawn', 'render': 'draw_calls', 'world': 'time_scale', 'ground': 'height', 'pieces': 'count'}
         for probe in self.KINDS:
             measure = dict({'probe': probe, 'field': fields[probe]}, **extra.get(probe, {}))
             self.assertEqual(self.ok(probe_check(measure, 'look', {'op': '>=', 'value': 1}), 'Probe'), [], probe)
-        for refused in ('pieces', 'light', 'grading', 'ground', 'asset', 'trace', 'actors'):
+        for refused in ('light', 'grading', 'asset', 'trace', 'actors'):
             self.assertNotEqual(self.ok(probe_check({'probe': refused, 'field': 'count'}), 'Probe'), [], refused)
         for play in ('editor', 'trace'):
             self.assertNotEqual(self.ok(probe_check({'probe': 'player', 'field': 'y'}, play), 'Probe'), [], play)

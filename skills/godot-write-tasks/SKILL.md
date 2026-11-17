@@ -374,7 +374,7 @@ looks up and a positive yaw turns left.
   touch), or a task play `{"name": ..., "seconds": ..., "inputs": [...]}` when the outcome needs other input or
   another start. A task play's inputs, each at its time `t`: a key or button
   (`{"t": 1.0, "key": "<Keyboard>/f2", "press": true}`, later `"press": false`; `<Mouse>/leftButton`,
-  `<Gamepad>/buttonSouth`; on a mobile game `<Keyboard>/escape` is the phone's back button), mouse movement, the wheel, the cursor, a click
+  `<Gamepad>/buttonSouth`; on a mobile game `<Keyboard>/escape` is the phone's back button), mouse movement (a `move` spread over seconds for a look around), the wheel, the cursor, a click
   on a control by its node name, a touch (`tap`, `drag`: below, and docs/task-probes.md section 1.3), a teleport of the player (to a point, or
   `teleport_to` the node a select matches), a wait in real time, a named screenshot (`shot`), a scene load, a view
   turn, and the stages of a contact (`pin`, `damage`, `set`: "A contact ask is staged" below, and
@@ -426,6 +426,11 @@ looks up and a positive yaw turns left.
   - `audio`: the players that play and how loud the listener hears them, the mix's level, and the sounds that
     start, however short (`started_audible`, and by their streams' names `sounds` and `repeats`);
   - `spawns`: nodes of a class appearing and going;
+  - `pieces`: how many mesh pieces are placed, however the scene holds them (a mesh instance, each instance of a
+    multimesh, each grid map cell), drawn or not, and their triangles (never a literal threshold): "the forest is
+    dense" reads the same whether a build placed 300 trees or one multimesh of 300;
+  - `ground`: the ground's height at a point, or its relief over a box (`range`, never a literal threshold), traced
+    down through what isn't ground;
   - `drawn`: what is drawn in a place of the 3D world or along a line, whatever draws it (a mesh, particles, a
     material that pans): whether anything is (`drawn`, a literal), how much of it moves (`motion`), its base colour
     (`base_r|g|b`, `base_change`), how far a beam reaches and how much of a line it covers (`reach`, `length`); every

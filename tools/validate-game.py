@@ -802,7 +802,10 @@ def denied_play_args(args):
 NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'glow', 'spin'),
                  'objects': ('spread', 'bounds_change', 'pose_change', 'glow', 'spin'),
                  'audio': ('volume', 'max_volume', 'level'),
-                 'drawn': ('motion', 'base_r', 'base_g', 'base_b', 'base_change', 'reach', 'length')}
+                 'drawn': ('motion', 'base_r', 'base_g', 'base_b', 'base_change', 'reach', 'length'),
+                 'pieces': ('triangles', 'visible_triangles'), 'ground': ('range',)}
+GROUND_POINT = ('height', 'hit')        # a ground measure at a point `xz`
+GROUND_BOX = ('min', 'max', 'mean', 'range', 'hits')   # a ground measure over a box
 DRAWN_NEAR = ('drawn', 'motion', 'base_r', 'base_g', 'base_b', 'base_change')  # a drawn measure near a point
 DRAWN_LINE = ('drawn', 'reach', 'length')    # a drawn measure along a line
 # fields that read 0 at the start in the usual case (an object whole and at rest), so a threshold relative to the start
@@ -889,6 +892,10 @@ def task_play_errors(n, play, plays):
     if isinstance(secs, (int, float)) and any(isinstance(i, dict) and isinstance(i.get('t'), (int, float))
                                               and i['t'] >= secs for i in play.get('inputs') or []):
         errs.append(f'check {n}: play {pname} has an input at or after its end ({secs} s)')
+    if isinstance(secs, (int, float)) and any(
+            isinstance(i, dict) and 'move' in i and isinstance(i.get('t'), (int, float))
+            and isinstance(i.get('over'), (int, float)) and i['t'] + i['over'] > secs for i in play.get('inputs') or []):
+        errs.append(f'check {n}: play {pname} has a mouse move that ends after the play ({secs} s)')
     for name in denied_play_args(play.get('args') if isinstance(play.get('args'), list) else []):
         errs.append(f"check {n}: a task play can't set -{name}")
     errs += [f'check {n}: play {pname}: {e}' for e in dotted(play.get('scene'))]
@@ -996,6 +1003,16 @@ def probe_errors(c, seed, ref, plays):
     rect = measure.get('rect')
     if probe == 'screen' and isinstance(rect, list) and len(rect) == 4 and not (rect[0] < rect[2] and rect[1] < rect[3]):
         errs.append(f'check {n}: a screen rect is [x0, y0, x1, y1] with x0 < x1 and y0 < y1')
+    if probe == 'ground':
+        xz, box = measure.get('xz'), measure.get('box')
+        if (xz is None) == (box is None):
+            errs.append(f'check {n}: a ground measure takes a point `xz` or a `box`, one of them')
+        elif xz is not None and field not in GROUND_POINT:
+            errs.append(f"check {n}: a ground measure at a point reads {', '.join(GROUND_POINT)}")
+        elif box is not None and field not in GROUND_BOX:
+            errs.append(f"check {n}: a ground measure over a box reads {', '.join(GROUND_BOX)}")
+        elif box is not None and isinstance(box, list) and len(box) == 4 and not (box[0] < box[2] and box[1] < box[3]):
+            errs.append(f'check {n}: a ground box is [x0, z0, x1, z1] with x0 < x1 and z0 < z1')
     if probe == 'drawn':
         near, line = measure.get('near'), measure.get('line')
         if (near is None) == (line is None):

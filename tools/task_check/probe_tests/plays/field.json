@@ -1,0 +1,26 @@
+{
+  "seconds": 4,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/Field.tscn",
+  "inputs": [
+    {"t": 1.0, "move": [300.0, 0.0], "over": 1.0},
+    {"t": 2.5, "move": [0.0, -50.0]}
+  ],
+  "queries": [
+    {"id": "origin", "kind": "ground", "xz": [0, 0]},
+    {"id": "hill", "kind": "ground", "xz": [3, 3]},
+    {"id": "roof", "kind": "ground", "xz": [-3, -3]},
+    {"id": "under_roof", "kind": "ground", "xz": [-3, -3], "select": {"name": "Floor"}},
+    {"id": "nowhere", "kind": "ground", "xz": [50, 50]},
+    {"id": "rise", "kind": "ground", "box": [0, 0, 4, 4], "grid": 5},
+    {"id": "pieces", "kind": "pieces", "select": {}},
+    {"id": "rocks", "kind": "pieces", "select": {"mesh": "rock"}},
+    {"id": "trees", "kind": "pieces", "select": {"component": "MultiMeshInstance3D"}},
+    {"id": "near_trees", "kind": "pieces", "select": {"near": {"point": {"xyz": [0, 0, -6]}, "radius": 2.5}}},
+    {"id": "owned", "kind": "pieces", "select": {"owner": {"name": "Tiles"}}},
+    {"id": "nothing", "kind": "pieces", "select": {"component": "NoSuchThing"}},
+    {"id": "signs", "kind": "ui", "select": {"kind": "text"}, "fields": ["text", "x", "y"]},
+    {"id": "looker", "kind": "objects", "select": {"name": "Field"}, "fields": ["prop:events", "prop:total_x", "prop:total_y"]}
+  ]
+}

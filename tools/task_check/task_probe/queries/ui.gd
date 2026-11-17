@@ -61,4 +61,59 @@ func sample(_t: float, sample: Dictionary) -> void:
 					else:
 						row[f] = r[["x", "y", "w", "h"].find(f)]
 				rows.append(row)
+		if _kind == "" or _kind == "text":
+			_labels_3d(rows)
 	write_rows(rows, sample)
+
+
+func _labels_3d(rows: Array) -> void:
+	## the Label3Ds the game's camera shows: each a text row (source label3d), its rectangle the box around its own box
+	## as the camera projects it; one behind the camera, outside the frame, hidden, faded out or blank isn't read
+	var cam: Node = probe.view()
+	if not (cam is Camera3D):
+		return
+	var camera := cam as Camera3D
+	var frame := UiScan.frame_size()
+	if frame.x <= 0.0 or frame.y <= 0.0:
+		return
+	for n in Find.of_class("Label3D", false):
+		var label := n as Label3D
+		if Find.is_own(label) or not Find.shown(label) or label.layers & camera.cull_mask == 0:
+			continue
+		if label.modulate.a <= Find.ALPHA_FLOOR or label.text.strip_edges() == "":
+			continue
+		var box := label.global_transform * label.get_aabb()
+		var have := false
+		var lo := Vector2.ZERO
+		var hi := Vector2.ZERO
+		var behind := false
+		for i in 8:
+			var corner := box.get_endpoint(i)
+			if camera.is_position_behind(corner):
+				behind = true
+				break
+			var at := camera.unproject_position(corner)
+			lo = at if not have else lo.min(at)
+			hi = at if not have else hi.max(at)
+			have = true
+		if behind or not have or not Rect2(Vector2.ZERO, frame).intersects(Rect2(lo, hi - lo)):
+			continue
+		var r := [lo.x / frame.x, lo.y / frame.y, (hi.x - lo.x) / frame.x, (hi.y - lo.y) / frame.y]
+		if _rect.size() == 4:
+			var cx: float = r[0] + r[2] / 2.0
+			var cy: float = r[1] + r[3] / 2.0
+			if cx < minf(_rect[0], _rect[2]) or cx > maxf(_rect[0], _rect[2]) or cy < minf(_rect[1], _rect[3]) \
+					or cy > maxf(_rect[1], _rect[3]):
+				continue
+		var shown := label.text
+		if _text != null and _text.search(shown) == null:
+			continue
+		var row := {"name": String(label.name), "class": Find.class_of(label), "source": "label3d", "kind": "text"}
+		for f in fields:
+			if f == "count":
+				row[f] = 1.0
+			elif f == "text":
+				row[f] = shown
+			else:
+				row[f] = r[["x", "y", "w", "h"].find(f)]
+		rows.append(row)

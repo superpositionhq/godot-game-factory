@@ -1266,6 +1266,186 @@
       "title": "FileExists",
       "type": "object"
     },
+    "GroundMeasure": {
+      "additionalProperties": false,
+      "description": "The ground (docs/task-probes.md, section 2.17): where a ray straight down meets a physics body's shape first\n(areas and the player's aside; with `select`, only shapes of objects it matches or of the nodes below them\ncount), at a point `xz` [x, z] (`height`, y in m; `hit`, 1 when it met anything) or over a box `box` [x0, z0, x1,\nz1] sampled on a `grid` x `grid` lattice (`min`, `max`, `mean` of the heights, `range` = max - min, the relief;\n`hits`). `range`'s threshold is calibrated or relative to the start, never a literal (tools/validate-game.py).",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Box"
+        },
+        "field": {
+          "enum": [
+            "height",
+            "hit",
+            "min",
+            "max",
+            "mean",
+            "range",
+            "hits"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "grid": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 2,
+          "title": "Grid",
+          "type": "integer"
+        },
+        "probe": {
+          "const": "ground",
+          "title": "Probe",
+          "type": "string"
+        },
+        "select": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Select"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        },
+        "xz": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Xz"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "GroundMeasure",
+      "type": "object"
+    },
     "Has": {
       "additionalProperties": false,
       "description": "A part the object carries (docs/task-probes.md, section 2.4): it matches when the node itself or a node\nbelow it matches every key given: `component` (its class, as a select names one), `lit` (it gives off light, as the components `lit`\nfield reads it), `visible` (a node that\ndraws and is shown), `near` (the part's own place within `radius` m of a point), `simulating` (a\nRigidBody3D or RigidBody2D that isn't frozen, or a collision shape of one): an object a player can shove\n(docs/task-probes.md, section 2.4).",
@@ -1691,6 +1871,49 @@
       "title": "Milestone",
       "type": "object"
     },
+    "Move": {
+      "additionalProperties": false,
+      "description": "The mouse moved by `move` [dx, dy] pixels (right, down), spread evenly over `over` seconds (at once without it):\none mouse motion a frame, each the part due by then, as a mouse look reads it (`relative`); the cursor stays\nwhere it is. To put the cursor on a point, use a cursor input.",
+      "properties": {
+        "move": {
+          "items": {
+            "maximum": 5000,
+            "minimum": -5000,
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Move",
+          "type": "array"
+        },
+        "over": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 120,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Over"
+        },
+        "t": {
+          "maximum": 120,
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        }
+      },
+      "required": [
+        "t",
+        "move"
+      ],
+      "title": "Move",
+      "type": "object"
+    },
     "Near": {
       "additionalProperties": false,
       "description": "Within `radius` m of `point`; `y_min`/`y_max` (m) also keep it within a height band: world y, or offsets from\nthe point's y with `y_relative` (docs/task-probes.md, section 2.13).",
@@ -1976,6 +2199,205 @@
       "title": "Package",
       "type": "object"
     },
+    "PieceSelect": {
+      "additionalProperties": false,
+      "description": "Placed mesh pieces (docs/task-probes.md, section 2.14): of nodes of a class (MeshInstance3D,\nMultiMeshInstance3D, GridMap, GeometryInstance3D, a game's own script; default every one), optionally by the\nnode's name, their mesh's name (`mesh`, a wildcard), an owner object the `owner` select matches, and near a\npoint (each piece by its own place).",
+      "properties": {
+        "component": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component"
+        },
+        "mesh": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mesh"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "near": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Near"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Select"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "PieceSelect",
+      "type": "object"
+    },
+    "PiecesMeasure": {
+      "additionalProperties": false,
+      "description": "Placed mesh pieces, whatever their form (docs/task-probes.md, section 2.14): a MeshInstance3D whose mesh has\ntriangles is one, each instance of a MultiMeshInstance3D one, each GridMap cell whose item has a mesh one, a\nfarther level of detail none; counted over all of them, never cut at the rows cap. `triangles`/\n`visible_triangles`: the triangles those pieces (those drawn) hold; they depend on the meshes a build chose, so\ntheir threshold is calibrated or relative to the start, never a literal (tools/validate-game.py).",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "count",
+            "visible",
+            "components",
+            "objects",
+            "triangles",
+            "visible_triangles"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "probe": {
+          "const": "pieces",
+          "title": "Probe",
+          "type": "string"
+        },
+        "select": {
+          "$ref": "#/$defs/PieceSelect"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "PiecesMeasure",
+      "type": "object"
+    },
     "Pin": {
       "additionalProperties": false,
       "description": "The object `pin` selects nearest to the player (never the player itself) held at its place for `hold` seconds\nof play, put back before and after every frame's game logic with its velocity stilled while its own scripts run\non (it still turns, swings, blocks); with `front`, first set that many m ahead of the player along the way the\nplayer faces (plus `offset`, m), at its own height, turned to face the player: a target or an opponent where\nthe player's blow or shot lands, whatever place a build gave it; with `at`, first set at that point (plus\n`offset`), facing the player. A pin no object matches, or whose point doesn't resolve, is a miss the play\nreports (docs/task-probes.md, section 1.4).",
@@ -2234,8 +2656,10 @@
               "camera": "#/$defs/CameraMeasure",
               "components": "#/$defs/ComponentsMeasure",
               "drawn": "#/$defs/DrawnMeasure",
+              "ground": "#/$defs/GroundMeasure",
               "log": "#/$defs/LogMeasure",
               "objects": "#/$defs/ObjectsMeasure",
+              "pieces": "#/$defs/PiecesMeasure",
               "player": "#/$defs/PlayerMeasure",
               "render": "#/$defs/RenderMeasure",
               "screen": "#/$defs/ScreenMeasure",
@@ -2285,6 +2709,12 @@
             },
             {
               "$ref": "#/$defs/DrawnMeasure"
+            },
+            {
+              "$ref": "#/$defs/PiecesMeasure"
+            },
+            {
+              "$ref": "#/$defs/GroundMeasure"
             }
           ],
           "title": "Measure"
@@ -3235,6 +3665,9 @@
               },
               {
                 "$ref": "#/$defs/SetProp"
+              },
+              {
+                "$ref": "#/$defs/Move"
               }
             ]
           },

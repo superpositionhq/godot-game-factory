@@ -15,8 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(HERE)
 REFS = ("tasks", "origin/tasks")  # where a game's tasks live (validate-game.py TASKS_REFS)
 STILL_WORKS = "still_works"  # the milestone of what a task must leave working (godot-write-tasks section 5)
-SAMPLED = ("player", "camera", "objects", "widgets", "components", "screen", "spawns", "audio", "ui", "drawn",
-           "render", "world")
+SAMPLED = ("player", "camera", "objects", "widgets", "components", "pieces", "screen", "spawns", "audio", "ground",
+           "ui", "drawn", "render", "world")
 AUDIO_STARTED = ("started", "started_audible")  # counted per sample's interval, summed by default (as spawns)
 AUDIO_NAMED = ("sounds", "repeats")  # read from the names of the streams that started (probes._heard_names)
 WHOLE_SCREEN = [0.0, 0.0, 1.0, 1.0]
@@ -139,8 +139,9 @@ def measure(m):
     """A probe's measure with every optional field: window, at, agg, to_angle, to_axis (None when unset), `of`
     ("count") for selections, `field` ("count") for the log, a player measure's `to` with its defaults, a screen
     measure's `rect` (the whole frame when unset), an audio measure's `select` ({} when unset), a ui measure's
-    `select` ({} when unset), `of` ("count") and `match` (None), and a drawn measure's `near` and `line` (None when
-    unset)."""
+    `select` ({} when unset), `of` ("count") and `match` (None), a pieces measure's `select` ({} when unset), a ground
+    measure's `xz`, `box`, `select` (None when unset) and `grid` (8), and a drawn measure's `near` and `line` (None
+    when unset)."""
     out = dict(m)
     kind = out["probe"]
     if kind in SAMPLED:
@@ -160,6 +161,13 @@ def measure(m):
             out.setdefault("of", "count")
             out.setdefault("match", None)
             out["select"] = select(out.get("select") or {})
+        if kind == "pieces":
+            out["select"] = select(out.get("select") or {})
+        if kind == "ground":
+            out["xz"] = _floats(out["xz"]) if out.get("xz") is not None else None
+            out["box"] = _floats(out["box"]) if out.get("box") is not None else None
+            out["grid"] = int(out.get("grid", 8))
+            out["select"] = select(out["select"]) if out.get("select") is not None else None
         if kind == "drawn":
             out["near"] = near(out["near"]) if out.get("near") is not None else None
             out["line"] = line(out["line"]) if out.get("line") is not None else None
@@ -221,6 +229,10 @@ def inputs(rows):
             row.update(set=r["set"], on=select(r["on"]), value=r["value"], all=bool(r.get("all", False)))
         elif "cursor" in r:
             row.update(cursor=_floats(r["cursor"]))
+        elif "move" in r:
+            row.update(move=_floats(r["move"]))
+            if r.get("over") is not None:
+                row["over"] = float(r["over"])
         elif "widget" in r:
             row.update(widget=r["widget"], click=True)
         elif "axis" in r:

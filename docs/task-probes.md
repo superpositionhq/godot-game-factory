@@ -163,6 +163,11 @@ thing instead of removing it still pass? If not, move the probe to what the play
       listed in `probe.json` `inputs_missed`;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
+    - a mouse move: `{"t": 1.0, "move": [300, -40], "over": 1.5}` moves the mouse by [dx, dy] pixels of the frame
+      (right, down), spread evenly over `over` seconds as one motion a frame (at once without `over`), the way a
+      mouse look reads it (`InputEventMouseMotion.relative`, in the frame's pixels); the cursor stays where it is.
+      It ends within the play (`tools/validate-game.py` refuses one that doesn't). A turn by a player's hand is a
+      move over a second or two, not one jump;
     - a teleport: `{"t": 0.2, "teleport": [x, y, z], "yaw": 90}` puts the player's own position (its origin) at that
       point (m), facing `yaw` (degrees; 0 when left out: a teleport always turns a 3D player), at once: the game's
       scripts of that frame already find the player there. It is the way to reach a test spot. The probe doesn't
@@ -284,7 +289,8 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
 Where the number depends on what a build chose, the threshold is calibrated or relative to the start, never a literal
 value, and `tools/validate-game.py` refuses a literal: `objects` `spread`, `bounds_change`, `pose_change` (these
 three calibrated only: section 2.4), `glow` and `spin`; `components` `intensity`, `extent_*`, `glow` and `spin`;
-every `drawn` field but `drawn` (`base_change` calibrated only: section 2.19); every `screen` field; `audio`
+`pieces` `triangles` and `visible_triangles`; `ground` `range`; every `drawn` field but `drawn` (`base_change`
+calibrated only: section 2.19); every `screen` field; `audio`
 `volume`, `max_volume` and `level`. Each section says why. A `render` field takes a literal: a budget is a number of its own (section 2.20).
 
 When the start can't be measured (its play ended before the window, or nothing the measure selects is there yet, as
@@ -422,6 +428,8 @@ Which measure answers which question (each section has its fields, defaults and 
 | how bright the frame looks on screen | `screen` (2.15) |
 | what plays, how loud at the listener, a sound that starts | `audio` (2.16) |
 | what the HUD or a menu shows: text, a number, a clock, whether it updates | `ui` (2.18) |
+| how many mesh pieces are placed, however the scene holds them (multimeshes, grid maps), and their triangles | `pieces` (2.14) |
+| the lie of the land: the ground's height at a point, its relief over a box | `ground` (2.17) |
 | what is drawn in a place or along a line, whatever draws it: there or not, moving, its colour, how far a beam reaches | `drawn` (2.19) |
 | what the renderer drew, against a budget: draw calls, triangles, texture memory | `render` (2.20) |
 | the game as a whole: how slow its time ran, whether it went on, whether it was paused | `world` (2.21) |
@@ -854,6 +862,44 @@ y; with `"y_relative": true`, offsets from the point's y). Wherever `near` works
 `components`), a thing then matches only when its place's y is within the band too: the lamp on the ceiling, not
 the one on the floor below it. `y_min < y_max`; `y_relative` goes with one of them.
 
+### 2.14 `pieces`: placed mesh pieces, whatever their form
+
+```json
+{"probe": "pieces", "select": {"mesh": "rock*", "near": {"point": {"player": true}, "radius": 30}}, "field": "count", "at": "end"}
+```
+
+How many mesh pieces are placed, however the scene holds them: trees drawn by one `MultiMeshInstance3D` or laid on a
+`GridMap` read as one node to `objects` and `components`, but as their real number of pieces here.
+
+- A piece: a `MeshInstance3D` whose mesh has triangles is 1; each instance of a `MultiMeshInstance3D` whose mesh has
+  triangles is 1; each cell of a `GridMap` whose item has a mesh with triangles is 1. A node that is a farther level
+  of detail (its `visibility_range_begin` above 0: it shows only from that far) is none, so a rock with a near and a
+  far mesh is one piece. Meshes with no triangles (none, lines, points), sprites, labels, particles and what a script
+  draws through the `RenderingServer` are none. Nodes in the tree only; a hidden one is a piece that isn't drawn.
+- `select` (optional; every key given must match, none means every mesh piece in the scene):
+  - `component`: the node's class or one it inherits (`MeshInstance3D`, `MultiMeshInstance3D`, `GridMap`,
+    `GeometryInstance3D` takes the first two, a game's own script); a name no node can have gives no value, and the
+    play's `query_errors` says `pieces <id>: no component type <T>`;
+  - `name`: a wildcard on the node's name; `mesh`: a wildcard on its mesh's name (its resource name, else its file's
+    name; a GridMap cell's: its item's mesh);
+  - `owner`: an object select the node or a node above it must match (as in `objects`); one that matches nothing
+    owns no piece: 0;
+  - `near`: within `radius` m of a point, **each piece by its own place** (a node's position, an instance's, a cell's
+    centre). A `near` point that doesn't resolve leaves the sample with no value, not a count of 0.
+- `field`: `count` (pieces), `visible` (pieces drawn: the node shown, on a render layer, not faded out by its
+  `transparency`, not only casting a shadow; a multimesh's first `visible_instance_count` instances), `components`
+  (how many nodes hold them), `objects` (the same: a Godot node is both), `triangles` (the triangles the pieces hold),
+  `visible_triangles` (the triangles of the pieces drawn, as `visible`).
+- A piece's triangles: its mesh's faces (`Mesh.get_faces`, every surface drawn as triangles) / 3.
+- Counted over every piece in the probe, never cut at the rows cap. A literal threshold is fine on `count`,
+  `visible`, `components` and `objects` (a count doesn't depend on the machine).
+- **A `triangles` or `visible_triangles` threshold is calibrated or relative to the start, never a literal value**
+  (`tools/validate-game.py` refuses one): how many triangles a fair build draws depends on the meshes it chose (1500
+  low-poly trees in one multimesh, or 300 detailed ones), so the number only means something against the same
+  game's start or reference. Read it where a count of pieces can't tell a fair build apart.
+- A multimesh's instance places are held by the renderer: a play that draws nothing (`--headless`) reads them all at
+  the multimesh's own place, so `near` over a multimesh needs a drawn play (the checker's plays are).
+
 ### 2.15 `screen`: what the player sees, after post-processing
 
 ```json
@@ -958,6 +1004,29 @@ in the scene.
   times faster than real time, and a sound, which plays in real time, then lasts many times longer in play time:
   read sound only in a play with an `audio` measure.
 
+### 2.17 `ground`: the lie of the land
+
+```json
+{"probe": "ground", "xz": [12.0, -3.0], "field": "height"}
+{"probe": "ground", "box": [0, 0, 80, 80], "grid": 12, "select": {"name": "Terrain"}, "field": "range"}
+```
+
+- At a point `xz`: `height` (m), the y where a ray straight down from 2000 m up first meets a physics body's shape
+  (every body but areas and the player's); `hit` (1 when it met anything; when it met nothing, `height` has no
+  value).
+- Over a `box` `[x0, z0, x1, z1]` (x0 < x1, z0 < z1), the same on a `grid` x `grid` lattice (2-32, default 8; corners
+  and edges included): `min`, `max`, `mean` of the heights, `range` (max - min, the relief: rolling hills against a
+  flat plain), `hits` (how many points met ground; when none did, only `hits` (0) has a value). The value also holds
+  `points` (grid x grid), for the logs. A measure takes `xz` or `box`, and only that one's fields.
+- `select` (an object select, optional): only shapes of the objects it matches, or of the nodes below them, are
+  ground; anything else (trees, rocks, roofs) is traced through (32 shapes at most). The player's shapes are always
+  skipped, with or without `select`.
+- The ray is 3D: 2D shapes are never ground (a 2D game's ground isn't read this way). It meets what the physics
+  server holds: a `StaticBody3D`, a `RigidBody3D` or a `CharacterBody3D` with a shape, a `GridMap`'s or a CSG shape's
+  collision, a `HeightMapShape3D`; a mesh with no collision is no ground.
+- **A `range` threshold is calibrated or relative to the start, never a literal value**; heights take a literal, as
+  an object's `y` does.
+
 ### 2.18 `ui`: what the UI shows on screen
 
 ```json
@@ -1016,11 +1085,14 @@ stays for a widget's own state (a bar's percent, a picture).
   `range` 0 over the pause's window; one that resets on a retry reads a fall there (a count-down: a rise).
 - `number` and `clock` share the signature's query (one select, one reading), take any `agg` and a literal (what is
   shown is a fact), ignore `of` and take no `match`.
-- Each row also carries `source` (`control`) and `kind`, for the logs; they are not fields a check reads.
+- Text in the 3D scene shown by a `Label3D` is a `text` element too (`source` `label3d`): one the game's camera
+  shows (shown, on a layer the camera sees, not faded out, in front of the camera, its box on the frame), its
+  rectangle the box around its own box as the camera projects it. Whether something in the scene stands in front of
+  it is not looked at.
+- Each row also carries `source` (`control`, `label3d`) and `kind`, for the logs; they are not fields a check reads.
 - Limits: what a script draws itself (a `_draw` with `draw_string` or `draw_rect`, a shader) is no element, since
-  the engine keeps no list of it, and neither is text in the 3D scene (a `Label3D`, a `TextMesh`). Where a readout
-  is drawn that way, read the value behind it with a `prop:` (section 2.4), or grade another outcome of the same
-  issue.
+  the engine keeps no list of it, and neither is a `TextMesh`. Where a readout is drawn that way, read the value
+  behind it with a `prop:` (section 2.4), or grade another outcome of the same issue.
 
 ### 2.19 `drawn`: what is drawn in a place, whatever draws it
 

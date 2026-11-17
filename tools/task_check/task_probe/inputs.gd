@@ -58,6 +58,7 @@ var _buttons := 0  # the mouse buttons held, as a mask
 var _parsed := false  # an event was handed to the engine in this frame
 var _touching: Array[Dictionary] = []  # fingers on the screen
 var _clicks: Array[Dictionary] = []  # widget clicks under way
+var _moves: Array[Dictionary] = []  # mouse moves spread over seconds under way: {by, start, over, sent}
 var _lit: Dictionary = {}  # an input row's index -> its selects that ask for a lit part
 var _lit_waits: Dictionary = {}  # an input row's index -> one of its has.lit selects waits for a part's first drawing
 var _hold_at := Vector3.ZERO
@@ -100,6 +101,8 @@ static func _kind(row: Dictionary) -> String:
 		return "drag"
 	if Find.numbers(row.get("cursor"), 2).size() == 2:
 		return "cursor"
+	if Find.numbers(row.get("move"), 2).size() == 2:
+		return "move"
 	if not Find.obj(row, "teleport_to").is_empty():
 		return "teleport_to"
 	if Find.numbers(row.get("teleport"), 3).size() == 3:
@@ -231,6 +234,14 @@ func _send_one(row: Dictionary, elapsed: float) -> void:
 			var xy := Find.numbers(row.get("cursor"), 2)
 			_move_cursor(UiScan.fraction(xy[0], xy[1]), Vector2.ZERO)
 			probe.note("cursor to (%.3f, %.3f)" % [clampf(xy[0], 0.0, 1.0), clampf(xy[1], 0.0, 1.0)])
+		"move":
+			var by := Find.numbers(row.get("move"), 2)
+			var over := Find.num(row, "over") if Find.has_num(row, "over") else 0.0
+			if over <= 0.0:
+				_move_cursor(_where(), _in_window(Vector2(by[0], by[1])))
+			else:
+				_moves.append({"by": Vector2(by[0], by[1]), "start": _at(row), "over": over, "sent": Vector2.ZERO})
+			probe.note("mouse moved by (%.1f, %.1f) over %.2f s" % [by[0], by[1], over])
 		"teleport_to":
 			_teleport_to(row, elapsed)
 		"teleport":
@@ -276,6 +287,17 @@ func _step(elapsed: float) -> void:
 		if not touch["finished"]:
 			down.append(touch)
 	_touching = down
+	# mouse moves spread over seconds: the part due by now, as one motion of the mouse a frame
+	var going: Array[Dictionary] = []
+	for move in _moves:
+		var share := clampf((elapsed - move["start"]) / move["over"], 0.0, 1.0)
+		var due: Vector2 = move["by"] * share - move["sent"]
+		if due != Vector2.ZERO:
+			_move_cursor(_where(), _in_window(due))
+			move["sent"] = move["sent"] + due
+		if share < 1.0:
+			going.append(move)
+	_moves = going
 	# widget clicks: the release a frame after the press, then whether the button took it
 	var open: Array[Dictionary] = []
 	for click in _clicks:
@@ -290,6 +312,11 @@ func _step(elapsed: float) -> void:
 
 
 # ---------------------------------------------------------------- keys, buttons, axes, the cursor
+
+
+func _in_window(frame_pixels: Vector2) -> Vector2:
+	## a motion in the frame's pixels as the window's events give it: the game's viewport takes it back to the frame's
+	return probe.get_tree().root.get_final_transform().basis_xform(frame_pixels)
 
 
 func _where() -> Vector2:

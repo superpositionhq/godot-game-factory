@@ -533,6 +533,44 @@ def check_crates(c, found):
     c.eq("no error", errors(found), [])
 
 
+def check_field(c, found):
+    """ground, pieces, a sign in the 3D world as ui text, and a mouse move spread over a second."""
+    if not ended(c, found, 4.5):
+        return
+    g = lambda q, f: value(found, q, 1.0).get(f)  # noqa: E731
+    c.eq("the ground at the origin, the player standing there traced through", (g("origin", "height"), g("origin", "hit")), (0, 1))
+    c.eq("on the hill, under the roof, the floor under the roof when only it is ground, and nothing far away",
+         (g("hill", "height"), g("roof", "height"), g("under_roof", "height"), g("nowhere", "height"), g("nowhere", "hit")),
+         (2, 5, 0, None, 0))
+    c.eq("over a box on a 5 x 5 grid: min, max, range, hits, points",
+         tuple(g("rise", k) for k in ("min", "max", "range", "hits", "points")), (0, 2, 2, 25, 25))
+    c.near("and the mean", g("rise", "mean"), 9 * 2 / 25, 1e-6)
+    c.eq("pieces: 3 rocks (one hidden), 5 trees of a multimesh (3 drawn), 4 grid map tiles; a farther level of detail "
+         "and an empty mesh none", tuple(g("pieces", k) for k in ("count", "visible", "components", "objects", "triangles",
+                                                                  "visible_triangles")), (12, 9, 5, 5, 144, 108))
+    c.eq("by mesh name", (g("rocks", "count"), g("rocks", "visible")), (3, 2))
+    c.eq("by class", (g("trees", "count"), g("trees", "visible")), (5, 3))
+    if found["rendered"]:
+        c.eq("near a point, each piece by its own place: two trees and two tiles", g("near_trees", "count"), 4)
+    else:  # a play that draws nothing holds no multimesh's instance places (the rendering server keeps them)
+        c.eq("near a point, each piece by its own place: two tiles (headless, a multimesh's instances have no place)",
+             g("near_trees", "count"), 2)
+    c.eq("under an owner", g("owned", "count"), 4)
+    c.eq("a class no node can be: no value, and why", (value(found, "nothing", 1.0), "pieces nothing: no component type "
+                                                       "NoSuchThing" in errors(found)), ({}, True))
+    c.eq("a sign in the 3D world is ui text; one behind the camera and a hidden one aren't",
+         [(r.get("source"), r.get("text")) for r in rows(found, "signs", 1.0)], [("label3d", "GATE 3")])
+    sign = row(found, "signs", 1.0)
+    c.true("its place on screen: in the middle across, above the middle (%s, %s)" % (sign.get("x"), sign.get("y")),
+           0.3 < (sign.get("x") or 0) < 0.5 and 0.0 < (sign.get("y") or 0) < 0.6)
+    moved = lambda t, f: row(found, "looker", t).get(f)  # noqa: E731
+    c.true("a move spread over a second is half done half way (%s of 300)" % moved(1.5, "prop:total_x"),
+           120 <= (moved(1.5, "prop:total_x") or 0) <= 180)
+    c.near("and whole after it", moved(3.0, "prop:total_x"), 300, 0.01)
+    c.near("with a move at once beside it", moved(3.0, "prop:total_y"), -50, 0.01)
+    c.true("in many motions, one a frame (%s)" % moved(3.0, "prop:events"), (moved(3.0, "prop:events") or 0) >= 25)
+
+
 PLACES = ("spinner", "glowing", "empty", "sparks", "still", "band", "beam", "around", "unseen", "torch", "thin", "crowd",
           "single")
 
@@ -690,6 +728,8 @@ PLAYS = {
     "sounds": {"check": check_sounds, "twice": True, "same": sound_totals},
     "lamps": {"check": check_lamps, "twice": True},
     "crates": {"check": check_crates, "twice": True},
+    "field": {"check": check_field, "twice": True},
+    "field_drawn": {"check": check_field, "spec": "field", "rendered": True},
     "places": {"check": check_places},
     "places_drawn": {"check": check_places, "spec": "places", "rendered": True, "twice": True, "same": places_same},
     "lamps_drawn": {"check": check_lamps, "spec": "lamps", "rendered": True, "twice": True, "same": lamps_lit},
