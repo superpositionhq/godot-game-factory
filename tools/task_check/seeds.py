@@ -202,8 +202,9 @@ def add_probe(project):
 # The settings the probe's lines set, by the name the engine gives them (section/key).
 PROBE_SETTINGS = (f"autoload/{AUTOLOAD[0]}", "application/config/use_custom_user_dir",
                   "application/config/custom_user_dir_name")
-_SECTION = re.compile(r'^[ \t]*\[([^\]]*)\][ \t]*$')
-_KEY = re.compile(r'^[ \t]*("(?:[^"\\]|\\.)*"|[^=\s"\[;#][^=]*?)[ \t]*=[ \t]*(.*?)[ \t]*$')
+# a line's end may carry a carriage return (a file written with Windows' line ends twice over): read as white space
+_SECTION = re.compile(r'^[ \t]*\[([^\]]*)\][ \t\r]*$')
+_KEY = re.compile(r'^[ \t]*("(?:[^"\\]|\\.)*"|[^=\s"\[;#][^=]*?)[ \t]*=[ \t]*(.*?)[ \t\r]*$')
 
 
 def _open_brackets(value):

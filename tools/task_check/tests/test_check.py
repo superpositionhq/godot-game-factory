@@ -354,6 +354,10 @@ class Seeds(unittest.TestCase):
         self.assertIn('jump={\n"deadzone": 0.5,\n"events": []\n}', seeds.with_probe(
             PROJECT + '\n[input]\n\njump={\n"deadzone": 0.5,\n"events": []\n}\n', company), "a value over lines kept whole")
         self.assertTrue(probe in seeds.with_probe(PROJECT, company))
+        # a carriage return at a line's end (a file written with Windows' line ends twice over) is white space
+        crlf = seeds.with_probe(PROJECT.replace("\n", "\r\n"), company)
+        self.assertEqual(seeds.settings_errors(crlf, company), [])
+        self.assertEqual(seeds.effective(crlf)["autoload/Scenarios"], '"*res://game/scenarios.gd"')
         # an autoload set before every section, which the engine loads first, moves in right after the probe's
         before = PROJECT.replace("config_version=5\n", 'config_version=5\nautoload/Early="*res://early.gd"\n'
                                  '"autoload/Late one"="*res://late.gd"\n')
