@@ -39,7 +39,7 @@ FAIL  desktop.second       17 checks, 1 failed  0 s
 
 Headless, the engine runs the scene tree, the scripts, the input events, the physics and the audio mix, but draws
 nothing: a headless play writes no screenshot, a `screen` sample has no value and `render` reads 0. `--rendered` runs
-the plays that need a drawn frame instead (`frame`, `lamps_drawn`, `lamps_reach`), in a window, twice over: as a desktop game (`desktop`: a
+the plays that need a drawn frame instead (`frame`, `lamps_drawn`, `lamps_reach`, `places_drawn`), in a window, twice over: as a desktop game (`desktop`: a
 1920x1080 project read at 960x540) and as a portrait phone game (`portrait`: a 1080x1920 project on the Mobile
 renderer played at 1080x1920, whatever the screen). It needs a GPU and a desktop; `--desk` starts each play on a
 Windows desktop of its own (`../desk.py`), as the checker does, so nothing shows on the screen.
@@ -90,6 +90,8 @@ with an id of its own.
 | `lamps_drawn` (`--rendered`) | the same play with a frame, played twice for the same answers: a shader that emits, a white emission texture, a shader whose light changes every frame (lit in every sample and through `has.lit`), a 10 cm glowing band on a 4 m post and a pure blue shader read lit; the same shader with its emission off, a black emission texture, the post with a dark band and a two-surface glowing mesh under a dark override read dark, each drawn alone, the dark ones with no pixel above black; the first sample is completed by its frame and a `has.lit` select's first sample has no value; `probe.log` notes a drawing when its answer changes and the frame's draw calls once |
 | `lamps_reach` (`--rendered`) | a `teleport_to` with `has.lit` on a shader lamp in a play with no query: skipped while the lamp is off, next to it once on |
 | `crates` | `changed`, `bounds_change`, `pose_change` and `spread` (`scenes/Crates.tscn`, built in `game/crates.gd`): a crate that breaks on B by hiding its whole mesh and showing pieces that fly 0.75 m apart, one that plays a break animation (its lid and a bone of its rig lift 1 m), one left alone, one pushed 1 m whole (changed, its spread the same), one freed (no row, its count 0), one that breaks into rigid bodies (simulating, spread grows); whole and broken; played twice for the same readings |
+| `places` | `drawn` headless (`scenes/Places.tscn`, built in `game/places.gd`): no value, and the reason once a place |
+| `places_drawn` (`--rendered`) | `drawn` with a frame: a red box that turns (moves; its base colour red, the sun and a yellow ambient light left out), a blue box that glows green (reads blue), an empty place with a wall just outside it and a sky dome around all (0), particles (move), a still box (motion 0), the same box's place above its top (0), a beam 4 m long along a line (reach and length) |
 | `errors` | every `query_errors` line a bad query gives, the task's `player` select, a row that is no input |
 | `refuse` | a spec of another format: exit code 2, nothing written |
 | `idle` | without `-taskProbe` the addon does nothing |

@@ -1,0 +1,16 @@
+{
+  "seconds": 3,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/Places.tscn",
+  "inputs": [],
+  "queries": [
+    {"id": "spinner", "kind": "drawn", "near": {"point": {"xyz": [-6, 0, 0]}, "radius": 1}, "fields": ["base_b", "base_change", "base_g", "base_r", "drawn", "motion"]},
+    {"id": "glowing", "kind": "drawn", "near": {"point": {"xyz": [-3, 0, 0]}, "radius": 1}, "fields": ["base_b", "base_g", "base_r", "drawn"]},
+    {"id": "empty", "kind": "drawn", "near": {"point": {"xyz": [0, 0, 0]}, "radius": 1}, "fields": ["drawn", "motion"]},
+    {"id": "sparks", "kind": "drawn", "near": {"point": {"xyz": [3, 0, 0]}, "radius": 1}, "fields": ["drawn", "motion"]},
+    {"id": "still", "kind": "drawn", "near": {"point": {"xyz": [6, 0, 0]}, "radius": 1}, "fields": ["drawn", "motion"]},
+    {"id": "band", "kind": "drawn", "near": {"point": {"xyz": [6, 0, 0]}, "radius": 1, "y_min": 0.6}, "fields": ["drawn"]},
+    {"id": "beam", "kind": "drawn", "line": {"from": {"xyz": [-1, 0, 10]}, "to": {"xyz": [9, 0, 10]}, "radius": 0.3}, "fields": ["drawn", "length", "reach"]}
+  ]
+}

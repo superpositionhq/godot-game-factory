@@ -426,6 +426,11 @@ looks up and a positive yaw turns left.
   - `audio`: the players that play and how loud the listener hears them, the mix's level, and the sounds that
     start, however short (`started_audible`, and by their streams' names `sounds` and `repeats`);
   - `spawns`: nodes of a class appearing and going;
+  - `drawn`: what is drawn in a place of the 3D world or along a line, whatever draws it (a mesh, particles, a
+    material that pans): whether anything is (`drawn`, a literal), how much of it moves (`motion`), its base colour
+    (`base_r|g|b`, `base_change`), how far a beam reaches and how much of a line it covers (`reach`, `length`); every
+    field but `drawn` calibrated or relative to the start. Keep the place tight and the player out of it. It needs a
+    drawn frame, so a play that reads a `render` budget takes none (docs/task-probes.md section 2.19);
   - `log`: a line in the play's log;
   - `render`: what the renderer drew, against a budget: draw calls, triangles, texture memory (`draw_calls` and
     `triangles`, the highest over the frames since the previous sample, and `texture_mb` at the sample;

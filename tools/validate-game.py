@@ -797,11 +797,14 @@ def denied_play_args(args):
 
 
 # fields whose threshold is never a literal: how bright a light, how big a component's bounds, how far an object's
-# parts lie apart or moved, how loud a sound and how fast a part spins depend on what a build chose
-# (docs/task-probes.md)
+# parts lie apart or moved, how loud a sound, how fast a part spins and what is drawn in a place (how much of it
+# changes, its colour, how far along a line) depend on what a build chose (docs/task-probes.md)
 NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'glow', 'spin'),
                  'objects': ('spread', 'bounds_change', 'pose_change', 'glow', 'spin'),
-                 'audio': ('volume', 'max_volume', 'level')}
+                 'audio': ('volume', 'max_volume', 'level'),
+                 'drawn': ('motion', 'base_r', 'base_g', 'base_b', 'base_change', 'reach', 'length')}
+DRAWN_NEAR = ('drawn', 'motion', 'base_r', 'base_g', 'base_b', 'base_change')  # a drawn measure near a point
+DRAWN_LINE = ('drawn', 'reach', 'length')    # a drawn measure along a line
 # fields that read 0 at the start in the usual case (an object whole and at rest), so a threshold relative to the start
 # says nothing (start_times gives 0, start_plus is a literal): calibrated only
 CALIBRATE_ONLY = {'objects': ('spread', 'bounds_change', 'pose_change')}
@@ -931,11 +934,12 @@ def task_play_errors(n, play, plays):
 
 
 def captures(value):
-    """Whether a measure or a play's inputs can make the probe draw a view of its own: an objects or components
-    measure of `lit` or `glow` (a part whose light only a drawing tells is drawn alone), or a select anywhere in it
-    with `has.lit`."""
+    """Whether a measure or a play's inputs can make the probe draw a view of its own: a `drawn` measure, an objects
+    or components measure of `lit` or `glow` (a part whose light only a drawing tells is drawn alone), or a select
+    anywhere in it with `has.lit`."""
     if isinstance(value, dict):
-        if value.get('probe') in ('objects', 'components') and value.get('field') in ('lit', 'glow'):
+        if value.get('probe') == 'drawn' or (value.get('probe') in ('objects', 'components')
+                                             and value.get('field') in ('lit', 'glow')):
             return True
         if isinstance(value.get('has'), dict) and value['has'].get('lit') is True:
             return True
@@ -961,8 +965,8 @@ def render_errors(checks, player=None):
     if captures(player) and reads:
         return ['the task takes a render measure and its player select has has.lit, which makes the probe render in '
                 'every play: name the player another way']
-    return [f'play {name} takes a render measure and also makes the probe render (check {capturing[name]}: a lit or '
-            'glow reading, or a select with has.lit): give the render measure a play with none of them'
+    return [f'play {name} takes a render measure and also makes the probe render (check {capturing[name]}: a drawn, '
+            'lit or glow reading, or a select with has.lit): give the render measure a play with none of them'
             for name in sorted(x for x in reads & set(capturing) if x)]
 
 
@@ -992,6 +996,14 @@ def probe_errors(c, seed, ref, plays):
     rect = measure.get('rect')
     if probe == 'screen' and isinstance(rect, list) and len(rect) == 4 and not (rect[0] < rect[2] and rect[1] < rect[3]):
         errs.append(f'check {n}: a screen rect is [x0, y0, x1, y1] with x0 < x1 and y0 < y1')
+    if probe == 'drawn':
+        near, line = measure.get('near'), measure.get('line')
+        if (near is None) == (line is None):
+            errs.append(f'check {n}: a drawn measure takes `near` (a point) or a `line`, one of them')
+        elif near is not None and field not in DRAWN_NEAR:
+            errs.append(f"check {n}: a drawn measure near a point reads {', '.join(DRAWN_NEAR)}")
+        elif line is not None and field not in DRAWN_LINE:
+            errs.append(f"check {n}: a drawn measure along a line reads {', '.join(DRAWN_LINE)}")
     if field in NEVER_LITERAL.get(probe, ()) and not rel:
         errs.append(f"check {n}: a {probe} measure's {field} depends on what a build chose, so its "
                     'threshold is calibrated or relative to the start, never a literal value')

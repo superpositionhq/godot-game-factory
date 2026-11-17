@@ -533,6 +533,41 @@ def check_crates(c, found):
     c.eq("no error", errors(found), [])
 
 
+PLACES = ("spinner", "glowing", "empty", "sparks", "still", "band", "beam")
+
+
+def check_places(c, found):
+    """What is drawn in a place: headless, no value and the reason; drawn, what each place holds."""
+    if not ended(c, found, 3.5):
+        return
+    drawn = found["rendered"]
+    if not drawn:
+        c.eq("a play that draws nothing has no value", [value(found, q, 1.0) for q in PLACES], [{}] * len(PLACES))
+        c.eq("and says why, once a place", sorted(e.split(": ", 1)[1] for e in errors(found)),
+             ["this play draws nothing (headless): drawn has no value"] * len(PLACES))
+        return
+    c.eq("no error", errors(found), [])
+    at = {q: value(found, q, 2.0) for q in PLACES}
+    c.eq("drawn in each place: a box, a box, nothing (a wall outside it, a sky dome around all), particles, a box, "
+         "nothing above the still box's top, a beam", [at[q].get("drawn") for q in PLACES], [1, 1, 0, 1, 1, 0, 1])
+    c.eq("the first sample has no motion", value(found, "spinner", 1 / 30).get("motion", "absent"), None)
+    c.true("a box that spins moves (%s), one that stays still doesn't (%s)" % (at["spinner"].get("motion"),
+                                                                               at["still"].get("motion")),
+           (at["spinner"].get("motion") or 0) > 0.05 and at["still"].get("motion") == 0)
+    c.true("particles move (%s)" % at["sparks"].get("motion"), (at["sparks"].get("motion") or 0) > 0.05)
+    red = [at["spinner"].get(k) for k in ("base_r", "base_g", "base_b")]
+    c.true("a red box's base colour is red whatever lights it (%s)" % red,
+           None not in red and red[0] > 0.2 and red[0] > 3 * red[1] and red[0] > 3 * red[2])
+    c.true("and stays it as it turns (%s)" % at["spinner"].get("base_change"), at["spinner"].get("base_change") is not None and at["spinner"].get("base_change") < 0.05)
+    blue = [at["glowing"].get(k) for k in ("base_r", "base_g", "base_b")]
+    c.true("a blue box that glows green reads blue: its glow is no base colour (%s)" % blue,
+           None not in blue and blue[2] > 0.2 and blue[2] > 3 * blue[1])
+    c.near("a beam from 1 m to 5 m along the line reaches 5 m", at["beam"].get("reach"), 5.0, 0.25)
+    c.near("and 4 m of it is drawn", at["beam"].get("length"), 4.0, 0.4)
+    c.true("probe.log says what a place costs", "ms a sample" in found["files"].get("probe.log", b"").decode(
+        "utf-8", "replace"))
+
+
 def check_errors(c, found):
     if not ended(c, found, 1.5):
         return
@@ -636,6 +671,8 @@ PLAYS = {
     "sounds": {"check": check_sounds, "twice": True, "same": sound_totals},
     "lamps": {"check": check_lamps, "twice": True},
     "crates": {"check": check_crates, "twice": True},
+    "places": {"check": check_places},
+    "places_drawn": {"check": check_places, "spec": "places", "rendered": True},
     "lamps_drawn": {"check": check_lamps, "spec": "lamps", "rendered": True, "twice": True, "same": lamps_lit},
     "lamps_reach": {"check": check_lamps_reach, "rendered": True},
     "errors": {"check": check_errors},

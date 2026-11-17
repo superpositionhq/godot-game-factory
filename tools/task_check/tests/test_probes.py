@@ -488,6 +488,24 @@ class MoreFairReadings(unittest.TestCase):
         on_screen = m(probe="widgets", select={"name": "Warn*", "visible": True}, field="visible", of="first")
         self.assertEqual(probes.needs(on_screen)[0]["select"], {"name": "Warn*"}, "the select says: on screen")
 
+    def test_drawn_asks_the_probe_for_its_place_and_reads_its_value(self):
+        """A drawn measure's query holds its place (near a point, or a line) and its field; the value is one number a
+        sample, and a sample the probe couldn't draw says why in the measure's own query line."""
+        near = {"point": {"xyz": [0, 1, 0]}, "radius": 1}
+        motion = m(probe="drawn", near=near, field="motion", agg="mean")
+        (query,) = probes.needs(motion)
+        self.assertEqual((query["kind"], query["near"]["radius"], query["fields"], "line" in query), ("drawn", 1.0, ["motion"], False))
+        line = m(probe="drawn", line={"from": {"player": True}, "to": {"xyz": [0, 0, 5]}, "radius": 0.5}, field="reach")
+        self.assertEqual(set(probes.needs(line)[0]) - {"fields"}, {"kind", "line"})
+        qid = probes.query_id(query)
+        found = {"measures": {qid: sampled([{"drawn": 1.0, "motion": None}, {"drawn": 1.0, "motion": 0.2},
+                                            {"drawn": 1.0, "motion": 0.4}])}}
+        self.assertAlmostEqual(probes.measured(motion, found)[0], 0.3)
+        said = f"drawn {qid}: this play draws nothing (headless): drawn has no value"
+        nothing = {"measures": {qid: sampled([None, None])}, "query_errors": [said]}
+        self.assertEqual(probes.measured(motion, nothing), (None, "no value in the window (nothing it selects was "
+                                                                  "measured); the probe said: " + said))
+
     def test_what_the_player_hears_reduces_from_the_audio_samples(self):
         jungle = m(probe="audio", select={"sound_class": "Jungle*", "owner": {"tag": "Zone2"}}, field="volume",
                    agg="mean")

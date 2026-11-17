@@ -120,8 +120,9 @@ The validator's rules beyond the schema include:
 - the task's `player` select names no `player` and no point on the player (it says which node the player is);
 - a project path (the task's `play_scene`, a task play's `scene`) has no `.` or `..` part and no empty one;
 - an audio measure's `sounds` or `repeats` takes no `agg` (`AUDIO_NAMED`);
-- a play that takes a `render` measure takes no reading that can make the probe draw: no objects or components
-  measure of `lit` or `glow` and no select with `has.lit`, in its measures or its inputs, and the task's `player`
+- a drawn measure takes `near` or `line`, one of them, and the fields of that one (`DRAWN_NEAR`, `DRAWN_LINE`);
+- a play that takes a `render` measure takes no reading that can make the probe draw: no `drawn` measure, no objects
+  or components measure of `lit` or `glow` and no select with `has.lit`, in its measures or its inputs, and the task's `player`
   select has no `has.lit` when any play takes one (`captures`, `render_errors`);
 - a warning, never an error, when a `teleport_to`, a `pin`, a `damage`'s `to`, a `set`'s `on` without `all`, an
   object point or an `"of": "first"` measure takes its one object by a wildcard name and nothing else: a spawner, a
@@ -131,7 +132,7 @@ The validator's rules beyond the schema include:
 
 Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's `NEVER_LITERAL`):
 objects `spread`, `bounds_change`, `pose_change`, `glow`, `spin`; components `intensity`, `extent_*`, `glow`, `spin`;
-`screen` (all); audio `volume`, `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its
+drawn (all but `drawn`); `screen` (all); audio `volume`, `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its
 own. Objects `spread`, `bounds_change` and `pose_change` are calibrated only, never relative to the start
 (`CALIBRATE_ONLY`): they read 0 at the start in the usual case.
 
@@ -381,6 +382,35 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   whose `near` point didn't resolve at a look since the previous sample gives a null value.
   A play that measures audio is paced to real time (the spec's `sound`); no play is heard, since the checker starts
   every play with `--audio-driver Dummy`, under which the engine still mixes.
+- **drawn** (`queries/drawn.gd`): the place is a box: near a point, the `AABB` around its sphere cut to its height
+  band (`Find.point`, `y_min`, `y_max`, `y_relative`); along a line, the square tube of `radius` around the segment.
+  The parts: every `GeometryInstance3D` of the game (`Find.all_nodes`, not the probe's own) that is `Find.shown`, has
+  `layers` not 0, `transparency` below 1 and isn't `SHADOW_CASTING_SETTING_SHADOWS_ONLY`, whose world box
+  (`world_box`: `get_aabb()` in the world; a `GPUParticles3D`'s `visibility_aabb`, a `CPUParticles3D`'s
+  `capture_aabb()`) intersects the place (along a line, grown by the radius, also holds an end of the segment or meets
+  it), but one that encloses the place and whose smallest side is `ENCLOSING` (20) times the place's largest; `CAP`
+  (1024) at most, in tree order. In the sample those parts get render layer 20 (`LAYER`, bit 19) added to their
+  `layers`, and the query's SubViewports (`world_3d` the game camera's world, `transparent_bg`, no MSAA, screen-space
+  AA or TAA) render once (`UPDATE_ONCE`) through a `Camera3D` each, orthographic, `keep_aspect` `KEEP_WIDTH`,
+  `cull_mask` layer 20 alone, its `environment` a clear background, a white ambient colour (energy 1; for the second,
+  `base_` view, black and 0), reflected light off, a linear tonemapper. Each camera's frustum is exactly the place:
+  near a point 4 views (from above, below, +X, +Z), `NEAR_SIZE` (64) pixels across; along a line 2 views square to it,
+  `LINE_SIZE` (128) pixels along it; the camera stands `BACK` (0.05 m) before the place's face, `near` `BACK` and
+  `far` `BACK` plus its depth. When the frame is drawn (`frame_drawn`) the layers are given back and each view's
+  image read as RGBA8: a pixel is drawn where its alpha is above 0. `motion`: of the pixels drawn now or at the
+  previous sample, the share whose drawn state or a channel byte changed by more than 1; `base_r|g|b`: over the
+  pixels of alpha 255, the white-lit view's colour less the unlit one's, made linear (`srgb_to_linear`), averaged;
+  `base_change`: its distance from the first base colour the query read. Along a line, a drawn pixel's column is
+  its distance along the line (`t` from `from`); `reach` the largest `t` within the segment, `length` the steps of
+  the segment (`LINE_BINS` at most, none finer than a column) that hold one. `pixels` and `primitives` are always in
+  the value. No value: a place that doesn't resolve, `--headless`, a window with no `Camera3D` (`probe.view()`),
+  each said once in `query_errors` as `drawn <id>: ...`. `probe.log` notes the time a sample takes on the CPU (the
+  first sample and every tenth). Measured on the factory PC, on Forward+ and on the Mobile renderer alike: a red
+  box (albedo 0.6, 0.05, 0.05) under a sun and a yellow ambient light reads base 0.3186, 0.0040, 0.0040 (its
+  albedo made linear), a blue box glowing green reads green 0, an empty place with a wall just outside its box and
+  a sky dome around it reads 0 pixels, a still box motion 0, a turning box 0.30 and particles 0.36 to 0.40, a beam
+  from 1 m to 5 m along a line reach 4.96 and length 4.0; 2.5 ms a sample near a point, 5 ms with `base_`, 0.7 ms
+  along a line. The Compatibility renderer is not measured.
 - **render** (`queries/render.gd`): `RenderingServer.get_rendering_info` read every frame for the frame drawn before
   it, `RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME` and `RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME`, the highest since
   the previous sample kept (null before any frame); `RENDERING_INFO_TEXTURE_MEM_USED` at the sample, in MiB.
@@ -770,6 +800,7 @@ stops its processing.
 | `queries/screen.gd` | `screen` |
 | `queries/spawns.gd` | `spawns` |
 | `queries/audio.gd` | `audio` |
+| `queries/drawn.gd` | `drawn` |
 | `queries/render.gd` | `render` |
 | `queries/world.gd` | `world` |
 

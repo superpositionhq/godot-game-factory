@@ -1061,6 +1061,157 @@
       "title": "Drag",
       "type": "object"
     },
+    "DrawnMeasure": {
+      "additionalProperties": false,
+      "description": "What is drawn in a place, whatever draws it (docs/task-probes.md, section 2.19): every 3D part drawn in the game\nwhose world box reaches the place (the box around `near`'s sphere, cut to its height band; or the square tube of\n`radius` around a `line`), drawn alone by the probe's own cameras in the game's 3D world (else no value: a play\nthat draws nothing, a 2D game). Near a point: `drawn` (1 when anything is), `motion` (the share of what is drawn\nthere that changed since the previous sample: a moving mesh, particles, a panned material), `base_r|g|b` (the\nmean drawn base colour, linear 0-1) and `base_change` (that colour's distance from the first sample's). Along a\nline: `drawn`, `reach` (m from `from` to the furthest point drawn on it) and `length` (m of it drawn). Every field\nbut `drawn` depends on what a build drew, so its threshold is calibrated or relative to the start, never a\nliteral (tools/validate-game.py).",
+      "properties": {
+        "agg": {
+          "anyOf": [
+            {
+              "enum": [
+                "min",
+                "max",
+                "mean",
+                "first",
+                "last",
+                "delta",
+                "any",
+                "all",
+                "count",
+                "sum",
+                "range",
+                "std",
+                "changes",
+                "rises",
+                "falls",
+                "step"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agg"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 120,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 40,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "const": "end",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "field": {
+          "enum": [
+            "drawn",
+            "motion",
+            "base_r",
+            "base_g",
+            "base_b",
+            "base_change",
+            "reach",
+            "length"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Line"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "near": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Near"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "probe": {
+          "const": "drawn",
+          "title": "Probe",
+          "type": "string"
+        },
+        "to_angle": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Angle"
+        },
+        "to_axis": {
+          "anyOf": [
+            {
+              "maximum": 360,
+              "minimum": -360,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Axis"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window"
+        }
+      },
+      "required": [
+        "probe",
+        "field"
+      ],
+      "title": "DrawnMeasure",
+      "type": "object"
+    },
     "FileExists": {
       "additionalProperties": false,
       "description": "At least `min_count` project files match `glob` (relative to the project; e.g. scenes/*.tscn).",
@@ -1345,6 +1496,59 @@
         }
       },
       "title": "Limits",
+      "type": "object"
+    },
+    "Line": {
+      "additionalProperties": false,
+      "description": "A segment from `from` to `to` (points), and how far from it (`radius`, m) counts as on it.",
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AtXYZ"
+            },
+            {
+              "$ref": "#/$defs/AtPlayer"
+            },
+            {
+              "$ref": "#/$defs/AtCamera"
+            },
+            {
+              "$ref": "#/$defs/AtObject"
+            }
+          ],
+          "title": "From"
+        },
+        "radius": {
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "title": "Radius",
+          "type": "number"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AtXYZ"
+            },
+            {
+              "$ref": "#/$defs/AtPlayer"
+            },
+            {
+              "$ref": "#/$defs/AtCamera"
+            },
+            {
+              "$ref": "#/$defs/AtObject"
+            }
+          ],
+          "title": "To"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "radius"
+      ],
+      "title": "Line",
       "type": "object"
     },
     "LogAbsent": {
@@ -2029,6 +2233,7 @@
               "audio": "#/$defs/AudioMeasure",
               "camera": "#/$defs/CameraMeasure",
               "components": "#/$defs/ComponentsMeasure",
+              "drawn": "#/$defs/DrawnMeasure",
               "log": "#/$defs/LogMeasure",
               "objects": "#/$defs/ObjectsMeasure",
               "player": "#/$defs/PlayerMeasure",
@@ -2077,6 +2282,9 @@
             },
             {
               "$ref": "#/$defs/WorldMeasure"
+            },
+            {
+              "$ref": "#/$defs/DrawnMeasure"
             }
           ],
           "title": "Measure"

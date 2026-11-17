@@ -283,9 +283,9 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
 
 Where the number depends on what a build chose, the threshold is calibrated or relative to the start, never a literal
 value, and `tools/validate-game.py` refuses a literal: `objects` `spread`, `bounds_change`, `pose_change` (these
-three calibrated only: section 2.4), `glow` and `spin`; `components` `intensity`,
-`extent_*`, `glow` and `spin`; every `screen` field; `audio` `volume`, `max_volume` and `level`. Each section says
-why. A `render` field takes a literal: a budget is a number of its own (section 2.20).
+three calibrated only: section 2.4), `glow` and `spin`; `components` `intensity`, `extent_*`, `glow` and `spin`;
+every `drawn` field but `drawn`; every `screen` field; `audio` `volume`, `max_volume` and `level`. Each section
+says why. A `render` field takes a literal: a budget is a number of its own (section 2.20).
 
 When the start can't be measured (its play ended before the window, or nothing the measure selects is there yet, as
 in a task that adds it), a calibrated threshold anchors on the fix alone: `r - 0.25 * |r|` for `>`/`>=`,
@@ -422,6 +422,7 @@ Which measure answers which question (each section has its fields, defaults and 
 | how bright the frame looks on screen | `screen` (2.15) |
 | what plays, how loud at the listener, a sound that starts | `audio` (2.16) |
 | what the HUD or a menu shows: text, a number, a clock, whether it updates | `ui` (2.18) |
+| what is drawn in a place or along a line, whatever draws it: there or not, moving, its colour, how far a beam reaches | `drawn` (2.19) |
 | what the renderer drew, against a budget: draw calls, triangles, texture memory | `render` (2.20) |
 | the game as a whole: how slow its time ran, whether it went on, whether it was paused | `world` (2.21) |
 | what a blow, a shot or a hit taken did: a short stop, the damage a staged hit did | `objects` `frozen`, `damage_taken` (2.4), with the contact staged (1.4) |
@@ -1021,6 +1022,65 @@ stays for a widget's own state (a bar's percent, a picture).
   is drawn that way, read the value behind it with a `prop:` (section 2.4), or grade another outcome of the same
   issue.
 
+### 2.19 `drawn`: what is drawn in a place, whatever draws it
+
+```json
+{"probe": "drawn", "near": {"point": {"xyz": [12.0, 1.5, -3.0]}, "radius": 2.5}, "field": "motion", "window": [4, 12], "agg": "mean"}
+{"probe": "drawn", "near": {"point": {"object": {"tag": "wall"}}, "radius": 2}, "field": "base_r", "at": "end"}
+{"probe": "drawn", "line": {"from": {"player": true, "offset": [0, 0.6, 0]}, "to": {"camera": true, "forward": 30}, "radius": 0.4}, "field": "reach", "window": [6, 8], "agg": "max"}
+```
+
+One reading for what is drawn at a spot of the 3D world, whatever draws it: a mesh, a CSG shape, a particle effect, a
+surface whose material pans or animates, no name needed. Every 3D part drawn in the game (a `GeometryInstance3D`
+that is shown, on a render layer, not faded out by its `transparency`, not only casting a shadow) whose box in the
+world reaches the place is drawn alone by the probe's own cameras: orthographic, in the game's own 3D world, seeing
+only those parts, lit by a flat white ambient light with no sky, fog, glow, reflections or anti-aliasing (the game's
+own lights may still reach them: they cancel out of the base colour). A particle effect's box is its `visibility_aabb` (GPU) or its
+particles as they are (CPU). At most 1024 parts are drawn: past that, the first in tree order. A part whose box holds
+the whole place and is at least 20 times its size (a sky dome, a room seen from inside) is left out.
+
+- The place: `near` (section 2.13: a point, a radius and, optionally, a height band), read as the box around its
+  sphere cut to its height band; or `line`: `{"from": <Point>, "to": <Point>, "radius": m}` (0 < radius <= 100), read
+  as the square tube of `radius` around the segment. One of them. Each view's frustum is exactly the place (near a
+  point: from above, from below, from +X and from +Z, 64 pixels across; along a line: from two sides square to it,
+  128 pixels along it), so whatever is drawn there is in the place and nothing outside it shows: a wall just behind
+  the place hides nothing, and the box's corners count as the place.
+- Near a point, `field`:
+  - `drawn`: 1 when anything is drawn there, else 0;
+  - `motion`: the share of the place's pixels (in either sample) that changed since the previous sample, covered or
+    not, or a colour channel by more than one 8-bit step: 0 for a still scene, more when a mesh moves or turns,
+    particles play, or a material pans or animates. No value the first sample;
+  - `base_r`, `base_g`, `base_b`: the mean base colour (linear 0-1) of the place's opaque pixels, the surface's
+    colour with no light in it: the view lit by the white ambient light less the same view with none, so what a
+    surface emits and the game's own lights cancel out (a surface the white light would drive past white reads
+    less). A standard material reads its albedo colour made linear; `base_change`: that colour's distance (RGB) from
+    the first one the play read (the first sample's, when something opaque was there).
+- Along a line, `field`: `drawn`; `reach` (m): from `from` along the line to the furthest point drawn within the
+  tube; `length` (m): how much of the line is drawn, in steps of a pixel (at most 128 steps). A beam drawn as a mesh
+  or as particles reads alike.
+- **Every field but `drawn` depends on what a build drew: its threshold is calibrated or relative to the start, never
+  a literal value**; `drawn` takes a literal. A point that doesn't resolve: no value. A play that draws nothing
+  (`--headless`) and a game whose window shows no 3D camera (a 2D game) have no value, and the play's
+  `query_errors` says why once (`drawn <id>: this play draws nothing (headless): drawn has no value`, `drawn <id>:
+  the game shows no 3D camera (a 2D game): drawn reads the 3D world only`); a place with nothing in it reads
+  `drawn` 0. The sample's value always holds `pixels` and `primitives` (pixels drawn in the place, parts drawn), for
+  the logs; its base colour is null unless a `base_` field is asked for.
+- Limits: the player's own body counts like anything else in the place (keep it out, or teleport away); what isn't
+  a 3D part reads nothing: 2D nodes and the UI, a decal, fog volumes, what a script draws through the
+  `RenderingServer` without a node, a part in another 3D world (a `SubViewport` of the game's own). A shader that
+  reads the camera (a billboard, a distance fade, a screen-space effect) draws as it does for the probe's camera,
+  not the game's. A node the game itself puts on render layer 20 is drawn with every place it is inside: the probe
+  puts the parts of a place on layer 20 for the frame of the sample and its cameras see that layer alone, so a game
+  camera that sees layer 20 alone sees them too in that frame. Particles with a random seed draw differently in every
+  play: compare a reading of particles over a window (`"agg": "mean"`), never one sample. Keep the place tight around
+  what the task is about: a floor or a wall inside it counts too. The Compatibility renderer is not measured.
+- What a game sees of the probe's drawing: the probe's cameras are in the game's world for the frame of a sample, so
+  a `VisibleOnScreenNotifier3D` or a culling that asks whether something is on a camera may count them.
+- Cost, measured on the factory PC: about 2.5 ms a sample near a point (5 ms with `base_` fields, which draw each
+  view twice) and under 1 ms along a line, on the CPU; the drawing adds 4 to 8 small views to the frame, whose GPU time
+  isn't measured.
+  These readings make the probe draw, so a play that reads a `render` budget takes none of them (section 2.20).
+
 ### 2.20 `render`: what the renderer drew
 
 `{"probe": "render", "field": "draw_calls" | "triangles" | "texture_mb"}`: the readings a budget is checked by.
@@ -1034,8 +1094,9 @@ budget is a number of its own: `{"op": "<=", "value": 700}`.
 - `texture_mb` holds the engine's own render targets and default textures too: some 10 to 20 MiB before a game adds
   anything, more at a larger frame. A play draws the game at its project's own size, so a mobile game's budget is
   read at its phone's size.
-- The counts are of everything the renderer drew in the frame, the probe's own drawings among them: a `lit` or
-  `glow` reading, or a select with `has.lit`, may draw a part alone (section 2.5), 3 draw calls each. So **a play
+- The counts are of everything the renderer drew in the frame, the probe's own drawings among them: a `drawn`
+  measure draws its place (section 2.19), and a `lit` or `glow` reading, or a select with `has.lit`, may draw a part
+  alone (section 2.5), 3 draw calls each. So **a play
   that takes a `render` measure takes none of those**, in its measures or its inputs, and the task's `player`
   select has no `has.lit` (it is looked at in every play); `tools/validate-game.py` refuses a task where one does.
   Give the budget check a play of its own.

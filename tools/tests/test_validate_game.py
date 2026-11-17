@@ -581,6 +581,23 @@ class TaskRules(Base):
             self.assertTrue(any('never a literal' in e for e in vg.probe_errors(c, {}, 'r', {})), field)
 
 
+    def test_drawn_takes_a_place_and_only_drawn_is_literal(self):
+        """A drawn measure: near a point or along a line, valid by the schema; every field but `drawn` depends on what a
+        build drew, so it is calibrated or relative to the start."""
+        schema = vg.SCHEMAS['game-task']
+        for m in ({'probe': 'drawn', 'line': {'from': {'player': True}, 'to': {'camera': True, 'forward': 20},
+                                              'radius': 0.5}, 'field': 'reach'},
+                  {'probe': 'drawn', 'near': {'point': {'player': True}, 'radius': 1, 'y_min': 0, 'y_relative': True},
+                   'field': 'motion'}):
+            c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'measure': m,
+                 'expect': {'op': '>', 'value': 0.1}}
+            self.assertEqual(list(vg.check_schema(c, schema['$defs']['Probe'], schema)), [], m)
+            self.assertTrue(any('never a literal' in e for e in vg.probe_errors(c, {}, 'r', {})), m)
+        c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'expect': {'op': '>=', 'value': 1},
+             'measure': {'probe': 'drawn', 'near': {'point': {'xyz': [0, 1, 0]}, 'radius': 2}, 'field': 'drawn'}}
+        self.assertEqual(list(vg.check_schema(c, schema['$defs']['Probe'], schema)), [])
+        self.assertEqual(vg.probe_errors(c, {}, 'r', {}), [], 'drawn takes a literal')
+
     def test_spread_and_the_moves_are_calibrated_only(self):
         """spread, bounds_change and pose_change read 0 at the start of most plays: a threshold relative to the start
         says nothing, so only a calibrated one is valid."""
@@ -833,7 +850,12 @@ class Units(unittest.TestCase):
                     'expect': expect or {'op': '>=', 'value': 1}}
         x, near = {'probe': 'player', 'field': 'x'}, {'point': {'xyz': [0, 0, 0]}, 'radius': 1}
         key, wait = {'t': 5, 'key': '<Keyboard>/w', 'press': True}, {'t': 1, 'wait': 200}
+        line = {'from': {'xyz': [0, 0, 0]}, 'to': {'xyz': [0, 0, 5]}, 'radius': 0.5}
         for check, said in (
+                (probe({'probe': 'drawn', 'field': 'drawn'}), 'check p: a drawn measure takes `near` (a point) or a `line`'),
+                (probe({'probe': 'drawn', 'field': 'reach', 'near': near}), 'check p: a drawn measure near a point reads'),
+                (probe({'probe': 'drawn', 'field': 'drawn', 'line': line, 'near': near}), 'one of them'),
+                (probe({'probe': 'drawn', 'field': 'motion', 'line': line}), 'check p: a drawn measure along a line reads'),
                 (probe(x, {'name': 'drive', 'seconds': 10}), "check p: a task play can't be named drive"),
                 (probe(x, {'name': 'fire', 'seconds': 5, 'inputs': [key]}),
                  'check p: play fire has an input at or after its end (5 s)'),
@@ -1284,7 +1306,7 @@ def probe_check(measure, play='look', expect=None):
 class Schema(unittest.TestCase):
     S = vg.SCHEMAS['game-task']
     KINDS = ('player', 'camera', 'objects', 'components', 'widgets', 'ui', 'screen', 'spawns', 'log', 'audio',
-             'render', 'world')   # the probe kinds
+             'drawn', 'render', 'world')   # the probe kinds
     MEASURE = {kind: ref.split('/')[-1]
                for kind, ref in S['$defs']['Probe']['properties']['measure']['discriminator']['mapping'].items()}
     SHAPE = {kind: ref.split('/')[-1]   # the check kinds' definitions
@@ -1309,14 +1331,14 @@ class Schema(unittest.TestCase):
         self.assertEqual(sorted(self.SHAPE), sorted(self.CHECKS))
         extra = {'objects': {'select': {'component': 'Enemy'}}, 'components': {'select': {'component': 'Light3D'}},
                  'widgets': {'select': {'component': 'Slider'}}, 'spawns': {'component': 'Projectile'},
-                 'log': {'pattern': 'Error'}}
+                 'log': {'pattern': 'Error'}, 'drawn': {'near': {'point': {'xyz': [0, 0, 0]}, 'radius': 1}}}
         fields = {'player': 'y', 'camera': 'yaw', 'objects': 'count', 'components': 'count', 'widgets': 'count',
                   'ui': 'count', 'screen': 'luminance', 'spawns': 'spawned', 'log': 'count', 'audio': 'count',
-                  'render': 'draw_calls', 'world': 'time_scale'}
+                  'drawn': 'drawn', 'render': 'draw_calls', 'world': 'time_scale'}
         for probe in self.KINDS:
             measure = dict({'probe': probe, 'field': fields[probe]}, **extra.get(probe, {}))
             self.assertEqual(self.ok(probe_check(measure, 'look', {'op': '>=', 'value': 1}), 'Probe'), [], probe)
-        for refused in ('pieces', 'light', 'grading', 'ground', 'drawn', 'asset', 'trace', 'actors'):
+        for refused in ('pieces', 'light', 'grading', 'ground', 'asset', 'trace', 'actors'):
             self.assertNotEqual(self.ok(probe_check({'probe': refused, 'field': 'count'}), 'Probe'), [], refused)
         for play in ('editor', 'trace'):
             self.assertNotEqual(self.ok(probe_check({'probe': 'player', 'field': 'y'}, play), 'Probe'), [], play)
@@ -1363,13 +1385,14 @@ class Schema(unittest.TestCase):
                 ({'probe': 'objects', 'select': lamp, 'field': 'lit', 'of': 'first'}, 'look'),
                 ({'probe': 'components', 'select': {'component': 'Light3D'}, 'field': 'glow', 'of': 'max'}, 'look'),
                 ({'probe': 'objects', 'select': {'has': {'lit': True}}, 'field': 'count'}, 'look'),
+                ({'probe': 'drawn', 'near': {'point': {'xyz': [0, 0, 0]}, 'radius': 1}, 'field': 'drawn'}, 'look'),
                 ({'probe': 'player', 'field': 'y'}, tour)):
             checks = [dict(budget, play=play), dict(probe_check(reading, play, {'op': '>=', 'calibrate': 0.5}), name='lamp')]
             name = play if isinstance(play, str) else play['name']
             by = 'lamp' if isinstance(play, str) else 'budget'   # the tour's own inputs select by has.lit
             self.assertEqual(vg.render_errors(checks), [
-                f'play {name} takes a render measure and also makes the probe render (check {by}: a lit or glow '
-                'reading, or a select with has.lit): give the render measure a play with none of them'], reading)
+                f'play {name} takes a render measure and also makes the probe render (check {by}: a drawn, lit or '
+                'glow reading, or a select with has.lit): give the render measure a play with none of them'], reading)
         apart = [budget, dict(probe_check({'probe': 'objects', 'select': lamp, 'field': 'lit'}, 'drive'), name='lamp')]
         self.assertEqual(vg.render_errors(apart), [])
         plain = [budget, dict(probe_check({'probe': 'objects', 'select': lamp, 'field': 'count'}, 'look'), name='lamp')]

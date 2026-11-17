@@ -15,8 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(HERE)
 REFS = ("tasks", "origin/tasks")  # where a game's tasks live (validate-game.py TASKS_REFS)
 STILL_WORKS = "still_works"  # the milestone of what a task must leave working (godot-write-tasks section 5)
-SAMPLED = ("player", "camera", "objects", "widgets", "components", "screen", "spawns", "audio", "ui", "render",
-           "world")
+SAMPLED = ("player", "camera", "objects", "widgets", "components", "screen", "spawns", "audio", "ui", "drawn",
+           "render", "world")
 AUDIO_STARTED = ("started", "started_audible")  # counted per sample's interval, summed by default (as spawns)
 AUDIO_NAMED = ("sounds", "repeats")  # read from the names of the streams that started (probes._heard_names)
 WHOLE_SCREEN = [0.0, 0.0, 1.0, 1.0]
@@ -114,6 +114,11 @@ def near(n):
     return out
 
 
+def line(n):
+    """A drawn measure's `line`: its two points filled in and its radius."""
+    return {"from": point(n["from"]), "to": point(n["to"]), "radius": float(n["radius"])}
+
+
 def select(s):
     """An object, widget or component selection as written, without unset keys, its `near`, `owner` and `has` filled
     in."""
@@ -133,8 +138,9 @@ def select(s):
 def measure(m):
     """A probe's measure with every optional field: window, at, agg, to_angle, to_axis (None when unset), `of`
     ("count") for selections, `field` ("count") for the log, a player measure's `to` with its defaults, a screen
-    measure's `rect` (the whole frame when unset), an audio measure's `select` ({} when unset), and a ui measure's
-    `select` ({} when unset), `of` ("count") and `match` (None)."""
+    measure's `rect` (the whole frame when unset), an audio measure's `select` ({} when unset), a ui measure's
+    `select` ({} when unset), `of` ("count") and `match` (None), and a drawn measure's `near` and `line` (None when
+    unset)."""
     out = dict(m)
     kind = out["probe"]
     if kind in SAMPLED:
@@ -154,6 +160,9 @@ def measure(m):
             out.setdefault("of", "count")
             out.setdefault("match", None)
             out["select"] = select(out.get("select") or {})
+        if kind == "drawn":
+            out["near"] = near(out["near"]) if out.get("near") is not None else None
+            out["line"] = line(out["line"]) if out.get("line") is not None else None
     elif kind == "log":
         out.setdefault("field", "count")
     return out
