@@ -4,7 +4,11 @@ A task (a GameTask JSON in `Tasks/` on the game repo's orphan `tasks` branch, sc
 [schemas/game-task.schema.json](schemas/game-task.schema.json)) is only useful when its checks tell a broken game from a
 fixed one. The task checker proves that on your machine before you hand the task in: it builds the game at the task's
 start (`seed.commit`) and at its reference (`seed.reference`, the change that solves it), plays both with the task
-probe addon, measures every probe, and says **VALID** or **INVALID** with the reasons.
+probe addon, measures every probe, and says **VALID** or **INVALID** with the reasons. It checks the two cases the Lab
+checks before any agent is given the task, by the same rules: the **no-op** (the start, left untouched, graded as if
+an agent had handed it in: it must fail the task and earn nothing) and the **oracle** (the reference graded the same
+way: it must pass every required check). The skill that writes tasks walks through both step by step
+(godot-write-tasks, "The no-op and the oracle, on your own machine").
 
 ```powershell
 python tools\task-check.py %GGF_ROOT%\games\<slug> --task <task-name>
@@ -91,12 +95,13 @@ puts the copies elsewhere, `--direct` runs Godot without the machine's job slots
    ERROR`, `Parse Error`, `Failed to load script`). A start that doesn't build makes the task INVALID, unless its
    build check says so (`"fails_at_start": true`: making it build is the task); then the start failing to build is the
    start failing the task, and it is never played.
-4. Checks the reference as if it were a solution: the task's checks in order (a check whose `needs` failed doesn't run
-   and fails: `not run: needs X`): build, boot (a play of `seconds` that must run to its end without a crash: a log
-   line matching `CrashHandlerException`, `Program crashed with signal`, `Dumping the backtrace` or `Out of memory`),
-   `log_absent`, `file_exists` (the copy's files, without `.godot`, `Build`, `Logs`, `android` and `.git`), and every
-   probe against its threshold.
-5. Checks the start on its probes.
+4. Checks the reference as if it were a solution (the oracle): the task's checks in order (a check whose `needs`
+   failed doesn't run and fails: `not run: needs X`): build, boot (a play of `seconds` that must run to its end
+   without a crash: a log line matching `CrashHandlerException`, `Program crashed with signal`, `Dumping the
+   backtrace` or `Out of memory`), `log_absent`, `file_exists` (the copy's files, without `.godot`, `Build`, `Logs`,
+   `android` and `.git`), `package` (it fails: no Godot grader packages a game, below), and every probe against its
+   threshold. A probe no version of the game could pass is a **task error** (below).
+5. Checks the start on its probes (the no-op).
 6. Writes the result and deletes the scratch copies (unless `--keep`) and, kept or not, what their plays left outside
    them: each copy's own user data folder, `%APPDATA%\TaskProbe.<hash>`, and nothing else.
 
@@ -156,12 +161,17 @@ it waited for a machine slot (`godot-heavy.ps1`).
 A task is **VALID** when all of this holds:
 
 - the start builds, or doesn't build exactly when a build check says `fails_at_start`;
-- with a reference: the reference builds, boots (every `boot` check) and passes every **required** probe;
-- the start fails every required probe outside `still_works` (or doesn't build by design): each is one issue of the
-  thread, and one the start already passes rewards no work. A required check of `"weight": 0` is a guard wherever it
-  sits (it rewards nothing), so the start may pass it; that lets a task hold more guards than `still_works`' 32. A
-  required probe of weight 0 is a guard, not an outcome: `tools/validate-game.py` doesn't count it toward a task's
-  3 required outcome probes;
+- **the oracle passes**: with a reference, the reference passes every **required** check of every kind the check
+  runs: build, boot, `log_absent`, `file_exists`, `package` and every required probe. Its checks with
+  `"required": false` are notes. A `package` check fails on every side, the reference's too: the Lab's grade has no
+  package step for a Godot game (a copy is played from source), so it fails it closed, and a required one keeps every
+  run from passing. Leave packaging out of a task, or make it `"required": false` with `"weight": 0`;
+- **the no-op fails**: the start fails every required probe outside `still_works` (or doesn't build by design): each
+  is one issue of the thread, and one the start already passes rewards no work. A required check of `"weight": 0` is
+  a guard wherever it sits (it rewards nothing), so the start may pass it; that lets a task hold more guards than
+  `still_works`' 32. A required probe of weight 0 is a guard, not an outcome: `tools/validate-game.py` doesn't count
+  it toward a task's 3 required outcome probes. At least one of the probes the start fails is not a `seen` probe: a
+  seen probe is a visual check a model reads, never the outcome that shows the bug;
 - every required probe in the `still_works` milestone already passes at the start. What must keep working has to work
   before the change, or the probe is broken and would fail every correct solution. A still-works probe the start has
   no samples for (its play crashed or ended early, which is often the task's own bug) doesn't count against it; one
@@ -169,33 +179,58 @@ A task is **VALID** when all of this holds:
 - a no-op scores zero: no check the start passes carries weight, so build, boot and `still_works` checks take
   `"weight": 0` (`tools/validate-game.py` refuses a task where one doesn't), and so does any other check true of the
   start: a `log_absent` or `file_exists` check (nothing measures those at the start, so their weight is yours to set)
-  or a probe, a `"required": false` one too (the task check measures that). Judges aren't measured here, so their
-  weights aren't covered by this rule.
+  or a probe, a `"required": false` one too (the task check measures that);
+- every probe has a threshold, required or not: one that can't be calibrated (`uncalibrated`) stops the Lab's check of
+  the task, whichever probe it is;
+- no check is a **task error**: a probe whose select (`objects`, `widgets`, `components`) reads nothing in the
+  reference's play, a play that ran to its end (unless the measure reads 0 of nothing and 0 passes: "the crates are
+  gone"), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot aside).
+  No version of the game can be graded by such a check;
+- every required `judge` is scored by you on both sides, and the reference passes it (below); every required `seen`
+  probe is read by you on both sides (below);
+- no `code_judge` is required: a model reads the change in the Lab and nothing here can, so code review stays a
+  `"required": false` quality check.
 
-Never decided by the check: judges (`judge`, `code_judge`: no model is asked) and `package` checks. The reference's
-other failures (`log_absent`, `file_exists`, probes with `"required": false`) are reported as notes and never make a
-task INVALID. Read the notes all the same: every check is required unless it says `"required": false`, a `log_absent`
-or `file_exists` too, and a run counts as solved only when every required check passes, so a required one the
-reference itself fails is one no solution like the reference can pass. Fix its pattern, or make it
-`"required": false`.
+A play input that didn't land on the start (a click on a control the start doesn't show) fails that side's check of
+the play: the start failing it. Read the start's `probe.log` all the same: a start that fails only because its play
+never reached the moment shows nothing about the bug.
 
-A `judge` check is looked at by you instead. The check plays its plays on the start and on the reference (its own
-`plays`, else `look` and `drive`; a play a probe names is the same play, played once, with the most screenshots a
-judge showing it asks) and saves the screenshots the cloud's judge would be shown ([task-probes.md](task-probes.md))
-under `<task>\judge-shots\<check>\`: `start\` and `reference\` (`<play>_<nn>.png`, in the order
-taken), `ask.md` (the brief, the question, the rubric and what each picture is) and a blind copy, `blind\A\` and
-`blind\B\`, whose sides are in `blind\key.json`. The task's notes in the result and its lines in `progress.txt` say
-`judge <check>: shots saved for start/reference, answer needed`. Before you call a task with a required judge VALID:
+A `judge` check is scored by you. The check plays its plays on the start and on the reference (its own `plays`, else
+`look` and `drive`; a play a probe names is the same play, played once, with the most screenshots a judge showing it
+asks; with a `route`, the route too, below) and saves the screenshots the cloud's judge would be shown
+([task-probes.md](task-probes.md), section 3.2) under `<task>\judge-shots\<check>\`: `start\` and `reference\`
+(`<play>_<nn>.png`, in the order taken), `ask.md` (the brief, the question, the rubric and what each picture is),
+`pictures.json` (each picture's sha256) and a blind copy, `blind\A\` and `blind\B\`, whose sides are in
+`blind\key.json` (one side alone, `blind\A\`, when the start isn't played). Until you score it, a required judge keeps
+the task from being VALID: its line says `judge <check>: shots saved for start/reference, answer needed`. To score:
 
 1. Open `ask.md`, then look at `blind\A\` and `blind\B\` and score every rubric item of each from 0 to 1, as if
    each were the developer's game, before opening `blind\key.json` and `sides.md`. The blind folders hold only the
-   pictures both sides have and the same names in each; each side's own count and notes (a play cut short) are in
-   `sides.md`, read with the key.
-2. The start must fail every required rubric item (below 0.5) and the reference must pass every one. If not, fix the
-   rubric or the plays (never by easing what the task asks), and check again.
-3. Write both sides' scores in the task's notes (its `tasks-workflow.jsonl` row on the tasks branch).
+   pictures both sides have and the same names in each; each side's own count and notes (a play cut short, a route
+   that couldn't be played) are in `sides.md`, read with the key.
+2. Write the scores into `blind\answers.json`, one object per letter, every rubric item:
 
-`--no-judge-shots` skips the judge plays.
+   ```json
+   {"A": {"door_open": 0.0, "lit": 1.0}, "B": {"door_open": 1.0, "lit": 1.0}}
+   ```
+
+3. Check the task again. The checker scores each side by the Lab judge's pass mark (a weighted score of at least 0.6
+   and no required item below 0.5). The reference must pass. On the start, a judge in `still_works` (what still looks
+   as it did) must pass too, and any other required judge must have every required item below 0.5. The line then says
+   `judge <check>: scored in blind/answers.json`. If a side doesn't come out as it must, fix the rubric or the plays
+   (never by easing what the task asks) and check again.
+
+Scores stand while the pictures they were given for are the same (`pictures.json`); a side whose pictures changed
+(another commit, a play that changed) is asked again, with a note. `--no-judge-shots` skips the judge plays, so a task
+with a required judge can't be VALID in that run.
+
+A judge's `route` (a project file of key inputs `[{t, key, press}]`) is read from the reference's copy, as the Lab reads
+it from the graded copy, held to the Lab's limits (1 MiB, 1 to 400 inputs, each a key by its control path at 0 to
+118 s), and played on each side shown for 4 s past its last input (10 s at least, 120 s at most), 8 screenshots, after
+the judge's other plays; a judge is shown 20 screenshots of a side at most, so a route after 20 others shows nothing.
+A route that can't be played (the reference has no such file, or it isn't a route) is said in the notes, `<side>: the
+route <file> was NOT played: <why>`, and the judge is shown no route: score only what the pictures show, and nothing
+stands in for it.
 
 A `seen` probe ([task-probes.md](task-probes.md) section 2.22) is read by you too, since the check asks no model. Its
 task play is played on the start and on the reference (once, with the other probes of that play), and each named shot
@@ -253,9 +288,10 @@ without), so this is for drafts only.
     `| measured V, threshold OP T`, with what the start and the reference measured when the threshold came from them,
     and why it has no value: `... | measured 0, threshold >= 89.9957 (start 0, fix 179.991)`, `... | measured nothing,
     threshold >= 1: no value in the window (...)`; a probe left without a threshold reads `uncalibrated: X: ...`
-    instead. A detail starting `not asked` is a check that side doesn't run (judges and packaging on either side; on
-    the start, everything but its probes and a `fails_at_start` build check): it shows as passed and counts for
-    nothing;
+    instead. A detail starting `not asked` is a check that side doesn't run (judges on either side, which you score
+    in their `judge-shots` folder; on the start, everything but its probes and a `fails_at_start` build check): it
+    shows as passed and counts for nothing. A package check's detail is `not packaged: ...`, a failure. A detail
+    starting `task error:` is a check no version of the game can be graded by (VALID and INVALID);
   - `task_sha256` (the SHA-256 of the task file as the run read it: the file as committed on the `tasks` branch, or
     the `.json` given by path; a checkout with other line endings hashes differently), `task`, `game`, `at` (when,
     UTC), `seconds` (how long the check took) and `evidence` (the task's folder of play files, below).
@@ -280,15 +316,16 @@ without), so this is for drafts only.
   the task file. A sample holds either `rows` (one per node, widget or element matched, with its `name` and the fields
   asked for) or a `value` with the kind's own keys ([task-probes.md](task-probes.md), under each kind). A `spawns`
   sample holds running totals since the play started; the checker reads each sample's rise over the one before.
-- `<repo>\.task-checks\<task>\judge-shots\<check>\`: each judge check's pictures to answer (VALID and INVALID
-  above); the result's `judges` lists them, each `answer needed`.
+- `<repo>\.task-checks\<task>\judge-shots\<check>\`: each judge check's pictures to score (VALID and INVALID
+  above); the result's `judges` lists them, each `answer needed` or `scored in blind/answers.json` with each side's
+  result (`answered`).
 - `<repo>\.task-checks\<task>\seen-shots\<check>\`: each `seen` probe's crops to answer (above); the result's `seen`
   lists them, each `answer needed` or `read from blind/answers.json`.
 - `<out>\progress.txt`: `task check: D of T task(s) done, started HH:MM, M min so far` (`, finished` at the end), each
   finished task's console line with its minutes (`(18 min)`) and a line per judge check waiting for an answer, and
   `checking <task>, then N more`. `progress.json` (format `task-check-progress/1`) holds the same: `started` and
   `updated` (seconds since 1970), `tasks` (in order), `done` (each finished task's `task`, `verdict`, `reasons`,
-  `seconds` and `judges_pending`) and `finished`.
+  `seconds`, `judges_pending` and `seen_pending`) and `finished`.
 - `.task-checks\` is git-ignored: when the game's `.gitignore` doesn't name it, the checker adds it to the repo's own
   `.git\info\exclude`. Never commit results.
 
@@ -310,7 +347,7 @@ The bug doesn't show in what the probes measure.
 **`uncalibrated: ... the start and the reference both measure N`.** The measures are equal on both sides, so there is
 nothing to put a threshold between: the probe doesn't see the change. Measure something the fix changes (a
 different field, window or play), or use a literal value when the fact is a count or a boolean. A probe that isn't
-required and can't be calibrated fails as a note, never as a reason for INVALID. `uncalibrated: X: the reference
+required and can't be calibrated is a reason too (`X has no threshold: ...`, below). `uncalibrated: X: the reference
 measured nothing (...)` (or `the start measured nothing (...)`, for a threshold relative to the start or with a
 reference that measured 0): read the reason in brackets as below. In a task with no reference, a required probe the
 start leaves uncalibrated reads **`X has no threshold: uncalibrated: ...`**: no solution could pass it.
@@ -359,11 +396,47 @@ screen) and taps the lower right. A game whose controls are elsewhere needs its 
 inputs on its controls by node name (`{"t": 1, "tap": {"widget": "FireButton"}}`). A touch that found no control is in
 the play's `query_errors` and `inputs_missed` (`probe.json`) and in `probe.log`.
 
+**`reference fails X: task error: ... in the reference's <play>, its select {...} matched nothing in N samples: the
+check reads nothing even on the task's own fix`** (`X on the reference: task error: ...` for a probe that isn't
+required; `nothing its select ... matched had a value for F`, or `... : the task's own fix fails it` for a count). The probe's select finds nothing in the reference's play, a play that ran
+to its end, so no build can pass it: the select names something the reference doesn't have, or the play never
+reaches it. Select by what the thing does or carries (`has`, `near`, a group or class the start has), read the rows
+in the reference's `probe.json`, and check that the play reaches the place.
+
+**`... task error: ... in the reference's play P, an input did not land (<kind> <target> at N s (...)): the task's own
+fix can't be driven by its play`.** A click found no control, a touch no widget, a stage nothing to act on, on the
+reference itself: the play can't drive the task's own fix, so every probe of that play is the task's error. Drive the
+play by what the reference shows at that moment: the control's on-screen text the instruction quotes, a wait for the
+scene to change, a stage on something the start and the reference both have (`probe.log` says what each input hit).
+**`the play's input did not land: ...`** in a start row is the start failing that check: read the start's `probe.log`
+to see whether the bug, or a play that only fits the reference, made it miss.
+
+**`X has no threshold: uncalibrated: ...`** for a probe that isn't required. The Lab's check stops on any probe it
+can't calibrate, so this is a reason too: give it a measure the change moves, a literal, or drop it.
+
+**`reference fails X: not packaged: ...`.** A required `package` check: no Godot grader packages a game, so it fails
+for every build, the reference's too. Leave packaging out of the task (the instruction never asks for an exported
+build: the grader can't run one), or make the check `"required": false` and `"weight": 0`.
+
+**`judge X: shots saved for start/reference, answer needed`** (or **`judge X: not played (--no-judge-shots), answer
+needed`**). A required judge isn't scored yet: score it (VALID and INVALID), then check again. **`reference fails judge
+X as you scored it (...)`**: the reference doesn't show what the rubric asks in the pictures; fix the plays so the
+pictures reach the moment, or reword the item so the pictures decide it, never by asking less. **`start already meets
+a required item of judge X as you scored it (...)`**: the unchanged game already looks as asked, so the item doesn't
+see the change. **`start fails still-works judge X as you scored it (...)`**: what must still look as it did doesn't
+at the start: the item or its plays are wrong.
+
+**`no required probe outside still_works but seen ones: ...`.** The start fails only `seen` probes. A seen probe is a
+visual check, never the outcome: add a required probe of what the thread changed (godot-write-tasks skill, section 5).
+
+**`X is a required code_judge: ...`.** Make it `"required": false` (code review is a quality check): no check here
+can run it.
+
 **`start fails still-works X`.** The game works at the start, so a still-works probe that fails there is broken: it
 doesn't find the HUD, the node or the value it looks for. Fix the probe (see the play's `probe.json`), never the
 threshold.
 
-**`reference fails X`.** The reference doesn't do what the probe asks (a threshold on the wrong side: check `op`), or
+**`reference fails X`.** The oracle fails: the check or the reference is wrong. For a probe: the reference doesn't do what the probe asks (a threshold on the wrong side: check `op`), or
 the reference's play doesn't reach the situation either. The play's folder (`.task-checks\<task>\reference\<play>\`,
 see "Results") tells which: its screenshots, the `track` in `probe.json`, and `probe.log`, which says where each
 teleport put the player and what each click or touch hit. A `teleport_to` goes next to the match nearest the player,
@@ -372,7 +445,9 @@ so a select that also matches another node can take the player there instead: se
 stopped before its `seconds`; `timed out`: it ran past `--timeout`). `reference fails X: build failed (exit N: ...)`
 means the reference doesn't build as committed; every check that `needs` it then fails `not run: needs X`, and so on
 down the chain. The reason names the first cause and `reference\build\build.log` holds the rest, as for `start doesn't
-build` below.
+build` below. For a required `log_absent` (`N matching log line(s): ...`) or `file_exists` (`0 file(s) match`): the
+reference itself fails it, so no solution like the reference can pass: fix its pattern or glob, or make it
+`"required": false` with `"weight": 0`.
 
 **`start doesn't build`.** The start's scripts don't parse on Godot 4.7 as committed, or its import fails. The reason
 itself names the first cause after the exit code (`didn't build (exit 1: ...)`), in one line of at most 200

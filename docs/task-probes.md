@@ -1317,6 +1317,13 @@ How it is graded, and its limits:
   stage of a contact nothing took: section 1.4): read it in the fix's play before trusting what the play measured.
   A missed stage of a contact (`pin`, `damage`, `set`) fails every probe of its play on that side, with "a stage of
   the play didn't land: <kind> <target> at <t> s: <why>": what the play read is of a contact that never happened.
+  Any input of a task play that didn't land (a named screenshot aside) fails every probe of that play on that side,
+  as the Lab's grade reads it ("the play's input did not land: ..."); on the reference it is a **task error**: the
+  task's own fix can't be driven by its play, and the task is invalid.
+- **A select that reads nothing on the reference is a task error.** An `objects`, `widgets` or `components` probe
+  whose select matches nothing (or nothing with a value for its field) in the whole of the reference's play, a play
+  that ran to its end, can be passed by no build: the task is invalid. A measure that reads 0 of nothing (a `count`,
+  or `of` `count`, `any`, `all` or `sum`) is not, where 0 passes its threshold ("the crates are gone").
 - **`needs`** names only earlier checks; check names are unique in the task.
 
 ### 3.1 A start that doesn't load: `fails_at_start`
@@ -1366,19 +1373,25 @@ One subject per judge; a rubric item about "every screen" only with plays that o
   evenly spaced ones; the check's plays times its `shots`, plus their named shots, are 20 at most.
 - A check without `plays` is shown `look` and `drive`, as before.
 
+- A check with a `route` (a project file of key inputs `[{t, key, press}]`) is also shown that route, played by the
+  grader on the graded copy (and on the start for a `before` check), 8 screenshots, after its other plays, within the
+  20. The file is read from the graded copy: a route the copy lacks, or one that isn't a route (over 1 MiB, more than
+  400 inputs, an input that isn't a key by its control path at 0 to 118 s), is not played, and the judge is told so.
+
 The task check asks no model. It plays each `judge` check's plays on the start and on the reference and saves the
 screenshots the judge would be shown: its `shots` evenly spaced ones of each play and every named one, 20 at most, or
-the 6 of `look` and the 8 of `drive` for a check without `plays` (the developer's `route` isn't played locally). They
-go under `<task>\judge-shots\<check>\start\` and `reference\`, named `<play>_<nn>.png` in the order taken, with
-`ask.md` (the brief, the question, the rubric, what each picture is) and a blind copy: `blind\A\` and `blind\B\` hold
-the pictures both sides have, and `blind\key.json` says which side each is. Each side's own picture count and notes
-are in `sides.md`, opened with the key. A play a probe names is the same play and is played once.
+the 6 of `look` and the 8 of `drive` for a check without `plays`, and its `route`, read from the reference's copy and
+played on each side. They go under `<task>\judge-shots\<check>\start\` and `reference\`, named `<play>_<nn>.png` in
+the order taken, with `ask.md` (the brief, the question, the rubric, what each picture is) and a blind copy:
+`blind\A\` and `blind\B\` hold the pictures both sides have, and `blind\key.json` says which side each is. Each
+side's own picture count and notes (a route that couldn't be played) are in `sides.md`, opened with the key. A play a
+probe names is the same play and is played once.
 
-Look at them yourself before calling a task with a required judge VALID, blind: score every rubric item for A and for
-B first, then open the key. The start must fail every required rubric item and the reference must pass every one.
-Write both sides' answers in the task's notes (its `tasks-workflow.jsonl` row). A task try saves the same for the
-agent's game (`agent\`) under `<task>\run<N>\judge-shots\`: answer its judges the same way before calling the task
-too easy or held. `tools/validate-game.py` checks the rules of a judge's plays.
+Score them yourself, blind, into `blind\answers.json` ([task-check.md](task-check.md), "VALID and INVALID"): a required
+judge keeps the task from being VALID until both sides are scored, the reference passes it, and the start fails every
+required item (or, for a judge of what still looks as it did, passes it). A task try saves the same for the agent's
+game (`agent\`) under `<task>\run<N>\judge-shots\`: score its judges the same way before calling the task too easy or
+held. `tools/validate-game.py` checks the rules of a judge's plays.
 
 ## 4. The task check
 
@@ -1386,18 +1399,22 @@ Before any agent is given a task, the checker grades the start and the fix with 
 ([task-check.md](task-check.md)). A task is valid when:
 
 - the start builds (unless the task says it doesn't, section 3.1: then it must not);
-- the fix builds, boots and passes every required probe (its other checks only add notes: a `log_absent` or
-  `file_exists` it fails, a probe that isn't required);
-- the start fails every required probe outside `still_works`, of which there is at least one (or the `fails_at_start`
-  build check);
+- the fix (the oracle) passes every required check: it builds, boots, passes every required probe, `log_absent`,
+  `file_exists` and `package` check (a `package` check always fails: no Godot grader packages a game, so a task never
+  requires one); its checks that aren't required only add notes;
+- the start (the no-op) fails every required probe outside `still_works`, of which there is at least one that isn't
+  `seen` (or the `fails_at_start` build check);
 - a no-op scores zero: no check the start passes carries weight, so build, boot and `still_works` checks take
   `"weight": 0`, as does any other check true of the start, a `log_absent` or `file_exists` check or a probe,
   `"required": false` ones included (the score is the weighted share of checks passed);
 - every required `still_works` probe passes at the start;
-- every required calibrated probe measures differently on the start and the fix (one that isn't required and can't
-  be calibrated fails as a note, never making the task invalid);
-- every required `judge` check, answered by the task's writer from the screenshots the check saves (section 3.2),
-  fails on the start and passes on the fix, item by item;
+- every calibrated probe, required or not, measures differently on the start and the fix (a probe that can't be
+  calibrated stops the Lab's check of the task, whichever it is);
+- no probe is a task error (section 3): a select that reads nothing on the fix, a task play whose input doesn't land on
+  the fix;
+- every required `judge` check, scored by the task's writer from the screenshots the check saves (section 3.2),
+  passes on the fix and fails on the start, item by item (a judge of what still looks as it did passes on both);
+- no `code_judge` is required (a model reads the change in the Lab, and nothing checks it before);
 - every required `seen` probe, read by the task's writer from the crops the check saves (section 2.22), fails on the
   start and passes on the fix; in the Lab its readings of both must also agree 3 times out of 3.
 

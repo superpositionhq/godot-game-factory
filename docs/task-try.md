@@ -67,8 +67,10 @@ check's).
    game: any process whose command line names the workspace), removes the build outputs (`.godot/`, `Build/`,
    `Logs/`, `android/`: besides the import cache, `.godot/` holds the agent's editor state, which a game's files never
    carry), adds the task probe as `addons/task_probe/`, builds it afresh and plays the agent's game (on a desktop of
-   its own, as the task check's plays) and runs every check but judges and packaging, against the thresholds of
-   step 1.
+   its own, as the task check's plays) and runs every check but judges, against the thresholds of step 1. A
+   `package` check fails, as the Lab's grade fails it (no Godot grader packages a game), and a probe is graded as the
+   Lab grades it: a task play whose input didn't land fails it, and a select that reads nothing even on the reference
+   is a task error.
 5. Plays each `judge` check's plays on the agent's game and saves the screenshots the cloud's judge would be shown
    under `<task>\run<N>\judge-shots\<check>\agent\`, with `ask.md` ([task-check.md](task-check.md), VALID and
    INVALID). No model is asked: the run's number leaves judges out, and the result lists them in `judges_pending`.
