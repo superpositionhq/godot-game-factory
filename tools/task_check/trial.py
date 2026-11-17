@@ -10,7 +10,8 @@ For one task and each run:
    the machine's recording hooks off (GGF_NO_RECORDING, and UGF_NO_RECORDING and GF_NO_RECORDING for another
    factory's hooks on the same machine). Its transcript is kept.
 3. The workspace is graded as a solution: its build outputs and .godot removed, the task probe added, built fresh,
-   played, every check but judges and packaging run against the thresholds the start and the reference
+   played, every check but judges, seen probes (a model's reading in the Lab: not asked, and left out of the number)
+   and packaging run against the thresholds the start and the reference
    give (both built and measured once for all runs, before the first agent starts, and deleted then: the reference copy
    is the answer, and it would lie two folders above the agent's). Each `judge` check's plays are then played on the
    agent's game and the screenshots its judge would see are saved under <name>/run<N>/judge-shots/<check>/agent/ with
@@ -30,7 +31,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import check, godot, judges, seeds, tasks, verdict
+from . import check, godot, judges, seeds, seen, tasks, verdict
 
 FORMAT = "task-try/1"
 LONG_MINUTES = 25  # a guide for a long task, not a requirement: what counts is that the agent can't solve it easily
@@ -296,9 +297,10 @@ def linked(folder):
 
 def score(task, grade):
     """What a run reached: solved (every required check passed), its score (the weighted share of checks passed, as the
-    cloud scores it, judges left out since a try doesn't run them), required checks passed, milestones reached."""
+    cloud scores it, judges and seen probes left out since a try asks no model), required checks passed, milestones
+    reached."""
     rows = grade["checks"]
-    weighed = [r for r in rows if r.get("kind") not in verdict.JUDGES]
+    weighed = [r for r in rows if r.get("kind") not in verdict.JUDGES and r.get("detail") != seen.NOT_READ]
     total = sum(r.get("weight", 1) for r in weighed)
     earned = sum(r.get("weight", 1) for r in weighed if r["passed"])
     required = [r for r in rows if r["required"]]

@@ -29,7 +29,10 @@ a start is never booted) plays one 60 s idle play with look's queries for both (
 whole, and look reads its first 20 s only (first_seconds), one game launch instead of two. Judges and packaging never
 decide a task check: a `judge` check's plays are played on both sides and the screenshots its judge would see are
 saved under <name>/judge-shots/<check>/ (judges.py) for whoever runs the check to look at and answer
-(`judge_shots`)."""
+(`judge_shots`). A `seen` probe (text the Lab's visual model reads from a named shot) is read by the task's writer
+instead: its crops are saved under <name>/seen-shots/<check>/ (seen.py), and once the writer has answered, their
+answer is the probe's measure on each side; until then the probe measures nothing, and a task with a required one
+isn't VALID."""
 
 import json
 import math
@@ -37,7 +40,7 @@ import re
 import time
 from pathlib import Path
 
-from . import FORMAT, godot, judges, probes, seeds, tasks, verdict
+from . import FORMAT, godot, judges, probes, seeds, seen, tasks, verdict
 
 DRIVE = [{"t": 1.0, "key": "<Keyboard>/w", "press": True}, {"t": 6.0, "key": "<Keyboard>/w", "press": False},
          {"t": 6.0, "key": "<Keyboard>/d", "press": True}, {"t": 8.0, "key": "<Keyboard>/d", "press": False},
@@ -204,6 +207,10 @@ class Side:
         self.played = {}  # play name -> godot.Played
         self.saves = []  # the plays whose saved data the copy holds now: the last that started clean, and those after it
         self.replays = {}  # play name -> what differed when it was played again for its saves (replay_note)
+        self.crops = {}  # a seen check's name -> its crops on this side (seen.crops)
+        # what the writer answered for seen checks (seen.kept), set by the task check; None: no answer is read here (a
+        # task try), so seen checks are not asked
+        self.answers = None
 
     # -- the build ---------------------------------------------------------------------------------------------------
 
@@ -374,9 +381,31 @@ class Side:
                 found.append(seconds)
         return found
 
+    def seen_crops(self, check):
+        """{shot: (crop or None, why none)} of seen check `check` on this side (seen.crops): its task play, played once
+        (the probes' own, after the plays its `after` names), each named shot cropped as the Lab crops it."""
+        name = check["name"]
+        if name not in self.crops:
+            measure, play = check["measure"], check["play"]
+            if not self.built():
+                why = f"{self.why_unbuilt()}, so it wasn't played"
+                self.crops[name] = {s: (None, why) for s in seen.shots(measure)}
+            else:
+                p = self.probe_play(play)
+                ended = "wrote no probe file" if p.probe is None else f"ended at {probes.fmt(probes.ended(p.probe))} s"
+                self.crops[name] = seen.crops(measure, p.files, lambda s: (
+                    f"play {play['name']} took no shot named {s} (it {ended})"))
+        return self.crops[name]
+
     def value(self, check):
         """(probe `check`'s number on this side, or None; why none)."""
         measure = check["measure"]
+        if measure["probe"] == "seen":
+            found = self.seen_crops(check)
+            missing = next((why for _, why in found.values() if why), None)
+            if missing:
+                return None, missing
+            return seen.read(check, self.name, found, (self.answers or {}).get(check["name"]))
         if not self.built():
             return None, f"{self.why_unbuilt()}, so it wasn't played"
         p = self.probe_play(check["play"])
@@ -423,6 +452,8 @@ class Grade:
         kind = check["kind"]
         if kind in JUDGES:
             return True, NOT_JUDGED
+        if seen.is_seen(check) and self.side.answers is None:
+            return True, seen.NOT_READ
         if self.mode == "start":
             if kind == "build" and check["fails_at_start"]:
                 return (True, "the start built") if self.start.built() else (False, self.start.why_unbuilt())
@@ -540,6 +571,27 @@ def save_judge_shots(task, sides, folder, where="", blind=False, log=print, rng=
     return out
 
 
+def save_seen_shots(task, sides, folder, where="", held=None, log=print, rng=None):
+    """Save every `seen` check's crops of `sides` ({folder name: Side}, a side that didn't build noted) under
+    <folder>/<check>/ (seen.save), each with its blind copy and the answers `held` (seen.kept) still stand for:
+    {check: record}, its `folder` named as `where` and the check's name."""
+    out = {}
+    for found in seen.checks(task):
+        crops, notes = {}, []
+        for label, side in sides.items():
+            try:
+                crops[label] = side.seen_crops(found)
+            except godot.MachineError:
+                raise  # the machine can't run Godot: no verdict on the game
+            except (OSError, RuntimeError, ValueError) as exc:
+                notes.append(f"{label}: the play failed ({type(exc).__name__}: {str(exc)[:200]})")
+        record = seen.save(task, found, crops, folder, (held or {}).get(found["name"]), rng, notes)
+        record["folder"] = f"{where}{found['name']}/"
+        log(f"  {seen.line(found['name'], record)}")
+        out[found["name"]] = record
+    return out
+
+
 def probe_values(task, reference, start):
     """{probe: {group, required, op, expect, start, reference, threshold, start_passed, reference_passed}} from the two
     grades' measures."""
@@ -569,13 +621,14 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
     <out_dir>/<name>.json, its plays' files under <out_dir>/<name>/). `builds`: a run's shared copies (Builds), which
     the run deletes; without it the task gets its own under `scratch`, deleted when it is done unless `keep`.
     `judge_shots`: each `judge` check's screenshots of the start and the reference saved under
-    <out_dir>/<name>/judge-shots/ for a person to answer (the verdict never waits on them)."""
+    <out_dir>/<name>/judge-shots/ for a person to answer (the verdict never waits on them). Each `seen` check's crops
+    are saved under <out_dir>/<name>/seen-shots/, and the answers an earlier check's folder holds are read first."""
     started = clock()
     name = task.get("name", "?")
     result = {"format": FORMAT, "task": name, "game": (task.get("seed") or {}).get("game"),
               "task_sha256": tasks.digest(raw), "verdict": None, "reasons": [], "notes": [], "start": None,
               "reference": None, "probes": {}, "start_checks": [], "reference_checks": [], "judges": {},
-              "evidence": f"{name}/", "at": None, "seconds": None}
+              "seen": {}, "evidence": f"{name}/", "at": None, "seconds": None}
     sides = {}
 
     def finish(state, reasons, notes=()):
@@ -591,6 +644,7 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
         return finish("INVALID", [f"the task doesn't validate: {p}" for p in found[:5]])
     seed = task["seed"]
     evidence = Path(out_dir) / name
+    held = seen.kept(evidence / "seen-shots")  # the writer's answers outlive the evidence they were given for
     own = builds is None
     if own:
         builds = Builds(repo, scratch, direct, log)
@@ -611,6 +665,7 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
             except seeds.WrongEngine as exc:
                 return finish("INVALID", [f"{side}: {exc}"])
             sides[side] = Side(side, project, task, timeout, build_timeout, evidence, log)
+            sides[side].answers = held
             result[side] = {"commit": sha, **info}
         start, reference = sides["start"], sides.get("reference")
         build = tasks.fails_at_start(task)
@@ -635,6 +690,16 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
             result["judges"] = save_judge_shots(task, shown, evidence / "judge-shots", f"{name}/judge-shots/",
                                                 blind=True, log=log)
             notes += [judges.line(n, r) for n, r in result["judges"].items()]
+        if seen.checks(task):  # a start that doesn't build by design is never played, so it has nothing to read
+            shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None
+                     and not (label == "start" and build is not None and not start.built())}
+            result["seen"] = save_seen_shots(task, shown, evidence / "seen-shots", f"{name}/seen-shots/", held, log=log)
+            notes += [seen.line(n, r) for n, r in result["seen"].items()]
+            # a required seen check gates as a probe does, so the task isn't VALID until both sides are answered (an
+            # unanswered start would otherwise read as the start failing it)
+            waiting = [seen.line(c["name"], result["seen"][c["name"]]) for c in seen.checks(task)
+                       if c["required"] and result["seen"][c["name"]]["status"] != seen.ANSWERED]
+            valid, why = valid and not waiting, list(why) + waiting
         result.update(probes=probe_values(task, ref_grade, start_grade), start_checks=start_grade["checks"],
                       reference_checks=ref_grade["checks"] if ref_grade else [])
         return finish("VALID" if valid else "INVALID", why, notes)

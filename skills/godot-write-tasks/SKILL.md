@@ -108,7 +108,7 @@ A thread qualifies only when all of these hold (the validator enforces the numbe
    long thread confined to one function is a short task in disguise.
 3. **Several outcomes.** At least 3 required outcome probes, one per issue the thread settled, so partial work earns
    partial credit (a compound ticket). A required probe of weight 0 is a guard, not an outcome: it gates, and isn't
-   counted. A thread that settled only one observable thing is rarely long enough.
+   counted. Neither is a `seen` probe: a model reads it, as a judge's pictures. A thread that settled only one observable thing is rarely long enough.
 4. **The first attempt didn't hold, or the cause is far from the symptom.** The thread had a fix that was undone,
    complained about again ("still too low") or broke something else; or the symptom shows in one system and the cause
    sits in another (a HUD symptom from a tuning resource, a camera symptom from collision layers, a fault only in the
@@ -448,8 +448,12 @@ looks up and a positive yaw turns left.
   - `ui`: what the UI shows on screen, element by element (the text, pictures and boxes that are drawn, their count
     and place; `match` for a text). It reads the text of Controls and of `Label3D`s only, never text a script draws
     in `_draw`, a shader draws or a texture holds. You can't know how a solver will draw text the thread creates, so
-    a check of new text is paired with a required judge item that it shows, or reads the state behind it, never `ui`
-    text alone;
+    a check of new text reads it with `seen` (below) or reads the state behind it, never `ui` text alone;
+  - `seen`: text the visual checks' model reads from a named shot of the check's own task play (docs/task-probes.md
+    2.22). **Read text from the game's UI first** (`ui`, `widgets`): `seen` only for text nothing else gives, drawn
+    by a script, a shader or a texture. Give it a loose `rect` or none, and take the shot at a still moment (a clock
+    ticks). It is a visual check: the task still needs a required probe besides it, and the task check saves its
+    crops for you to read blind;
   - `screen`: the frame's mean luminance, never a literal threshold;
   - `audio`: the players that play and how loud the listener hears them, the mix's level, and the sounds that
     start, however short (`started_audible`, and by their streams' names `sounds` and `repeats`);
@@ -715,6 +719,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | a bug that never shows in the grader's plays | a scenario or a task play that triggers the moment |
 | a brief rejected by a content filter (injury wording) | neutral technical words: mesh, bones, pose, hit, reaction |
 | a reverted file kept its newer `.import` or `.uid` | a file and its sidecar always move together |
+| text a script draws in `_draw`, a shader draws or a texture holds read nothing to `ui` | `seen` on a `shot` of the check's own task play, taken while the text holds still; a loose `rect` or none (a tight one fails a build that draws it elsewhere) |
 
 ## 9. Examples
 
