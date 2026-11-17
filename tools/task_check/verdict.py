@@ -10,14 +10,21 @@ Thresholds (a probe's `expect`):
 - relative to the start (`start_times: f`, `start_plus: d`): s * f or s + d; a start that measured nothing leaves no
   threshold.
 
-A task is VALID when
+A task is VALID when (the no-op case: the start, untouched, must fail the task; the oracle case: the reference must pass
+every required check, as the Lab's own no-op and oracle check of a task holds them)
 - the start builds, unless the task says it doesn't (a build check's `fails_at_start`: making it build is the task):
   then the start must not build, and that is the start failing the task (it is never played);
-- with a reference: the reference builds and boots and passes every required probe; its other checks (log_absent,
-  file_exists, probes that aren't required) are notes, never decisive; the start fails every required probe
-  outside still_works (or doesn't build by design);
-- without a reference: the start fails every required probe outside still_works (or doesn't build by design), and
-  every required probe has a threshold (one the start leaves uncalibrated, no solution could pass);
+- with a reference: the reference passes every required check of every kind it is checked on (build, boot,
+  log_absent, file_exists, package, every required probe); its checks that aren't required are notes, never decisive.
+  A `package` check fails on every side (no grader packages a Godot game: check.NO_PACKAGE), so a required one makes
+  the task INVALID;
+- the start fails every required probe outside still_works (or doesn't build by design), and at least one of those is
+  not a `seen` probe: a seen probe is a visual check a model reads, never the outcome that shows the bug;
+- without a reference: the start fails every required probe outside still_works (or doesn't build by design);
+- every probe the task names, required or not, has a threshold: the Lab's check stops on a probe it can't calibrate
+  (`uncalibrated`), whichever it is;
+- no check of either side is a task error (check.TASK_ERROR: a probe whose selector reads nothing even on the
+  reference, a task play whose input didn't land on the reference): no version of the game can be graded by it;
 - either way, every required probe of the task's `still_works` milestone already passes at the start: what still works
   must hold there, or the probe is broken and would fail every correct solution. A still-works probe the start has no
   samples for (its play crashed or ended early: the task's own bug) is no sign of a broken probe; one that finds
@@ -25,14 +32,20 @@ A task is VALID when
 - a required check of weight 0 outside still_works that the start passes is a guard, not refused (it rewards
   nothing; a task may hold more guards than still_works' 32);
 - a no-op scores zero: no check the start passes carries weight. The cloud's score is the weighted
-  share of checks passed, so build, boot and still-works checks and anything else true of the start take `"weight": 0`.
-Judges (judge, code_judge) and packaging never take part."""
+  share of checks passed, so build, boot and still-works checks and anything else true of the start take `"weight": 0`;
+- no required `code_judge`: a model reads the change in the Lab and nothing here can, so code review stays a quality
+  check (`"required": false`).
+Judges' screenshots and seen probes' crops are answered by the task's writer (check.check_task holds the verdict until
+every required one is answered and agrees)."""
 
 import math
 
 from . import probes, tasks
 
 JUDGES = ("judge", "code_judge")
+SEEN_ONLY = ("no required probe outside still_works but seen ones: a seen probe is a visual check a model reads, never "
+             "the outcome that shows the start failing the task")
+TASK_ERROR = "task error"  # a check's detail starts so when no version of the game can be graded by it (the Lab's word)
 MARGIN = 0.25  # a calibrated threshold whose start measured nothing: the reference's value, this share toward the start
 
 
@@ -120,9 +133,11 @@ def verdict(task, reference, start):
     """(valid, why, notes) from the reference's and the start's check rows ({"checks": [{name, kind, passed,
     detail}]}). `reference` None: a start-only check."""
     why, notes = [], []
+    every = {c["name"]: (group, c) for group, c in tasks.checks(task)}
     required = tasks.gating(task)
     still = tasks.still_works(task)
     build = tasks.fails_at_start(task)
+    seen = {n for n, (_, c) in every.items() if c["kind"] == "probe" and c["measure"]["probe"] == "seen"}
     broken = [c for c in start["checks"] if build is not None and c["name"] == build["name"]
               and not str(c["detail"]).startswith("not asked")]
     if any(c["passed"] for c in broken):
@@ -132,17 +147,31 @@ def verdict(task, reference, start):
         if c["name"] in still and not c["passed"] and not detail.startswith("not asked") \
                 and "no samples in the window" not in detail:  # a crash the task fixes leaves nothing to measure
             why.append(f"start fails still-works {c['name']}: {detail[:160]}")
+    told = set()  # checks a reason already names
     if reference is not None:
         for c in reference["checks"]:
             if c["passed"]:
                 continue
-            if c["kind"] in ("build", "boot") or c["name"] in required:
+            spec = every.get(c["name"], (None, {}))[1]
+            if c["kind"] in ("build", "boot") or c["name"] in required or spec.get("required", True):
                 why.append(f"reference fails {c['name']}: {str(c['detail'])[:160]}")
-            else:
+                told.add(c["name"])
+            elif not str(c["detail"]).startswith(("uncalibrated", TASK_ERROR)):  # those are reasons below
                 notes.append(f"reference fails {c['name']} ({c['kind']}): {str(c['detail'])[:160]}")
-    else:  # an uncalibrated probe is no start failing it: no solution could pass it (with a reference, its row says so)
-        why.extend(f"{c['name']} has no threshold: {str(c['detail'])[:160]}" for c in start["checks"]
-                   if c["name"] in required and str(c["detail"]).startswith("uncalibrated"))
+    for side, rows in (("reference", reference), ("start", start)):
+        for c in (rows or {}).get("checks", []):
+            detail = str(c["detail"])
+            if c["name"] in told:
+                continue
+            if detail.startswith("uncalibrated"):  # the Lab's check stops on it, required or not
+                why.append(f"{c['name']} has no threshold: {detail[:160]}")
+                told.add(c["name"])
+            elif detail.startswith(TASK_ERROR):
+                why.append(f"{c['name']} on the {side}: {detail[:160]}")
+                told.add(c["name"])
+    why.extend(f"{n} is a required code_judge: a model reads the change in the Lab and no check here can, so make it "
+               "\"required\": false (code review is a quality check)" for n, (_, c) in every.items()
+               if c["kind"] == "code_judge" and c.get("required", True))
     earned, names = noop_score(task, start)
     told = (required - still) | ({build["name"]} if build is not None else set())  # those have their own reasons below
     if earned and set(names) - told:
@@ -155,6 +184,8 @@ def verdict(task, reference, start):
         why.append("no required probe outside still_works to check the start with")
     elif all(c["passed"] for c in gates):
         why.append("start already passes every required probe")
+    elif not broken and not [c for c in gates if c["name"] not in seen]:
+        why.append(SEEN_ONLY)
     else:  # every outcome is one issue of the thread: one the start already has rewards no work
         # (godot-write-tasks section 5)
         # A required check of weight 0 rewards nothing, so one the start passes is a guard wherever it sits (a task

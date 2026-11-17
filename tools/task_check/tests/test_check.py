@@ -221,6 +221,78 @@ class Grades(unittest.TestCase):
                      "ERROR: Condition \"!is_inside_tree()\" is true.", "", None):
             self.assertFalse(check.fatal(line), line)
 
+def answering(rows=None, missed=(), seconds=10):
+    """A play answer whose every objects or widgets query matches `rows` in each sample and whose `inputs_missed` is
+    `missed`."""
+
+    def play(seconds_, shots, queries):
+        found = {"format": "godot-probe/1", "ended": "time", "seconds": float(seconds_), "player": "Hero",
+                 "inputs_sent": 2, "screenshots": [], "track": [[i * 0.5, 0.0, 0.0, 0.0] for i in range(seconds)],
+                 "camera": [], "measures": {}, "inputs_missed": list(missed)}
+        for q in (queries or {}).get("queries", []):
+            found["measures"][q["id"]] = [{"t": i * 0.5, "rows": list(rows or [])} for i in range(seconds)]
+        return found, "Godot Engine v4.7.2.stable.official\n"
+
+    return play
+
+
+def first_row(task, mode, start, reference):
+    """(passed, detail) of the task's first check in a grade of `mode`."""
+    row = grade(task, mode, start, reference)["checks"][0]
+    return row["passed"], row["detail"]
+
+
+class TaskErrors(unittest.TestCase):
+    """What no version of the game can be graded by, as the Lab's grade reads it: a select that reads nothing on the
+    reference, a task play whose input doesn't land on the reference."""
+
+    def test_a_select_that_reads_nothing_on_the_reference_is_a_task_error(self):
+        task = task_with(probe(measure={"probe": "objects", "select": {"name": "Lamp*"}, "field": "y", "of": "max",
+                                        "agg": "max"}, expect={"op": ">=", "value": 1}))
+        ref = side("reference", FakeProject(answering([])), task)
+        passed, detail = first_row(task, "reference", None, ref)
+        self.assertFalse(passed)
+        self.assertTrue(detail.startswith("task error: "), detail)
+        self.assertIn("in the reference's look, its select", detail)
+        self.assertIn("the check reads nothing even on the task's own fix", detail)
+        found = side("reference", FakeProject(answering([{"name": "Lamp_1", "y": 2.0}])), task)
+        self.assertEqual(first_row(task, "reference", None, found)[0], True, "a select that reads something is graded")
+
+    def test_nothing_matching_is_the_outcome_when_0_passes(self):
+        gone = probe(measure={"probe": "objects", "select": {"name": "Crate*"}, "field": "count", "agg": "last"},
+                     expect={"op": "==", "value": 0})
+        task = task_with(gone)
+        ref = side("reference", FakeProject(answering([])), task)
+        self.assertEqual(first_row(task, "reference", None, ref)[0], True, "\"the crates are gone\" reads 0 of nothing")
+        shown = task_with(probe(measure={"probe": "objects", "select": {"name": "Crate*"}, "field": "count",
+                                         "agg": "last"}, expect={"op": ">=", "value": 1}))
+        passed, detail = first_row(shown, "reference", None, side("reference", FakeProject(answering([])), shown))
+        self.assertFalse(passed)
+        self.assertIn("the task's own fix fails it", detail)
+
+    def test_an_input_that_doesnt_land_on_the_reference_is_a_task_error(self):
+        tap = {"name": "open_menu", "seconds": 5, "inputs": [{"t": 1, "key": "<Keyboard>/m", "press": True},
+                                                             {"t": 1.2, "key": "<Keyboard>/m", "press": False},
+                                                             {"t": 2, "widget": "Begin", "click": True}]}
+        task = task_with(probe(play=tap, measure={"probe": "player", "field": "y", "agg": "max"},
+                               expect={"op": ">=", "value": 0}))
+        miss = [{"t": 2.0, "kind": "click", "target": "Begin", "why": "no visible control matches it"}]
+        ref = side("reference", FakeProject(answering(missed=miss)), task)
+        passed, detail = first_row(task, "reference", None, ref)
+        self.assertFalse(passed)
+        self.assertIn("task error: ", detail)
+        self.assertIn("in the reference's play open_menu, an input did not land (click Begin at 2 s", detail)
+        good = side("reference", FakeProject(answering()), task)
+        start = side("start", FakeProject(answering(missed=miss)), task)
+        passed, detail = first_row(task, "start", start, good)
+        self.assertEqual((passed, detail.split(" | ")[1]), (False, "the play's input did not land: click Begin at 2 s "
+                                                                  "(no visible control matches it)"),
+                         "the start's own miss is the start failing it")
+        shot = [{"t": 2.0, "kind": "shot", "target": "menu", "why": "not written"}]
+        self.assertTrue(first_row(task, "reference", None, side("reference", FakeProject(answering(missed=shot)), task))[0],
+                        "a named screenshot not taken changes nothing the game did")
+
+
 def git(repo, *args, data=None):
     return subprocess.run(["git", "-C", str(repo), *args], input=data, capture_output=True, check=True).stdout
 

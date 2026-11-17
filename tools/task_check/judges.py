@@ -9,13 +9,23 @@ looks at them and answers the rubric:
   evenly through), and every screenshot its `shot` inputs take by name, in the order taken;
 - a judge with no plays is shown the shared idle play ("look", 20 s, 6 screenshots) and the drive (22 s, 8) on the
   task's play_scene;
+- a judge with a `route` is also shown the developer's route file played by the checker as the Lab plays it (read from
+  the graded copy: the reference in a task check, the agent's game in a try; 8 screenshots; check.Side.route_play),
+  after its other plays; a route that can't be played (no such file, not a route) is said in the notes and shows
+  nothing, and nothing stands for it;
 - a judge is shown 20 screenshots of a side at most.
 
 `save` writes them under <folder>/<check>/<side>/<play>_<nn>.png with <folder>/<check>/ask.md (the brief, the question,
 the rubric, what each picture is); with `blind`, a copy of two sides under blind/A and blind/B whose mapping is
 blind/key.json, so the looker can answer before knowing which side is which: the copy holds only the pictures both
-sides have, and each side's own pictures and notes are in sides.md, never in the blind ask.md."""
+sides have, and each side's own pictures and notes are in sides.md, never in the blind ask.md.
 
+The task's writer scores the rubric into blind/answers.json, {"A": {item key: 0 to 1, ...}, "B": {...}}; a later task
+check reads it (`kept`, `scored`) while the pictures it was given for are the same (pictures.json: each picture's
+sha256), and a required judge holds the task's verdict until both sides are scored as the Lab's judge would have to
+score them (check.check_task)."""
+
+import hashlib
 import json
 import random
 import re
@@ -30,6 +40,9 @@ SHARED = {"look": ("idle play, 20 s, no input", 20, 6), "drive": ("scripted driv
 EVEN_SHOT = re.compile(r"^shot_\d{2,3}\.png$")  # an evenly spaced screenshot; any other is one a `shot` input took
 PASS, REQUIRED = 0.6, 0.5  # the judge's pass mark: weighted score at least PASS, no required item below REQUIRED
 PENDING = "shots saved for {sides}, answer needed"
+ANSWERED = "scored in blind/answers.json"
+ANSWERS = "answers.json"  # under blind/
+ROUTE = "route"  # the developer's route's play, as a judge's play name
 
 
 def judge(c):
@@ -64,8 +77,12 @@ def plays(check):
     """What a judge check is shown of a side, in order: [(play, label, shots)], `play` "look", "drive" or a task play,
     `shots` how many of its evenly spaced screenshots (None: every one taken)."""
     if check["plays"]:
-        return [(p, f"task play {p['name']}, {p['seconds']} s", check["shots"]) for p in check["plays"]]
-    return [(name, label, None) for name, (label, _, _) in SHARED.items()]
+        found = [(p, f"task play {p['name']}, {p['seconds']} s", check["shots"]) for p in check["plays"]]
+    else:
+        found = [(name, label, None) for name, (label, _, _) in SHARED.items()]
+    if check.get("route"):
+        found.append((ROUTE, f"the developer's route {check['route']}, played by the checker", None))
+    return found
 
 
 def spread(items, count):
@@ -157,6 +174,10 @@ def ask_text(task, check, sides, notes=(), blind=False, saved=None):
              "## The pictures", ""]
     for play, label, shots in plays(check):
         name = play if isinstance(play, str) else play["name"]
+        if play == ROUTE:
+            lines.append(f"- `{name}_NN.png`: {label}: the presses and releases its file lists, 8 evenly spaced "
+                         "screenshots, after the other plays (none when it couldn't be played: see the notes).")
+            continue
         if isinstance(play, str):
             _, seconds, count = SHARED[play]
             what = f"every one of its {count} screenshots, at {', '.join(f'{t:g}' for t in even_times(seconds, count))} s"
@@ -180,16 +201,30 @@ def ask_text(task, check, sides, notes=(), blind=False, saved=None):
         lines += ["", f"In the cloud the judge is also shown {' and '.join(shown)}, beside the developer's game, the "
                       "same plays at the same moments."]
     if check["route"]:
-        lines += ["", f"In the cloud the judge also plays the developer's route file `{check['route']}` and then shows "
-                      "4 of the idle play's 6 pictures. That play isn't made here."]
+        lines += ["", f"The route file `{check['route']}` is read from the graded copy (the reference here) and played "
+                      "on each side shown, as the Lab plays it. Where it couldn't be played the notes say why, and the "
+                      "judge sees no route: score only what the pictures show."]
     lines += ["", "## How to answer", ""]
     if blind:
         lines += ["`blind/A/` and `blind/B/` hold the pictures both of two side folders have; which is which is in "
                   "`blind/key.json`. Score every rubric item for A and for B first, each as if it were the developer's "
                   "game, then open the key.", ""]
+    if blind:
+        example = "{" + ", ".join(f'"{i["key"]}": 0.0' for i in check["rubric"]) + "}"
+        letters = "A" if len(sides) == 1 else "A and B"
+        lines += [f"Write the scores into `blind/{ANSWERS}`, one object per letter ({letters}), every rubric item "
+                  "from 0 to 1:", "", "```json",
+                  "{" + ", ".join(f'"{x}": {example}' for x in ("A", "B")[:len(sides)]) + "}", "```", "",
+                  "Then check the task again: it reads the scores while the pictures stay the same "
+                  "(`pictures.json`); pictures that changed need new scores."]
     if set(sides) >= {"start", "reference"}:
-        lines += ["The task is VALID on this check only when the start fails every required rubric item and the "
-                  "reference passes every one. Write the scores of both sides in the task's notes."]
+        lines += ["", "A required judge holds the task's verdict until both sides are scored. The reference must pass "
+                  f"(weighted score at least {PASS}, no required item below {REQUIRED}). A judge of what still looks as "
+                  "it did (in `still_works`) must pass on the start too; any other required judge must have every "
+                  "required item below 0.5 on the start. Never ease an item to make it so: reword it so the "
+                  "pictures decide it, or fix the plays."]
+    elif "reference" in sides:
+        lines += ["", "A required judge holds the task's verdict until the reference is scored, and it must pass."]
     elif "agent" in sides:
         lines += ["Score the agent's game the same way, before calling the task too easy or held: the try's own "
                   "number leaves judges out."]
@@ -207,10 +242,65 @@ def side_lines(saved):
     return lines
 
 
-def save(task, check, played, folder, blind=False, notes=(), rng=None):
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8-sig")), None
+    except FileNotFoundError:
+        return None, None
+    except (OSError, ValueError) as exc:
+        return None, f"{Path(path).name} can't be read ({type(exc).__name__}: {str(exc)[:120]})"
+
+
+def kept(folder):
+    """What an earlier task check's judge-shots folder holds, read before the folder is made again: {check: {"key":
+    {letter: side}, "sides": {side: {"scores": its answer or None, "pictures": {name: sha256}}}, "problem": why the
+    answers can't be read, or None, "raw": that file's bytes, kept as written}}."""
+    out, folder = {}, Path(folder)
+    if not folder.is_dir():
+        return out
+    for base in sorted(p for p in folder.iterdir() if p.is_dir()):
+        key, _ = _json(base / "blind" / "key.json")
+        if not (isinstance(key, dict) and key and set(key) <= {"A", "B"}):
+            continue
+        answers, problem = _json(base / "blind" / ANSWERS)
+        if answers is not None and not isinstance(answers, dict):
+            answers, problem = None, 'it is {"A": {...}, "B": {...}}'
+        try:
+            raw = (base / "blind" / ANSWERS).read_bytes() if problem else None
+        except OSError:
+            raw = None
+        made, _ = _json(base / "pictures.json")
+        out[base.name] = {"key": key, "problem": problem, "raw": raw,
+                          "sides": {side: {"scores": (answers or {}).get(letter),
+                                           "pictures": (made or {}).get(side) if isinstance(made, dict) else None}
+                                    for letter, side in key.items()}}
+    return out
+
+
+def scored(check, scores):
+    """(passed, why) of one side's scores ({item key: 0 to 1}) by the Lab judge's pass mark: the weighted score at
+    least PASS and no required item below REQUIRED. ValueError when they aren't a score of every item."""
+    keys = [i["key"] for i in check["rubric"]]
+    if not isinstance(scores, dict) or sorted(scores) != sorted(keys) or not all(
+            isinstance(v, int | float) and not isinstance(v, bool) and 0 <= v <= 1 for v in scores.values()):
+        raise ValueError(f"a side's answer scores every rubric item ({', '.join(keys)}) from 0 to 1")
+    total = sum(i["weight"] for i in check["rubric"]) or 1
+    value = sum(i["weight"] * scores[i["key"]] for i in check["rubric"]) / total
+    low = [i["key"] for i in check["rubric"] if i["required"] and scores[i["key"]] < REQUIRED]
+    why = f"weighted {value:.2f}" + (f", required item(s) below {REQUIRED}: {', '.join(low)}" if low else "")
+    return value >= PASS and not low, why
+
+
+def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None):
     """Save judge check `check`'s screenshots of each side under <folder>/<check>/: `played` {side: {play name: (probe,
-    files)}}. With `blind` and two sides, the blind copy. Its record: {"sides": {side: [saved names]}, "blind": whether
-    there is a blind copy (its key stays in its folder), "notes", "status"}."""
+    files)}}. With `blind`, the blind copy (of one or two sides), keeping `held`'s letters (kept()[check]) and carrying
+    over each side's scores whose pictures are unchanged. Its record: {"sides": {side: [saved names]}, "blind":
+    whether there is a blind copy (its key stays in its folder), "answered": {side: {"passed", "why", "low"}}, "notes",
+    "status"}."""
     base = Path(folder) / check["name"]
     if base.exists():
         shutil.rmtree(base)
@@ -228,18 +318,44 @@ def save(task, check, played, folder, blind=False, notes=(), rng=None):
                 notes.append(f"{side}: {name} wasn't played")
             elif not picked:
                 notes.append(f"{side}: {name} took no screenshots")
-    key = None
-    if blind and len(saved) == 2:
-        key, more = blind_copy(base, list(saved), rng)
+    pictures = {side: {f.name: digest(f.read_bytes()) for f in sorted((base / side).iterdir())} for side in saved}
+    (base / "pictures.json").write_text(json.dumps(pictures, indent=2) + "\n", encoding="utf-8")
+    key, answered = None, {}
+    if blind and saved and all(pictures.values()):
+        old = (held or {}).get("key")
+        key, more = blind_copy(base, list(saved), rng, old if old and sorted(old.values()) == sorted(saved) else None)
         notes += more
+        sides = (held or {}).get("sides") or {}
+        answers = {}
+        for letter, side in key.items():
+            scores = (sides.get(side) or {}).get("scores")
+            if scores is None:
+                continue
+            if (sides.get(side) or {}).get("pictures") != pictures[side]:
+                notes.append(f"{side}: its pictures changed since they were scored, so its scores were dropped")
+                continue
+            answers[letter] = scores
+            try:
+                passed, why = scored(check, scores)
+            except ValueError as exc:
+                notes.append(f"blind/{ANSWERS}: {exc}")
+                continue
+            answered[side] = {"passed": passed, "why": why,
+                              "low": all(scores[i["key"]] < REQUIRED for i in check["rubric"] if i["required"])}
+        if answers:
+            (base / "blind" / ANSWERS).write_text(json.dumps(answers, indent=2) + "\n", encoding="utf-8")
+        elif (held or {}).get("raw") and key == old:  # an answer file that can't be read stays as written, to fix
+            (base / "blind" / ANSWERS).write_bytes(held["raw"])
+            notes.append(f"blind/{ANSWERS}: {held['problem']}")
     (base / "ask.md").write_text(ask_text(task, check, list(saved), notes, key is not None, saved), encoding="utf-8")
     if key is not None:  # what would unblind the scorer, kept beside the key
         (base / "sides.md").write_text("\n".join(["# Each side's pictures", ""] + side_lines(saved)
                                                  + (["", "## Notes", ""] + [f"- {n}" for n in notes] if notes else []))
                                        + "\n", encoding="utf-8")
+    done = bool(saved) and sorted(answered) == sorted(saved)
     return {"sides": {s: [n for _, _, p in rows for _, n in p] for s, rows in saved.items()},
-            "blind": key is not None, "notes": notes,
-            "status": PENDING.format(sides="/".join(saved) or "no side")}
+            "blind": key is not None, "answered": answered, "notes": notes,
+            "status": ANSWERED if done else PENDING.format(sides="/".join(saved) or "no side")}
 
 
 def line(name, record):

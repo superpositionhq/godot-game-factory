@@ -125,7 +125,8 @@ class Saved(unittest.TestCase):
             self.assertIn("`start/`: 6 picture(s)", (base / "sides.md").read_text())
             for text in ("Does the door open?", "| door_open | yes | 1 | The door stands open. |",
                          "| lit | no | 2 | The room is lit. |", "Keep the hero on the ground.", "blind/key.json",
-                         "start fails every required rubric item", "the start as BEFORE"):
+                         "every required item below 0.5 on the start", "the start as BEFORE",
+                         '{"A": {"door_open": 0.0, "lit": 0.0}, "B": {"door_open": 0.0, "lit": 0.0}}'):
                 self.assertIn(text, ask)
             record = records["door_looks_open"]
             self.assertEqual(record["status"], "shots saved for start/reference, answer needed")
@@ -161,20 +162,96 @@ class Saved(unittest.TestCase):
                                        + [f"drive_{i:02d}.png" for i in range(1, 9)]))
         self.assertEqual([(p["seconds"], p["shots"]) for p in s.project.plays], [(60, 6), (20, 6), (22, 8)])
 
-    def test_a_side_that_didnt_build_is_noted_and_no_blind_copy_is_made(self):
+    def test_a_side_that_didnt_build_is_noted_and_the_other_is_blinded_alone(self):
         task = task_with(judge())
         sides = {"start": side("start", Shooting(build_exit=6, folder="start"), task),
                  "reference": side("reference", Shooting(folder="reference"), task)}
         with tempfile.TemporaryDirectory() as tmp:
             record = check.save_judge_shots(task, sides, Path(tmp), blind=True, log=lambda *a: None)["door_looks_open"]
-            self.assertFalse((Path(tmp) / "door_looks_open" / "blind").exists())
+            self.assertEqual(json.loads((Path(tmp) / "door_looks_open" / "blind" / "key.json").read_text()),
+                             {"A": "reference"}, "the reference alone still needs its scores")
             self.assertEqual(record["status"], "shots saved for reference, answer needed")
             self.assertIn("didn't build", record["notes"][0])
+
+    def test_scores_by_the_lab_judges_pass_mark(self):
+        chk = judges.judges(task_with(judge()))[0]
+        self.assertEqual(judges.scored(chk, {"door_open": 1, "lit": 0.5}), (True, "weighted 0.67"))
+        self.assertEqual(judges.scored(chk, {"door_open": 0.4, "lit": 1}),
+                         (False, "weighted 0.80, required item(s) below 0.5: door_open"), "a required item decides")
+        self.assertFalse(judges.scored(chk, {"door_open": 1, "lit": 0})[0], "weighted 0.33 is under 0.6")
+        for bad in ({"door_open": 1}, {"door_open": 1, "lit": 2}, {"door_open": True, "lit": 1}, [1, 1]):
+            with self.assertRaises(ValueError):
+                judges.scored(chk, bad)
+
+    def test_a_route_is_read_from_the_graded_copy_and_played_on_each_side(self):
+        task = task_with(probe(), judge(route="Tests/route.json", before=True))
+        sides = self.sides(task)
+        route = [{"t": 3, "key": "<Keyboard>/w", "press": False}, {"t": 1, "key": "<Keyboard>/w", "press": True}]
+        sides["reference"].project.files["Tests/route.json"] = json.dumps(route).encode()
+        for made in sides.values():
+            made.route_from = sides["reference"]
+        with tempfile.TemporaryDirectory() as tmp:
+            record = check.save_judge_shots(task, sides, Path(tmp), blind=True, log=lambda *a: None,
+                                            rng=random.Random(1))["door_looks_open"]
+            for name in ("start", "reference"):
+                self.assertEqual(sides[name].project.plays[-1]["inputs"], sorted(route, key=lambda e: e["t"]))
+                self.assertEqual((sides[name].project.plays[-1]["seconds"], sides[name].project.plays[-1]["shots"]),
+                                 (10, 8), "4 s past its last input, 10 s at least, 8 screenshots")
+            self.assertEqual(len(record["sides"]["start"]), 6 + 8 + 6, "20 pictures a side at most: the route's last "
+                             "two left out, as the Lab cuts them")
+            self.assertIn("route_01.png", record["sides"]["reference"])
+            self.assertIn("played on each side shown", (Path(tmp) / "door_looks_open" / "ask.md").read_text())
+
+    def test_a_route_that_cant_be_played_is_said_and_shows_nothing(self):
+        task = task_with(probe(), judge(route="Tests/route.json"))
+        sides = self.sides(task)
+        for files, said in (({}, "there is no Tests/route.json in the graded copy"),
+                            ({"Tests/route.json": b"{}"}, "isn't a list of 1 to 400 inputs"),
+                            ({"Tests/route.json": json.dumps([{"t": 130, "key": "<Keyboard>/w", "press": True}])
+                              .encode()}, "has an input that isn't"),
+                            ({"Tests/route.json": json.dumps([{"t": 1, "key": "w", "press": True}]).encode()},
+                             "has an input that isn't")):
+            fresh = self.sides(task)
+            fresh["reference"].project.files.update(files)
+            for made in fresh.values():
+                made.route_from = fresh["reference"]
+            with tempfile.TemporaryDirectory() as tmp:
+                record = check.save_judge_shots(task, fresh, Path(tmp), blind=True,
+                                                log=lambda *a: None)["door_looks_open"]
+            notes = [n for n in record["notes"] if "route" in n and "NOT played" in n]
+            self.assertEqual(len(notes), 2, files)
+            self.assertIn(said, notes[0])
+            self.assertIn("nothing stands for it", notes[0])
+            self.assertFalse(any(n.startswith("route_") for n in record["sides"]["reference"]))
+
+    def test_scores_stand_while_the_pictures_are_the_same(self):
+        task = task_with(probe(), judge(before=True))
+        chk = judges.judges(task)[0]
+        shots = lambda tag: {f"shot_{i:02d}.png": f"{tag}{i}".encode() for i in range(6)}
+        played = {"start": {"look": (None, shots("s")), "drive": (None, shots("s"))},
+                  "reference": {"look": (None, shots("r")), "drive": (None, shots("r"))}}
+        with tempfile.TemporaryDirectory() as tmp:
+            judges.save(task, chk, played, tmp, blind=True, rng=random.Random(1))
+            blind = Path(tmp) / chk["name"] / "blind"
+            key = json.loads((blind / "key.json").read_text())
+            mine = {"start": {"door_open": 0, "lit": 1}, "reference": {"door_open": 1, "lit": 1}}
+            (blind / "answers.json").write_text(json.dumps({x: mine[side] for x, side in key.items()}))
+            again = judges.save(task, chk, played, tmp, blind=True, held=judges.kept(tmp)[chk["name"]])
+            self.assertEqual(again["status"], judges.ANSWERED)
+            self.assertEqual(again["answered"]["reference"]["passed"], True)
+            self.assertEqual(again["answered"]["start"]["low"], True)
+            played["start"]["look"] = (None, shots("x"))
+            moved = judges.save(task, chk, played, tmp, blind=True, held=judges.kept(tmp)[chk["name"]])
+            self.assertEqual(sorted(moved["answered"]), ["reference"], "a side whose pictures changed is asked again")
+            self.assertIn("start: its pictures changed since they were scored, so its scores were dropped",
+                          moved["notes"])
 
 
 class Whole(unittest.TestCase):
     def run_check(self, tmp, **kw):
-        repo, start, fix, _ = make_game(tmp)
+        if getattr(self, "game", (None,))[-1] != tmp:
+            self.game = (*make_game(tmp)[:3], tmp)
+        repo, start, fix, _ = self.game
         task = task_with(probe(expect={"op": ">=", "calibrate": 0.5}), judge(reference=True))
         task["seed"] = {**task["seed"], "commit": start, "reference": fix}
         names = {start[:12]: "start", fix[:12]: "reference"}
@@ -187,20 +264,38 @@ class Whole(unittest.TestCase):
             return check.check_task(repo, task, json.dumps(task).encode(), Path(tmp) / "scratch", Path(tmp) / "out",
                                     log=lambda *a: None, **kw)
 
-    def test_a_task_check_saves_both_sides_and_its_verdict_doesnt_wait(self):
+    def score(self, tmp, start, reference):
+        blind = Path(tmp) / "out" / "probe-task" / "judge-shots" / "door_looks_open" / "blind"
+        key = json.loads((blind / "key.json").read_text())
+        mine = {"start": start, "reference": reference}
+        (blind / "answers.json").write_text(json.dumps({x: mine[side] for x, side in key.items()}))
+
+    def test_a_required_judge_holds_the_verdict_until_both_sides_are_scored(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = self.run_check(tmp)
-            self.assertEqual(result["verdict"], "VALID")
+            self.assertEqual(result["verdict"], "INVALID", "a required check nobody has scored proves nothing")
             self.assertIn("judge door_looks_open: shots saved for start/reference, answer needed", result["notes"])
+            self.assertEqual(result["reasons"], ["judge door_looks_open: shots saved for start/reference, answer "
+                                                 "needed"])
             base = Path(tmp) / "out" / "probe-task" / "judge-shots" / "door_looks_open"
             for folder in ("start", "reference", "blind/A", "blind/B"):
                 self.assertEqual(len(list((base / folder).iterdir())), 14, folder)
             self.assertTrue((base / "ask.md").is_file())
+            self.score(tmp, {"door_open": 0, "lit": 1}, {"door_open": 1, "lit": 1})
+            self.assertEqual((self.run_check(tmp)["verdict"]), "VALID")
+            self.score(tmp, {"door_open": 0, "lit": 1}, {"door_open": 0.4, "lit": 1})
+            self.assertEqual(self.run_check(tmp)["reasons"], [
+                "reference fails judge door_looks_open as you scored it (weighted 0.80, required item(s) below 0.5: "
+                "door_open)"])
+            self.score(tmp, {"door_open": 0.5, "lit": 0}, {"door_open": 1, "lit": 1})
+            self.assertEqual(self.run_check(tmp)["reasons"], [
+                "start already meets a required item of judge door_looks_open as you scored it (weighted 0.17)"])
 
-    def test_no_judge_shots_skips_them(self):
+    def test_no_judge_shots_leaves_a_required_judge_unanswered(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = self.run_check(tmp, judge_shots=False)
-            self.assertEqual((result["verdict"], result["judges"]), ("VALID", {}))
+            self.assertEqual((result["verdict"], result["judges"]), ("INVALID", {}))
+            self.assertEqual(result["reasons"], ["judge door_looks_open: not played (--no-judge-shots), answer needed"])
             self.assertFalse((Path(tmp) / "out" / "probe-task" / "judge-shots").exists())
 
     def test_the_progress_names_each_judge_waiting_for_an_answer(self):

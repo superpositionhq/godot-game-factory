@@ -668,7 +668,8 @@ class MoreFairReadings(unittest.TestCase):
         grade = check.Grade(task, "reference", reference, reference, {})
         passed, detail = grade.check(first_check(task))
         self.assertFalse(passed, "the reference's miss makes the task INVALID: no reading passes it")
-        self.assertIn("a stage of the play didn't land: damage", detail)
+        self.assertTrue(detail.startswith("task error: "), "the Lab's grade makes it the task's error")
+        self.assertIn("an input did not land (damage", detail)
 
     def test_the_world_and_an_object_read_what_a_contact_leaves(self):
         slowed = m(probe="world", field="time_scale", window=[2, 4], agg="min")

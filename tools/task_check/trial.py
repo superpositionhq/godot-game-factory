@@ -10,8 +10,8 @@ For one task and each run:
    the machine's recording hooks off (GGF_NO_RECORDING, and UGF_NO_RECORDING and GF_NO_RECORDING for another
    factory's hooks on the same machine). Its transcript is kept.
 3. The workspace is graded as a solution: its build outputs and .godot removed, the task probe added, built fresh,
-   played, every check but judges, seen probes (a model's reading in the Lab: not asked, and left out of the number)
-   and packaging run against the thresholds the start and the reference
+   played, every check but judges and seen probes (a model's reading in the Lab: not asked, and left out of the
+   number) run against the thresholds the start and the reference (a package check fails, as in the Lab's grade)
    give (both built and measured once for all runs, before the first agent starts, and deleted then: the reference copy
    is the answer, and it would lie two folders above the agent's). Each `judge` check's plays are then played on the
    agent's game and the screenshots its judge would see are saved under <name>/run<N>/judge-shots/<check>/agent/ with
@@ -381,6 +381,8 @@ def try_task(repo, task, raw, scratch, out_dir, agent, exe, runs=1, model=None, 
                     measure.threshold(c)
                 except verdict.Uncalibrated:
                     pass  # kept in `thresholds`: every run's grade fails that check the same way
+                if c["measure"]["probe"] != "seen":  # what the reference reads, for a run's task errors (Grade)
+                    reference.probe_play(c["play"])
         # Gone before an agent starts, as it could read them two folders above its own: the reference copy is the answer
         # and the copies' logs hold the grader's queries.
         for label in ("start", "reference"):

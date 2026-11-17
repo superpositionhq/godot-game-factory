@@ -120,16 +120,78 @@ class Verdict(unittest.TestCase):
                          (False, [f"fps_kept has no threshold: {unset[:160]}"], []),
                          "a still-works one too: the crash excuses its failing at the start, not its missing threshold")
 
-    def test_the_reference_must_build_and_boot_and_its_other_checks_are_notes(self):
+    def test_the_reference_passes_every_required_check_and_the_others_are_notes(self):
+        """The oracle case: the reference passes every required check, whatever its kind, as the Lab's oracle must."""
         task = task_with(probe(), {"kind": "file_exists", "name": "route_left", "glob": "Tests/*.json"},
+                         {"kind": "file_exists", "name": "notes_left", "glob": "Docs/*.md", "required": False,
+                          "weight": 0},
+                         {"kind": "log_absent", "name": "no_errors", "pattern": "ERROR", "weight": 0},
                          {"kind": "boot", "name": "boots_clean"})
         ref = record(checked("hero_on_ground", "probe", True), checked("route_left", "file_exists", False, "0 file(s)"),
+                     checked("notes_left", "file_exists", False, "0 file(s)"),
+                     checked("no_errors", "log_absent", False, "1 matching log line(s)"),
                      checked("boots_clean", "boot", False, "crashed"))
         start = record(checked("hero_on_ground", "probe", False))
         valid, why, notes = verdict.verdict(task, ref, start)
         self.assertFalse(valid)
-        self.assertEqual(why, ["reference fails boots_clean: crashed"])
-        self.assertEqual(notes, ["reference fails route_left (file_exists): 0 file(s)"], "a deliverable never decides")
+        self.assertEqual(why, ["reference fails route_left: 0 file(s)", "reference fails no_errors: 1 matching log "
+                               "line(s)", "reference fails boots_clean: crashed"])
+        self.assertEqual(notes, ["reference fails notes_left (file_exists): 0 file(s)"], "one not required is a note")
+
+    def test_a_required_package_check_is_never_valid(self):
+        """No Godot grader packages a game, so the Lab fails every package check closed: a required one fails every
+        run, the reference's too."""
+        task = task_with(probe(), {"kind": "package", "name": "packages", "weight": 0},
+                         {"kind": "package", "name": "packages_too", "required": False, "weight": 0})
+        ref = record(checked("hero_on_ground", "probe", True), checked("packages", "package", False, check.NO_PACKAGE),
+                     checked("packages_too", "package", False, check.NO_PACKAGE))
+        start = record(checked("hero_on_ground", "probe", False))
+        valid, why, notes = verdict.verdict(task, ref, start)
+        self.assertEqual((valid, why), (False, [f"reference fails packages: {check.NO_PACKAGE}"]))
+        self.assertEqual(notes, [f"reference fails packages_too (package): {check.NO_PACKAGE}"])
+        grade = check.Grade(task, "reference", None, side("reference", FakeProject(measuring(0)), task), {})
+        self.assertEqual(grade.check({"kind": "package", "name": "packages"}), (False, check.NO_PACKAGE),
+                         "the checker never stands in a pass for a step it can't run")
+
+    def test_any_probe_without_a_threshold_is_invalid_required_or_not(self):
+        """The Lab's check stops on a probe it can't calibrate, whichever it is."""
+        task = task_with(probe(), probe("extra", required=False, weight=0, expect={"op": ">=", "calibrate": 0.5}))
+        detail = "uncalibrated: extra: the start and the reference both measure 3, so there is no threshold between them"
+        ref = record(checked("hero_on_ground", "probe", True), checked("extra", "probe", False, detail))
+        start = record(checked("hero_on_ground", "probe", False), checked("extra", "probe", False, detail))
+        self.assertEqual(verdict.verdict(task, ref, start), (False, [f"extra has no threshold: {detail}"], []))
+
+    def test_a_task_error_on_either_side_is_invalid(self):
+        task = task_with(probe(), probe("extra", required=False, weight=0))
+        said = "task error: x | in the reference's look, its select {} matched nothing in 40 samples: the check reads " \
+               "nothing even on the task's own fix"
+        ref = record(checked("hero_on_ground", "probe", True), checked("extra", "probe", False, said))
+        start = record(checked("hero_on_ground", "probe", False), checked("extra", "probe", False))
+        self.assertEqual(verdict.verdict(task, ref, start)[:2], (False, [f"extra on the reference: {said[:160]}"]))
+
+    def test_a_required_code_judge_is_never_valid_here(self):
+        task = task_with(probe(), {"kind": "code_judge", "name": "clean_code", "question": "q", "weight": 0,
+                                   "rubric": [{"key": "k", "criterion": "c"}]})
+        ref = record(checked("hero_on_ground", "probe", True), checked("clean_code", "code_judge", True, "not asked"))
+        start = record(checked("hero_on_ground", "probe", False))
+        valid, why, _ = verdict.verdict(task, ref, start)
+        self.assertFalse(valid)
+        self.assertTrue(why[0].startswith("clean_code is a required code_judge"))
+
+    def test_a_seen_probe_alone_never_shows_the_start_failing(self):
+        seen_probe = probe("combo_shows", play={"name": "combo", "seconds": 6,
+                                                "inputs": [{"t": 3, "shot": "combo"}]},
+                           measure={"probe": "seen", "shot": "combo", "read": "number"},
+                           expect={"op": ">=", "value": 3})
+        task = task_with(seen_probe)
+        ref = record(checked("combo_shows", "probe", True))
+        start = record(checked("combo_shows", "probe", False))
+        self.assertEqual(verdict.verdict(task, ref, start), (False, [verdict.SEEN_ONLY], []))
+        both = task_with(probe(), seen_probe)
+        self.assertTrue(verdict.verdict(both, record(checked("hero_on_ground", "probe", True),
+                                                     checked("combo_shows", "probe", True)),
+                                        record(checked("hero_on_ground", "probe", False),
+                                               checked("combo_shows", "probe", False)))[0])
 
     def test_a_no_op_scores_zero(self):
         """What is true of the start carries no weight, whether or not it is required."""

@@ -14,7 +14,7 @@ from unittest import mock
 from helpers import FakeProject, measuring, probe, side, task_with
 from test_check import make_game
 
-from task_check import check, cli, godot, probes, seen, tasks, trial
+from task_check import check, cli, godot, probes, seen, tasks, trial, verdict
 
 
 def png(width, height, pixel, colour=6, interlace=0):
@@ -212,7 +212,9 @@ class Whole(unittest.TestCase):
 
             self.answer(tmp, ["COMBO x0"], ["COMBO", "x3"])
             again = self.run_check(tmp, task, projects())
-            self.assertEqual((again["verdict"], again["reasons"]), ("VALID", []))
+            self.assertEqual(again["seen"]["combo_shows"]["status"], seen.ANSWERED)
+            self.assertEqual((again["verdict"], again["reasons"]), ("INVALID", [verdict.SEEN_ONLY]),
+                "read, but a seen probe alone never shows the start failing: the task still needs an outcome probe")
             self.assertIn("seen combo_shows: read from blind/answers.json", again["notes"])
             self.assertEqual((again["probes"]["combo_shows"]["start"], again["probes"]["combo_shows"]["reference"]),
                              (0.0, 3.0))
@@ -225,7 +227,8 @@ class Whole(unittest.TestCase):
             changed = {"start": Played(5, folder="start"), "reference": Played(2, folder="reference")}
             moved = self.run_check(tmp, task, changed)
             self.assertEqual((moved["verdict"], moved["reasons"]),
-                             ("INVALID", ["seen combo_shows: crops saved for start/reference, answer needed"]),
+                             ("INVALID", [verdict.SEEN_ONLY,
+                                          "seen combo_shows: crops saved for start/reference, answer needed"]),
                              "an unanswered start is no start that fails")
             self.assertIn("start: its crops changed since they were answered, so its answer was dropped",
                           moved["seen"]["combo_shows"]["notes"])

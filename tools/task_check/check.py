@@ -7,8 +7,10 @@
    failing the task, and the start is never played. A build of either side that stops with no word about the game
    (twice with no script error, or at its time limit) is the run's ERROR, never a verdict (Side.build).
 3. With a reference, the reference is checked as a solution would be: its checks in the task's order (a check whose
-   `needs` failed isn't run and fails), build, boot, log_absent, file_exists and every probe against its threshold. A
-   calibrated or start-relative threshold measures the start (its plays, played once) and, calibrated, the reference.
+   `needs` failed isn't run and fails), build, boot, log_absent, file_exists, package and every probe against its
+   threshold. A calibrated or start-relative threshold measures the start (its plays, played once) and, calibrated, the
+   reference. A probe whose select reads nothing on the reference, or whose task play's input didn't land there, is a
+   task error (TASK_ERROR), as the Lab's grade makes it.
 4. The start is checked on its probes (and on a `fails_at_start` build check).
 5. verdict.verdict decides VALID or INVALID from the two sides' check rows.
 
@@ -26,10 +28,12 @@ and starts on the saved data they left; every other play starts clean (Side._tas
 boot_<seconds>s (2 screenshots, no queries). Every task's boot is a 60 s idle play and
 "look" is the first 20 s of the same idle game, so when no look probe reads the log, a side that boots (the reference;
 a start is never booted) plays one 60 s idle play with look's queries for both (Side.idle): the boot check reads it
-whole, and look reads its first 20 s only (first_seconds), one game launch instead of two. Judges and packaging never
-decide a task check: a `judge` check's plays are played on both sides and the screenshots its judge would see are
-saved under <name>/judge-shots/<check>/ (judges.py) for whoever runs the check to look at and answer
-(`judge_shots`). A `seen` probe (text the Lab's visual model reads from a named shot) is read by the task's writer
+whole, and look reads its first 20 s only (first_seconds), one game launch instead of two. A `package` check fails
+closed on every side, as the Lab's grade fails it (NO_PACKAGE: no Godot grader packages a game). A `judge` check's
+plays are played on both sides (with its `route`, read from the reference's copy and played on each, as the Lab plays
+it) and the screenshots its judge would see are saved under <name>/judge-shots/<check>/ (judges.py) for the task's
+writer to score blind (`judge_shots`); a required judge holds the verdict until both sides are scored and agree
+(judged). A `seen` probe (text the Lab's visual model reads from a named shot) is read by the task's writer
 instead: its crops are saved under <name>/seen-shots/<check>/ (seen.py), and once the writer has answered, their
 answer is the probe's measure on each side; until then the probe measures nothing, and a task with a required one
 isn't VALID."""
@@ -62,7 +66,13 @@ MOBILE_DRIVE = [_push(1.0, [0.15, 0.6], 5.0), _push(6.0, [0.25, 0.75], 2.0), _pu
                 {"t": 9.0, "tap": [0.85, 0.75], "finger": 1}, _push(13.0, [0.05, 0.75], 2.0),
                 _push(15.0, [0.15, 0.6], 6.0)]
 JUDGES = ("judge", "code_judge")
-NOT_JUDGED = "not asked: judges never decide a task check"
+NOT_JUDGED = "not asked: a model's check, answered by the task's writer (judge-shots)"
+# a package check, as the Lab's grade words it: no Godot grader packages a game (a copy is played from source), so it
+# fails on every side, counted, and a required one keeps every run, the reference's too, from passing
+NO_PACKAGE = "not packaged: no Godot grader packages a game yet (a copy is played from source), so it fails closed"
+TASK_ERROR = verdict.TASK_ERROR
+SELECTING = ("objects", "widgets", "components")  # the runtime measures that read what their select matches
+ROUTE_INPUTS, ROUTE_BYTES, ROUTE_SECONDS, ROUTE_SHOTS = 400, 1024 * 1024, 120, 8  # a judge's route, as the Lab reads it
 SKIP = {".godot", "Build", "Logs", "android", ".git"}  # left out of file_exists
 # s: a play of `seconds` samples on to seconds + OVERRUN and stops there (the probe ends a play at `t >= seconds +
 # 0.5`), so a look cut from a longer play keeps that half second too
@@ -208,6 +218,8 @@ class Side:
         self.saves = []  # the plays whose saved data the copy holds now: the last that started clean, and those after it
         self.replays = {}  # play name -> what differed when it was played again for its saves (replay_note)
         self.crops = {}  # a seen check's name -> its crops on this side (seen.crops)
+        self.routes = {}  # a judge's route file -> (its play or None, why none)
+        self.route_from = None  # the Side whose copy a judge's route file is read from (None: this one)
         # what the writer answered for seen checks (seen.kept), set by the task check; None: no answer is read here (a
         # task try), so seen checks are not asked
         self.answers = None
@@ -299,6 +311,11 @@ class Side:
         and the drive, each played whole (never the boot cut to look's seconds, whose screenshots span the boot)."""
         out = {}
         for play, _, _ in judges.plays(check):
+            if play == judges.ROUTE:
+                found = self.route_play(check["route"])
+                if found is not None:
+                    out[judges.ROUTE] = (found.probe, found.files)
+                continue
             if isinstance(play, str):
                 seconds, shots, inputs = own_play(play, self.project)
                 p = self._play(play, seconds, shots, inputs, queries=probes.query_file(self.plan.get(play, [])))
@@ -306,6 +323,20 @@ class Side:
                 p = self.probe_play(play)
             out[play if isinstance(play, str) else play["name"]] = (p.probe, p.files)
         return out
+
+    def route_play(self, path):
+        """The developer's route file `path` played on this side as the Lab's grade plays a judge's route: read from
+        the graded copy (`route_from`: the reference in a task check, the agent's game in a try), its inputs held to
+        the Lab's limits (read_route), played for route_seconds with ROUTE_SHOTS screenshots, once. None, with why in
+        `routes`, when it can't be played: then the judge is shown no route play, and nothing stands for it."""
+        if path not in self.routes:
+            inputs, why = read_route((self.route_from or self).project, path)
+            if inputs is None:
+                self.routes[path] = None, why
+            else:
+                seconds = route_seconds(inputs)
+                self.routes[path] = self._play(judges.ROUTE, seconds, ROUTE_SHOTS, inputs), None
+        return self.routes[path][0]
 
     def idle(self, seconds):
         """Whether the boot play of `seconds` also serves "look": look is the first part of the same idle game, so one
@@ -341,6 +372,15 @@ class Side:
                                     p.log, p.files)
             return self._play(name, seconds, shots, inputs, queries=queries)
         return self._task_play(play)
+
+    def cached(self, play):
+        """The play a probe names as this side already played it, or None: never a new play (a try's reference copy is
+        gone once its agent starts)."""
+        name = play if isinstance(play, str) else f"play_{play['name']}"
+        if name in self.played or (play == "look" and any(
+                f"boot_{b}s" in self.played and self.idle(b) for b in self.boots())):
+            return self.probe_play(play)
+        return None
 
     def _task_play(self, play):
         """A task play, after the plays its `after` names (docs/task-probes.md 1.1): each of them played on this copy
@@ -412,6 +452,72 @@ class Side:
         return probes.measured(measure, p.probe, godot.during(p.log))
 
 
+def read_route(project, path):
+    """(inputs, None) from the developer's route file `path` of `project`'s copy, or (None, why it can't be played), as
+    the Lab reads one: at most ROUTE_BYTES, a JSON list of 1 to ROUTE_INPUTS key inputs (the task schema's Key: {t,
+    key, press}, the key by its control path), each before ROUTE_SECONDS - 2 s; sorted by time."""
+    raw = project.read(path)
+    if raw is None:
+        return None, f"there is no {path} in the graded copy"
+    if len(raw) > ROUTE_BYTES:
+        return None, f"{path} is longer than {ROUTE_BYTES // 1024 // 1024} MiB"
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (ValueError, RecursionError):
+        return None, f"{path} isn't valid JSON"
+    if not isinstance(data, list) or not 1 <= len(data) <= ROUTE_INPUTS:
+        return None, f"{path} isn't a list of 1 to {ROUTE_INPUTS} inputs"
+    v = tasks.validator()
+    schema = v.SCHEMAS["game-task"]
+    for e in data:
+        t = e.get("t") if isinstance(e, dict) else None
+        if list(v.check_schema(e, schema["$defs"]["Key"], schema)) or isinstance(t, bool) \
+                or not 0 <= t <= ROUTE_SECONDS - 2:
+            return None, (f"{path} has an input that isn't {{t: 0-{ROUTE_SECONDS - 2} s, key: a control path such as "
+                          "<Keyboard>/w, press: true/false}")
+    return sorted(({"t": float(e["t"]), "key": e["key"], "press": e["press"]} for e in data), key=lambda e: e["t"]), None
+
+
+def route_seconds(inputs):
+    """How long a route is played: 4 s past its last input, 10 s at least, ROUTE_SECONDS at most."""
+    return int(min(ROUTE_SECONDS, max(10, math.ceil(max(e["t"] for e in inputs)) + 4)))
+
+
+def missed(probe):
+    """The inputs a play sent that didn't land (probe.json `inputs_missed`: a click no control took, a touch on a
+    control that isn't shown, a stage that reached nothing), named screenshots left out (a shot not taken changed
+    nothing the game did); [] when there are none or the play can't say."""
+    rows = probe.get("inputs_missed") if isinstance(probe, dict) else None
+    return [r for r in rows if isinstance(r, dict) and r.get("kind") != "shot"] if isinstance(rows, list) else []
+
+
+def missed_text(rows, limit=3):
+    """Missed inputs in a line: "tap StartButton at 1 s (no visible control matches it); ..."."""
+    said = [f"{r.get('kind')} {r.get('target')} at {probes.fmt(r['t']) if isinstance(r.get('t'), int | float) else '?'}"
+            f" s ({str(r.get('why'))[:200]})" for r in rows[:limit]]
+    return "; ".join(said) + (f"; and {len(rows) - limit} more" if len(rows) > limit else "")
+
+
+def reads_nothing(measure, probe):
+    """Why a selecting measure read nothing in a whole play, its window aside, or None: the probe sampled its query
+    but its select matched no row in any sample, or no row it matched had a value for its field (any row is one for a
+    `count`). None too when the play never sampled it (the play's own failure, said elsewhere)."""
+    (query,) = probes.needs(measure)
+    samples = [s for s in (probe.get("measures") or {}).get(probes.query_id(query)) or [] if isinstance(s, dict)]
+    if not samples:
+        return None
+    rows = [r for s in samples for r in s.get("rows") or [] if isinstance(r, dict)]
+    totals = [s.get("total") for s in samples if isinstance(s.get("total"), int | float)]
+    match = measure.get("match")
+    if (rows or any(totals)) and (measure["field"] == "count" or any(
+            probes.number(r.get(measure["field"]), match) is not None for r in rows)):
+        return None
+    select = json.dumps(measure.get("select"), sort_keys=True)
+    what = (f"its select {select} matched nothing" if not rows else
+            f"nothing its select {select} matched had a value for {measure['field']}")
+    return f"{what} in {len(samples)} samples"
+
+
 class Grade:
     """The checks of one side as a solution's grade would run them. `mode` "reference": every check but judges and
     packaging, of the reference or of `side` (an agent's game, task-try.py); "start": its probes and a
@@ -445,8 +551,55 @@ class Grade:
             return False, f"uncalibrated: {exc}"
         value, why = self.side.value(check)
         self.measured[check["name"]] = {"value": value, "threshold": limit, "start": start, "fix": fix}
+        if self.mode == "reference":
+            broken = self.unreadable(check, limit)
+            if broken:
+                return False, f"{TASK_ERROR}: {check['describe']} | {broken}"
+        landed = self.landing(check["play"])
+        if landed:
+            broken, said = landed
+            return False, f"{TASK_ERROR}: {check['describe']} | {broken}" if broken else f"{check['describe']} | {said}"
         passed = value is not None and verdict.passes(value, check["expect"]["op"], limit)
         return passed, verdict.describe(check, value, limit, start, fix, why)
+
+    def unreadable(self, check, limit):
+        """Why no version of the game can pass probe `check`, or None: its select (objects, widgets, components) reads
+        nothing in the reference's play of it, a play that ran to its end: no row matched in any sample, or none had a
+        value for its field. A measure that reads 0 of nothing (a count, or `of` count, any, all or sum) is not refused
+        when 0 passes its threshold `limit`: there nothing matching is the outcome."""
+        measure, ref = check["measure"], self.reference
+        if ref is None or measure["probe"] not in SELECTING or not ref.built():
+            return None
+        played = ref.cached(check["play"])
+        found = played.probe if played is not None else None
+        if not isinstance(found, dict) or found.get("ended") != "time":
+            return None
+        why = reads_nothing(measure, found)
+        zero = measure["field"] == "count" or measure.get("of") in ("count", "any", "all", "sum")
+        if why is None or (zero and limit is not None and verdict.passes(0.0, check["expect"]["op"], limit)):
+            return None
+        name = tasks.play_name(check)
+        said = "the task's own fix fails it" if zero else "the check reads nothing even on the task's own fix"
+        return f"in the reference's {name if name in ('look', 'drive') else 'play ' + name}, {why}: {said}"
+
+    def landing(self, play):
+        """None when task play `play`'s inputs all landed in this side's play (or `play` is look or drive, or it
+        wasn't played); else (why it is a task error, or None; the detail when it isn't): an input that didn't land is
+        the task's error when the reference's play missed one too (its own fix can't be driven by its play), else this
+        side's fail, as the Lab's grade reads it."""
+        if isinstance(play, str) or not self.side.built():
+            return None
+        rows = missed(self.side.probe_play(play).probe)
+        if not rows:
+            return None
+        ref = self.reference
+        if ref is not None and ref.built():
+            played = None if ref is self.side else ref.cached(play)
+            theirs = rows if ref is self.side else missed(played.probe if played is not None else None)
+            if theirs:
+                return (f"in the reference's play {play['name']}, an input did not land ({missed_text(theirs)}): the "
+                        "task's own fix can't be driven by its play"), None
+        return None, f"the play's input did not land: {missed_text(rows)}"
 
     def check(self, check):
         kind = check["kind"]
@@ -481,8 +634,8 @@ class Grade:
             found = [p for p in root.glob(check["glob"]) if p.is_file()
                      and not SKIP.intersection(p.relative_to(root).parts)]
             return len(found) >= check["min_count"], f"{len(found)} file(s) match"
-        if kind == "package":
-            return True, "not asked: a task check never packages the game"
+        if kind == "package":  # fails closed, as in the Lab's grade: counted, never left out
+            return False, NO_PACKAGE
         if kind == "probe":
             return self.probe_check(check)
         raise ValueError(f"no check kind {kind}")
@@ -548,11 +701,12 @@ def start_unbuilt(task, why):
                         "weight": build["weight"], "detail": str(why)[:700], "group": group}], "probes": {}}
 
 
-def save_judge_shots(task, sides, folder, where="", blind=False, log=print, rng=None):
+def save_judge_shots(task, sides, folder, where="", blind=False, log=print, rng=None, held=None):
     """Play every `judge` check's plays on `sides` ({folder name: Side}, a side that didn't build left out with a note)
     and save the screenshots its judge would see under <folder>/<check>/ (judges.save), with the blind copy when
-    `blind`. Nothing is asked of a model: {check: record}, each "answer needed", its `folder` named as `where` (the
-    folder's place in the results) and the check's name."""
+    `blind` and the scores `held` (judges.kept) still stand for. Nothing is asked of a model: {check: record}, each
+    "answer needed" until scored, its `folder` named as `where` (the folder's place in the results) and the check's
+    name. A route that couldn't be played is said in the notes: the judge is shown no route there."""
     out = {}
     for found in judges.judges(task):
         played, notes = {}, []
@@ -562,12 +716,43 @@ def save_judge_shots(task, sides, folder, where="", blind=False, log=print, rng=
                     notes.append(f"{label}: no screenshots, {side.why_unbuilt()}")
                     continue
                 played[label] = side.judge_plays(found)
+                if found["route"] and side.routes.get(found["route"], (None, None))[0] is None:
+                    notes.append(f"{label}: the route {found['route']} was NOT played: "
+                                 f"{side.routes[found['route']][1]}; the judge is shown no route, and nothing stands "
+                                 "for it")
             except Exception as exc:  # a play the checker couldn't make: said in ask.md, never the task's error
                 notes.append(f"{label}: the plays failed ({type(exc).__name__}: {str(exc)[:200]})")
-        record = judges.save(task, found, played, folder, blind=blind, notes=notes, rng=rng)
+        record = judges.save(task, found, played, folder, blind=blind, notes=notes, rng=rng,
+                             held=(held or {}).get(found["name"]))
         record["folder"] = f"{where}{found['name']}/"
         log(f"  {judges.line(found['name'], record)}")
         out[found["name"]] = record
+    return out
+
+
+def judged(task, records, played=True):
+    """Why the task's required `judge` checks keep it from being VALID, from the writer's scores (save_judge_shots'
+    records): every one scored on every side shown, the reference passing it, and the start passing a judge of what
+    still looks as it did (in still_works) or scoring every required item below judges.REQUIRED on any other. A judge
+    is a required check like any other, so a task isn't VALID on scores nobody gave."""
+    out = []
+    for group, c in tasks.checks(task):
+        if c["kind"] != "judge" or not c["required"]:
+            continue
+        found = (records or {}).get(c["name"])
+        if not played or found is None:
+            out.append(f"judge {c['name']}: not played (--no-judge-shots), answer needed")
+            continue
+        if found["status"] != judges.ANSWERED:
+            out.append(f"judge {c['name']}: {found['status']}")
+            continue
+        ref, own = found["answered"].get("reference"), found["answered"].get("start")
+        if ref is not None and not ref["passed"]:
+            out.append(f"reference fails judge {c['name']} as you scored it ({ref['why']})")
+        if own is not None and group == tasks.STILL_WORKS and not own["passed"]:
+            out.append(f"start fails still-works judge {c['name']} as you scored it ({own['why']})")
+        elif own is not None and group != tasks.STILL_WORKS and not own["low"]:
+            out.append(f"start already meets a required item of judge {c['name']} as you scored it ({own['why']})")
     return out
 
 
@@ -645,6 +830,7 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
     seed = task["seed"]
     evidence = Path(out_dir) / name
     held = seen.kept(evidence / "seen-shots")  # the writer's answers outlive the evidence they were given for
+    scores = judges.kept(evidence / "judge-shots")
     own = builds is None
     if own:
         builds = Builds(repo, scratch, direct, log)
@@ -668,6 +854,8 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
             sides[side].answers = held
             result[side] = {"commit": sha, **info}
         start, reference = sides["start"], sides.get("reference")
+        for made in sides.values():  # a judge's route is read from the graded copy: the oracle's, the reference
+            made.route_from = reference or start
         build = tasks.fails_at_start(task)
         if not start.built():
             result["start"]["built"] = False
@@ -685,11 +873,14 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
         else:
             start_grade = Grade(task, "start", start, reference, thresholds).run()
         valid, why, notes = verdict.verdict(task, ref_grade, start_grade)
-        if judge_shots and judges.judges(task):
-            shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None}
-            result["judges"] = save_judge_shots(task, shown, evidence / "judge-shots", f"{name}/judge-shots/",
-                                                blind=True, log=log)
-            notes += [judges.line(n, r) for n, r in result["judges"].items()]
+        if judges.judges(task):
+            if judge_shots:
+                shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None}
+                result["judges"] = save_judge_shots(task, shown, evidence / "judge-shots", f"{name}/judge-shots/",
+                                                    blind=True, log=log, held=scores)
+                notes += [judges.line(n, r) for n, r in result["judges"].items()]
+            found = judged(task, result["judges"], judge_shots)
+            valid, why = valid and not found, list(why) + found
         if seen.checks(task):  # a start that doesn't build by design is never played, so it has nothing to read
             shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None
                      and not (label == "start" and build is not None and not start.built())}
