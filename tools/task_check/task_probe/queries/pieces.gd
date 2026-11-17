@@ -1,7 +1,7 @@
 extends "../query.gd"
 ## pieces: placed mesh pieces, whatever form the scene holds them in (contract section 3, "pieces"): a MeshInstance3D
-## whose mesh has triangles is 1, each instance of a MultiMeshInstance3D is 1, each cell of a GridMap whose item has a
-## mesh is 1. A part that is a farther level of detail (a visibility range that begins above 0) is none. Nodes in the
+## whose mesh has triangles is 1, each instance of a MultiMeshInstance3D it draws (its first visible_instance_count) is
+## 1, each cell of a GridMap whose item has a mesh is 1, a root CSG shape whose result has triangles is 1. A part that is a farther level of detail (a visibility range that begins above 0) is none. Nodes in the
 ## tree only; a hidden one is a piece that isn't drawn. Counted over every piece, never cut at a cap.
 ## select: component (MeshInstance3D, MultiMeshInstance3D, GridMap, GeometryInstance3D...), name (a wildcard on the
 ## node's name), mesh (a wildcard on its mesh's name; a GridMap cell's: its item's mesh), owner (an object select the
@@ -15,7 +15,7 @@ var _mesh := ""
 var _owner: Dictionary = {}
 var _near: Dictionary = {}
 var _unknown := false
-var _triangles: Dictionary = {}  # this sample's meshes, read once each
+var _faces: Dictionary = {}  # a mesh that isn't an ArrayMesh (a PrimitiveMesh) -> its triangles, read once in a play
 
 
 func load_query() -> void:
@@ -31,13 +31,23 @@ func load_query() -> void:
 
 
 func _triangles_of(m: Mesh) -> int:
-	## the triangles a mesh draws: its faces (every surface drawn as triangles)
+	## the triangles a mesh draws: an ArrayMesh's triangle surfaces' index count / 3 (vertex count / 3 without an
+	## index), read every time (its own numbers, no copy); any other mesh's faces, read once a play (a PrimitiveMesh)
 	if m == null:
 		return 0
+	if m is ArrayMesh:
+		var array := m as ArrayMesh
+		var n := 0
+		for i in array.get_surface_count():
+			if array.surface_get_primitive_type(i) != Mesh.PRIMITIVE_TRIANGLES:
+				continue
+			var indices := array.surface_get_array_index_len(i)
+			n += (indices if indices > 0 else array.surface_get_array_len(i)) / 3
+		return n
 	var key := m.get_instance_id()
-	if not _triangles.has(key):
-		_triangles[key] = m.get_faces().size() / 3
-	return _triangles[key]
+	if not _faces.has(key):
+		_faces[key] = m.get_faces().size() / 3
+	return _faces[key]
 
 
 func sample(_t: float, sample: Dictionary) -> void:
@@ -54,7 +64,6 @@ func sample(_t: float, sample: Dictionary) -> void:
 		owners = {}
 		for n in Find.objects(_owner):
 			owners[n.get_instance_id()] = true
-	_triangles.clear()
 	var count := 0
 	var visible := 0
 	var tris := 0
@@ -64,9 +73,11 @@ func sample(_t: float, sample: Dictionary) -> void:
 	for n in Find.all_nodes():
 		if Find.is_own(n) or not (n is GeometryInstance3D or n.is_class("GridMap")):
 			continue
+		if n is CSGShape3D and not (n as CSGShape3D).is_root_shape():
+			continue  # a CSG shape inside another draws as part of its root's result
+			continue
 		var held: Array = []  # [[place, triangles, mesh name], ...]
 		var drawn := Find.shown(n)
-		var shown_count := 0
 		if n is GeometryInstance3D:
 			var g := n as GeometryInstance3D
 			if g.visibility_range_begin > 0.0:
@@ -78,10 +89,6 @@ func sample(_t: float, sample: Dictionary) -> void:
 			held = _held_grid(n as Node3D)
 		if held.is_empty() or not _keep(n, owners):
 			continue
-		shown_count = held.size()
-		if n is MultiMeshInstance3D:
-			var limit := (n as MultiMeshInstance3D).multimesh.visible_instance_count
-			shown_count = held.size() if limit < 0 else mini(limit, held.size())
 		var n_here := 0
 		for i in held.size():
 			var piece: Array = held[i]
@@ -92,7 +99,7 @@ func sample(_t: float, sample: Dictionary) -> void:
 			n_here += 1
 			count += 1
 			tris += piece[1]
-			if drawn and i < shown_count:
+			if drawn:
 				visible += 1
 				visible_tris += piece[1]
 		if n_here > 0:
@@ -118,10 +125,21 @@ func _held(g: GeometryInstance3D) -> Array:
 		if each == 0:
 			return out
 		var name := Find.resource_name(many.mesh)
-		for i in many.instance_count:
+		var placed := many.instance_count if many.visible_instance_count < 0 \
+			else mini(many.visible_instance_count, many.instance_count)
+		for i in placed:  # an instance past visible_instance_count is a slot of a pool, not a placed piece
 			var at: Vector3 = g.global_transform * many.get_instance_transform(i).origin \
 				if many.transform_format == MultiMesh.TRANSFORM_3D else g.global_transform * Vector3.ZERO
 			out.append([at, each, name])
+	elif g is CSGShape3D:
+		# a root CSG shape: one piece, the triangles of its result
+		var each := 0
+		var result: Array = (g as CSGShape3D).get_meshes()
+		for i in range(1, result.size(), 2):
+			each += _triangles_of(result[i] as Mesh)
+		if each > 0:
+			var shape := g as CSGShape3D
+			out.append([g.global_position, each, Find.resource_name(shape.get("mesh")) if shape is CSGMesh3D else ""])
 	return out
 
 

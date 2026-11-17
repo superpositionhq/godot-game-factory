@@ -66,6 +66,44 @@ func sample(_t: float, sample: Dictionary) -> void:
 	write_rows(rows, sample)
 
 
+static func label_corners(label: Label3D, camera: Camera3D) -> Array[Vector3]:
+	## the four corners of a Label3D's text as it is drawn: its own box's face, turned to the camera as its billboard
+	## mode turns it (enabled and particles: the camera's right and up; fixed Y: up kept, right square to the view),
+	## its scale kept, and with fixed_size grown with its distance as its shader grows it (perspective: the depth of
+	## its place in the camera's view; orthogonal: half the camera's size)
+	var box := label.get_aabb()
+	if label.billboard != BaseMaterial3D.BILLBOARD_DISABLED:
+		# a billboard's own box is grown to hold it turned every way: its face is its text's size about the box's centre
+		var font: Font = label.font if label.font != null else ThemeDB.fallback_font
+		var wrap := label.width if label.autowrap_mode != TextServer.AUTOWRAP_OFF else -1.0
+		var size := font.get_multiline_string_size(label.text, label.horizontal_alignment, wrap, label.font_size) \
+			* label.pixel_size  # as its box is without a billboard (measured: EXIT 0.33 x 0.225 m both ways)
+		var middle := box.get_center()
+		box = AABB(Vector3(middle.x - size.x / 2.0, middle.y - size.y / 2.0, middle.z), Vector3(size.x, size.y, 0.0))
+	var basis := label.global_basis
+	var right := basis.x
+	var up := basis.y
+	var view := camera.global_basis
+	match label.billboard:
+		BaseMaterial3D.BILLBOARD_ENABLED, BaseMaterial3D.BILLBOARD_PARTICLES:
+			right = view.x.normalized() * basis.x.length()
+			up = view.y.normalized() * basis.y.length()
+		BaseMaterial3D.BILLBOARD_FIXED_Y:
+			right = Vector3.UP.cross(view.z).normalized() * basis.x.length()
+			up = Vector3.UP * basis.y.length()
+	var grow := 1.0
+	if label.fixed_size:
+		if camera.projection == Camera3D.PROJECTION_ORTHOGONAL:
+			grow = camera.size / 2.0
+		else:
+			grow = maxf(-(camera.global_transform.affine_inverse() * label.global_position).z, 0.0)
+	var corners: Array[Vector3] = []
+	for x: float in [box.position.x, box.end.x]:
+		for y: float in [box.position.y, box.end.y]:
+			corners.append(label.global_position + (right * x + up * y) * grow)
+	return corners
+
+
 func _labels_3d(rows: Array) -> void:
 	## the Label3Ds the game's camera shows: each a text row (source label3d), its rectangle the box around its own box
 	## as the camera projects it; one behind the camera, outside the frame, hidden, faded out or blank isn't read
@@ -82,21 +120,19 @@ func _labels_3d(rows: Array) -> void:
 			continue
 		if label.modulate.a <= Find.ALPHA_FLOOR or label.text.strip_edges() == "":
 			continue
-		var box := label.global_transform * label.get_aabb()
+		if camera.is_position_behind(label.global_position):
+			continue
 		var have := false
 		var lo := Vector2.ZERO
 		var hi := Vector2.ZERO
-		var behind := false
-		for i in 8:
-			var corner := box.get_endpoint(i)
+		for corner: Vector3 in label_corners(label, camera):
 			if camera.is_position_behind(corner):
-				behind = true
-				break
+				continue  # a corner past the camera's plane: the rest still place it
 			var at := camera.unproject_position(corner)
 			lo = at if not have else lo.min(at)
 			hi = at if not have else hi.max(at)
 			have = true
-		if behind or not have or not Rect2(Vector2.ZERO, frame).intersects(Rect2(lo, hi - lo)):
+		if not have or not Rect2(Vector2.ZERO, frame).intersects(Rect2(lo, hi - lo)):
 			continue
 		var r := [lo.x / frame.x, lo.y / frame.y, (hi.x - lo.x) / frame.x, (hi.y - lo.y) / frame.y]
 		if _rect.size() == 4:

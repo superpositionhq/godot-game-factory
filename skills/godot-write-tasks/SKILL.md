@@ -421,7 +421,10 @@ looks up and a positive yaw turns left.
     by what they are rather than by a name;
   - `widgets`: a `Control`'s own state on screen (visible, text, a bar's percent, a slider's value);
   - `ui`: what the UI shows on screen, element by element (the text, pictures and boxes that are drawn, their count
-    and place; `match` for a text);
+    and place; `match` for a text). It reads the text of Controls and of `Label3D`s only, never text a script draws
+    in `_draw`, a shader draws or a texture holds. You can't know how a solver will draw text the thread creates, so
+    a check of new text is paired with a required judge item that it shows, or reads the state behind it, never `ui`
+    text alone;
   - `screen`: the frame's mean luminance, never a literal threshold;
   - `audio`: the players that play and how loud the listener hears them, the mix's level, and the sounds that
     start, however short (`started_audible`, and by their streams' names `sounds` and `repeats`);

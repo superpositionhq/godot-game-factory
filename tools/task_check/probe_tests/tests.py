@@ -545,21 +545,40 @@ def check_field(c, found):
     c.eq("over a box on a 5 x 5 grid: min, max, range, hits, points",
          tuple(g("rise", k) for k in ("min", "max", "range", "hits", "points")), (0, 2, 2, 25, 25))
     c.near("and the mean", g("rise", "mean"), 9 * 2 / 25, 1e-6)
-    c.eq("pieces: 3 rocks (one hidden), 5 trees of a multimesh (3 drawn), 4 grid map tiles; a farther level of detail "
-         "and an empty mesh none", tuple(g("pieces", k) for k in ("count", "visible", "components", "objects", "triangles",
-                                                                  "visible_triangles")), (12, 9, 5, 5, 144, 108))
+    csg = g("csg", "triangles") or 0
+    c.eq("a root CSG shape is one piece (its inner shape none), of its result's triangles (%s)" % csg,
+         (g("csg", "count"), csg > 12), (1, True))
+    c.eq("pieces: 3 rocks (one hidden), the 3 trees a multimesh draws of its 5 slots, 2 of a multimesh that draws all, "
+         "none of one that draws none, 5 grid map tiles (one turned), a CSG shape; a farther level of detail and an "
+         "empty mesh none", tuple(g("pieces", k) for k in ("count", "visible", "components", "objects", "triangles",
+                                                           "visible_triangles")),
+         (14, 13, 7, 7, 156 + csg, 144 + csg))
     c.eq("by mesh name", (g("rocks", "count"), g("rocks", "visible")), (3, 2))
-    c.eq("by class", (g("trees", "count"), g("trees", "visible")), (5, 3))
+    c.eq("by class: the multimeshes' drawn instances", (g("trees", "count"), g("trees", "visible")), (5, 5))
     if found["rendered"]:
         c.eq("near a point, each piece by its own place: two trees and two tiles", g("near_trees", "count"), 4)
     else:  # a play that draws nothing holds no multimesh's instance places (the rendering server keeps them)
         c.eq("near a point, each piece by its own place: two tiles (headless, a multimesh's instances have no place)",
              g("near_trees", "count"), 2)
-    c.eq("under an owner", g("owned", "count"), 4)
+    c.eq("under an owner", g("owned", "count"), 5)
+    c.eq("the ground on a crate that is a rigid body, and the floor under it when only the floor is ground",
+         (g("crate", "height"), g("under_crate", "height")), (1, 0))
     c.eq("a class no node can be: no value, and why", (value(found, "nothing", 1.0), "pieces nothing: no component type "
                                                        "NoSuchThing" in errors(found)), ({}, True))
     c.eq("a sign in the 3D world is ui text; one behind the camera and a hidden one aren't",
-         [(r.get("source"), r.get("text")) for r in rows(found, "signs", 1.0)], [("label3d", "GATE 3")])
+         [(r.get("source"), r.get("name"), r.get("text")) for r in rows(found, "signs", 1.0)],
+         [("label3d", "Sign", "GATE 3"), ("label3d", "Facing", "EXIT"), ("label3d", "Turned", "EXIT")])
+    facing, turned = row(found, "signs", 1.0, "Facing"), row(found, "signs", 1.0, "Turned")
+    c.true("a billboard sign on a node turned side on reads as wide as one on a plain node (%s, %s)"
+           % (turned.get("w"), facing.get("w")), (turned.get("w") or 0) > 0.01 and
+           abs((turned.get("w") or 0) - (facing.get("w") or 0)) < 0.1 * (facing.get("w") or 1)
+           and abs((turned.get("h") or 0) - (facing.get("h") or 0)) < 0.1 * (facing.get("h") or 1))
+    size = found.get("size") or [960, 540]
+    aspect = (facing.get("w") or 0) * size[0] / max((facing.get("h") or 1) * size[1], 1e-9)
+    c.near("a billboard sign's face is its text's, as EXIT is drawn without a billboard: 0.33 x 0.225 m", aspect,
+           0.33 / 0.225, 0.1)
+    c.eq("a select of boxes, or of a rect no sign is in, takes no sign", (rows(found, "boxes", 1.0),
+                                                                         rows(found, "corner", 1.0)), ([], []))
     sign = row(found, "signs", 1.0)
     c.true("its place on screen: in the middle across, above the middle (%s, %s)" % (sign.get("x"), sign.get("y")),
            0.3 < (sign.get("x") or 0) < 0.5 and 0.0 < (sign.get("y") or 0) < 0.6)

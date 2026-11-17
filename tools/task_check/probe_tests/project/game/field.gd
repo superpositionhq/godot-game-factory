@@ -1,8 +1,9 @@
 extends Node3D
 ## The field scene: ground to trace (a floor, a hill, a roof above, an area that is no ground, a player standing at the
-## origin), mesh pieces in each form a scene holds them (mesh instances, a multimesh, a grid map, a hidden one, a
-## farther level of detail, an empty one), signs in the 3D world (one in view, one behind the camera, one hidden) and a
-## looker that sums the mouse's motion. Built in code.
+## origin, a crate that is a rigid body), mesh pieces in each form a scene holds them (mesh instances, multimeshes with
+## all, some and none of their instances drawn, a grid map with a turned cell, a CSG shape, a hidden one, a farther
+## level of detail, an empty one), signs in the 3D world (one in view, one behind the camera, one hidden, billboards
+## on a turned node and on a plain one) and a looker that sums the mouse's motion. Built in code.
 
 var total_x := 0.0
 var total_y := 0.0
@@ -33,6 +34,14 @@ func _ready() -> void:
 	body.shape = CapsuleShape3D.new()
 	player.add_child(body)
 	add_child(player)
+	var crate := RigidBody3D.new()
+	crate.name = "Crate"
+	crate.position = Vector3(6, 0.5, 6)
+	crate.freeze = true
+	var side := CollisionShape3D.new()
+	side.shape = BoxShape3D.new()
+	crate.add_child(side)
+	add_child(crate)
 	# pieces: two rocks and a hidden one, a multimesh of five trees with three drawn, a grid map of four tiles; a
 	# farther level of detail and a mesh instance without a mesh are none
 	var rock := BoxMesh.new()
@@ -65,6 +74,26 @@ func _ready() -> void:
 	trees.name = "Trees"
 	trees.multimesh = many
 	add_child(trees)
+	for pool: Array in [["AllTrees", 2, -1, 6.0], ["NoTrees", 4, 0, 8.0]]:
+		var more := MultiMesh.new()
+		more.transform_format = MultiMesh.TRANSFORM_3D
+		more.mesh = tree
+		more.instance_count = pool[1]
+		for i in more.instance_count:
+			more.set_instance_transform(i, Transform3D(Basis(), Vector3(i * 2.0, 0.5, pool[3])))
+		more.visible_instance_count = pool[2]
+		var holder := MultiMeshInstance3D.new()
+		holder.name = pool[0]
+		holder.multimesh = more
+		add_child(holder)
+	var block := CSGBox3D.new()
+	block.name = "Block"
+	block.position = Vector3(8, 0.5, -2)
+	var hole := CSGSphere3D.new()
+	hole.operation = CSGShape3D.OPERATION_SUBTRACTION
+	hole.radius = 0.6
+	block.add_child(hole)
+	add_child(block)
 	var tile := BoxMesh.new()
 	tile.resource_name = "tile"
 	var library := MeshLibrary.new()
@@ -76,6 +105,7 @@ func _ready() -> void:
 	grid.position = Vector3(-6, 0, -6)
 	for i in 4:
 		grid.set_cell_item(Vector3i(i, 0, 0), 0)
+	grid.set_cell_item(Vector3i(5, 0, 3), 0, grid.get_orthogonal_index_from_basis(Basis(Vector3.UP, PI / 2.0)))
 	add_child(grid)
 	# signs in the 3D world
 	for sign: Array in [["Sign", Vector3(0, 1.5, 0), true], ["Behind", Vector3(0, 1.5, 20), true], ["Hidden", Vector3(2, 1.5, 0), false]]:
@@ -85,6 +115,17 @@ func _ready() -> void:
 		label.position = sign[1]
 		label.visible = sign[2]
 		add_child(label)
+	# two billboard signs the same distance from the camera, one on a node turned side on
+	for board: Array in [["Facing", Vector3(-3, 1.5, 2), 0.0], ["Turned", Vector3(3, 1.5, 2), 90.0]]:
+		var holder := Node3D.new()
+		holder.position = board[1]
+		holder.rotation_degrees = Vector3(0, board[2], 0)
+		add_child(holder)
+		var sign := Label3D.new()
+		sign.name = board[0]
+		sign.text = "EXIT"
+		sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		holder.add_child(sign)
 
 
 func _solid(part: String, at: Vector3, size: Vector3) -> void:

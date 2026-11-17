@@ -13,6 +13,8 @@
     {"id": "roof", "kind": "ground", "xz": [-3, -3]},
     {"id": "under_roof", "kind": "ground", "xz": [-3, -3], "select": {"name": "Floor"}},
     {"id": "nowhere", "kind": "ground", "xz": [50, 50]},
+    {"id": "crate", "kind": "ground", "xz": [6, 6]},
+    {"id": "under_crate", "kind": "ground", "xz": [6, 6], "select": {"name": "Floor"}},
     {"id": "rise", "kind": "ground", "box": [0, 0, 4, 4], "grid": 5},
     {"id": "pieces", "kind": "pieces", "select": {}},
     {"id": "rocks", "kind": "pieces", "select": {"mesh": "rock"}},
@@ -20,7 +22,10 @@
     {"id": "near_trees", "kind": "pieces", "select": {"near": {"point": {"xyz": [0, 0, -6]}, "radius": 2.5}}},
     {"id": "owned", "kind": "pieces", "select": {"owner": {"name": "Tiles"}}},
     {"id": "nothing", "kind": "pieces", "select": {"component": "NoSuchThing"}},
-    {"id": "signs", "kind": "ui", "select": {"kind": "text"}, "fields": ["text", "x", "y"]},
+    {"id": "csg", "kind": "pieces", "select": {"component": "CSGShape3D"}},
+    {"id": "signs", "kind": "ui", "select": {"kind": "text"}, "fields": ["h", "text", "w", "x", "y"]},
+    {"id": "boxes", "kind": "ui", "select": {"kind": "box"}, "fields": []},
+    {"id": "corner", "kind": "ui", "select": {"rect": [0.0, 0.0, 0.2, 0.2]}, "fields": ["text"]},
     {"id": "looker", "kind": "objects", "select": {"name": "Field"}, "fields": ["prop:events", "prop:total_x", "prop:total_y"]}
   ]
 }

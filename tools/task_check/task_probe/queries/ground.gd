@@ -35,6 +35,8 @@ func sample(_t: float, sample: Dictionary) -> void:
 		return
 	var space := _space()
 	if space == null:
+		probe.error(("ground %s: the physics space can't be read from the game's thread (physics runs on a thread "
+			+ "of its own): no ground is read") % id)
 		return
 	_ground = null
 	if not _select.is_empty():

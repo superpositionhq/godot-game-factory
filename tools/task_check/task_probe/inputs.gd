@@ -240,7 +240,8 @@ func _send_one(row: Dictionary, elapsed: float) -> void:
 			if over <= 0.0:
 				_move_cursor(_where(), _in_window(Vector2(by[0], by[1])))
 			else:
-				_moves.append({"by": Vector2(by[0], by[1]), "start": _at(row), "over": over, "sent": Vector2.ZERO})
+				# from the clock when it is sent: a row sent late spreads over its seconds all the same
+				_moves.append({"by": Vector2(by[0], by[1]), "start": elapsed, "over": over, "sent": Vector2.ZERO})
 			probe.note("mouse moved by (%.1f, %.1f) over %.2f s" % [by[0], by[1], over])
 		"teleport_to":
 			_teleport_to(row, elapsed)

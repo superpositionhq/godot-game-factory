@@ -335,10 +335,13 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   presses is pressed. How text is read: task-probes.md 2.6.
 - **pieces** (`queries/pieces.gd`): over every node in the tree (`Find.all_nodes`, not the probe's own): a
   `MeshInstance3D` whose mesh has faces (`Mesh.get_faces().size() / 3` triangles, read once a mesh a sample) is one
-  piece at its global position; a `MultiMeshInstance3D` is one piece an instance (`instance_count`) at its global
-  transform times `get_instance_transform(i).origin`, the first `visible_instance_count` (all at -1) drawn; a
-  `GridMap` is one piece a used cell whose item's mesh (`mesh_library.get_item_mesh`) has faces, at
-  `to_global(map_to_local(cell))`. A `GeometryInstance3D` whose `visibility_range_begin` is above 0 is skipped (a
+  piece at its global position; a `MultiMeshInstance3D` is one piece an instance it draws (the first
+  `visible_instance_count`, all `instance_count` at -1) at its global transform times
+  `get_instance_transform(i).origin`; a `GridMap` is one piece a used cell whose item's mesh
+  (`mesh_library.get_item_mesh`) has triangles, at `to_global(map_to_local(cell))`; a `CSGShape3D` that
+  `is_root_shape()` is one piece of its `get_meshes()`' triangles (a CSG shape inside another is none). Triangles: an
+  `ArrayMesh`'s `PRIMITIVE_TRIANGLES` surfaces, `surface_get_array_index_len` / 3 (`surface_get_array_len` / 3
+  without an index), read every sample; any other mesh `get_faces().size() / 3`, kept by instance id for the play. A `GeometryInstance3D` whose `visibility_range_begin` is above 0 is skipped (a
   farther level of detail). Drawn: `Find.shown`, and a `GeometryInstance3D` with `layers` not 0, `transparency` below
   1, not shadows-only. `component` is `Find.is_a`, `name` and `mesh` (`Find.resource_name`) wildcards, `owner` the
   node or a node above it among `Find.objects(owner)`, `near` `Find.within` by each piece's place. The value:
@@ -346,7 +349,8 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   `visible_triangles`; null when `near` doesn't resolve or `component` names no class (said once). With a dummy
   rendering server (`--headless`) `get_instance_transform` reads the identity, so every instance stands at its
   multimesh's own place.
-- **ground** (`queries/ground.gd`): the game camera's `World3D` (else the window's) `direct_space_state`; a
+- **ground** (`queries/ground.gd`): the game camera's `World3D` (else the window's) `direct_space_state` (null when
+  physics runs on a thread of its own: no value, said once in `query_errors`); a
   `PhysicsRayQueryParameters3D` from (x, 2000, z) to (x, -2000, z), `collide_with_areas` false; a hit on the player
   or a node below it, or with `select` on a node that neither the select's matches nor a node below them is, is
   added to `exclude` and the ray cast again (`MAX_THROUGH`, 32, at most). `xz`: `height` (the hit's y, null with
@@ -355,10 +359,15 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
 - **ui** (`queries/ui.gd`, `ui_scan.gd`): the elements on screen at the sample, a row for each thing a drawn Control
   draws (`UiScan.kinds`, in this order: `box`, `image`, `text`). Drawn (`UiScan.drawn`): visible as above and of
   some size. Then, when the select takes text, each `Label3D` the game's camera (`probe.view()`, a `Camera3D`) shows:
-  `Find.shown`, `layers` meeting the camera's `cull_mask`, `modulate` alpha above the floor, text not blank, none of
-  its box's 8 corners (`global_transform * get_aabb()`) `is_position_behind` the camera, the rectangle around their
-  `unproject_position` meeting the frame; that rectangle in fractions of the frame is its `x`, `y`, `w`, `h`, `source`
-  `label3d`, `kind` `text`. What stands in front of it isn't looked at. Rows carry `source` (`control`, `label3d`)
+  `Find.shown`, `layers` meeting the camera's `cull_mask`, `modulate` alpha above the floor, text not blank, its
+  global position not `is_position_behind` the camera, the rectangle around its corners' `unproject_position` (those
+  in front of the camera) meeting the frame; that rectangle in fractions of the frame is its `x`, `y`, `w`, `h`,
+  `source` `label3d`, `kind` `text`. Its corners (`label_corners`): `get_aabb()`'s x and y extents from its global
+  position along its basis's x and y (a billboard's own box is a cube of its longest side on 4.7.2, so its face is
+  instead its text's size, `get_multiline_string_size` times `pixel_size`, about that box's centre: the same as its box
+  without a billboard, measured with EXIT, 0.33 x 0.225 m); with `billboard` enabled or particles along the camera's x and y (the basis's
+  scale kept), fixed Y along `UP.cross(camera z)` and `UP`; with `fixed_size` times its depth in the camera's view
+  (orthogonal: half the camera's `size`), as its shader grows it. What stands in front of it isn't looked at. Rows carry `source` (`control`, `label3d`)
   and `kind`. What a script draws itself (`_draw`, a `draw_string`) is no element: the engine keeps no list of it. `signature`, `number` and `clock` are computed by the checker from the rows
   (`probes.ui_signature`, `ui_number`, `ui_clock`).
 - **screen** (`queries/screen.gd`): the frame as displayed, read back once it is drawn (`RenderingServer`'s
@@ -574,10 +583,10 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
   holds whatever stretches the frame to the window (`UiScan.to_window`).
-- move: `{"t", "move": [dx, dy], "over": s}`: without `over` (or 0) one `InputEventMouseMotion` whose `relative` is
+- move: `{"t", "move": [dx, dy], "over": s}`: without `over` one `InputEventMouseMotion` whose `relative` is
   [dx, dy] in the frame's pixels, through the root window's `get_final_transform()` (`basis_xform`) so the game's
   viewport gives it back in the frame's pixels; with `over`, in every frame from `t` the part due by then
-  (`(elapsed - t) / over` of it, less what was sent), until all of it was. The event's position is the cursor's,
+  (`(elapsed - sent) / over` of it, `sent` the clock when the row was sent, less what was sent), until all of it was. The event's position is the cursor's,
   which doesn't move. Played headless at 960x540, a move of [300, 0] over 1 s reads 300 summed in the game's `_input`
   over 30 events, 150 half way.
 - tap, drag: `{"t": 2.0, "tap": [0.5, 0.25], "finger": 1, "hold": 0.5}`, `{"t": 3.0, "drag": [{"widget":

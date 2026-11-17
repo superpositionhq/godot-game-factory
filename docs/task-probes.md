@@ -871,8 +871,10 @@ the one on the floor below it. `y_min < y_max`; `y_relative` goes with one of th
 How many mesh pieces are placed, however the scene holds them: trees drawn by one `MultiMeshInstance3D` or laid on a
 `GridMap` read as one node to `objects` and `components`, but as their real number of pieces here.
 
-- A piece: a `MeshInstance3D` whose mesh has triangles is 1; each instance of a `MultiMeshInstance3D` whose mesh has
-  triangles is 1; each cell of a `GridMap` whose item has a mesh with triangles is 1. A node that is a farther level
+- A piece: a `MeshInstance3D` whose mesh has triangles is 1; each instance a `MultiMeshInstance3D` draws (its first
+  `visible_instance_count`, all of them at -1) is 1, so the empty slots of a pool are none; each cell of a `GridMap`
+  whose item has a mesh with triangles is 1, turned or not; a root CSG shape whose result has triangles is 1 (the
+  shapes inside it are part of it). A node that is a farther level
   of detail (its `visibility_range_begin` above 0: it shows only from that far) is none, so a rock with a near and a
   far mesh is one piece. Meshes with no triangles (none, lines, points), sprites, labels, particles and what a script
   draws through the `RenderingServer` are none. Nodes in the tree only; a hidden one is a piece that isn't drawn.
@@ -890,7 +892,11 @@ How many mesh pieces are placed, however the scene holds them: trees drawn by on
   `transparency`, not only casting a shadow; a multimesh's first `visible_instance_count` instances), `components`
   (how many nodes hold them), `objects` (the same: a Godot node is both), `triangles` (the triangles the pieces hold),
   `visible_triangles` (the triangles of the pieces drawn, as `visible`).
-- A piece's triangles: its mesh's faces (`Mesh.get_faces`, every surface drawn as triangles) / 3.
+- A piece's triangles: an `ArrayMesh`'s surfaces drawn as triangles, their index count / 3 (their vertex count / 3
+  without an index); another mesh's (a `BoxMesh`, a `SphereMesh`) faces, read once a play; a CSG shape's, its
+  result's.
+- The player's own meshes and a first-person viewmodel's count like anything else: keep them out with an `owner` or
+  a `near`. `visible` doesn't look at the camera's cull mask, and an instance scaled to nothing still counts.
 - Counted over every piece in the probe, never cut at the rows cap. A literal threshold is fine on `count`,
   `visible`, `components` and `objects` (a count doesn't depend on the machine).
 - **A `triangles` or `visible_triangles` threshold is calibrated or relative to the start, never a literal value**
@@ -1019,13 +1025,17 @@ in the scene.
   flat plain), `hits` (how many points met ground; when none did, only `hits` (0) has a value). The value also holds
   `points` (grid x grid), for the logs. A measure takes `xz` or `box`, and only that one's fields.
 - `select` (an object select, optional): only shapes of the objects it matches, or of the nodes below them, are
-  ground; anything else (trees, rocks, roofs) is traced through (32 shapes at most). The player's shapes are always
+  ground; anything else (trees, rocks, roofs) is traced through (32 shapes at most). Without it everything with a
+  shape is ground: a character, a crate, a vehicle the player sits in. Leave them out with a select of the ground
+  the start has. The player's shapes are always
   skipped, with or without `select`.
 - The ray is 3D: 2D shapes are never ground (a 2D game's ground isn't read this way). It meets what the physics
   server holds: a `StaticBody3D`, a `RigidBody3D` or a `CharacterBody3D` with a shape, a `GridMap`'s or a CSG shape's
   collision, a `HeightMapShape3D`; a mesh with no collision is no ground.
 - **A `range` threshold is calibrated or relative to the start, never a literal value**; heights take a literal, as
   an object's `y` does.
+- A game that runs its physics on a thread of its own (`physics/3d/run_on_separate_thread`) has no space the probe
+  can read: no value, and the play's `query_errors` says so once.
 
 ### 2.18 `ui`: what the UI shows on screen
 
@@ -1086,13 +1096,21 @@ stays for a widget's own state (a bar's percent, a picture).
 - `number` and `clock` share the signature's query (one select, one reading), take any `agg` and a literal (what is
   shown is a fact), ignore `of` and take no `match`.
 - Text in the 3D scene shown by a `Label3D` is a `text` element too (`source` `label3d`): one the game's camera
-  shows (shown, on a layer the camera sees, not faded out, in front of the camera, its box on the frame), its
-  rectangle the box around its own box as the camera projects it. Whether something in the scene stands in front of
-  it is not looked at.
+  shows (shown, on a layer the camera sees, its `modulate` not faded out, its place in front of the camera, its text
+  on the frame), its rectangle the text's face as the camera projects it, turned to the camera as its billboard mode
+  turns it and grown with its distance when it has a fixed size. So a select with no `kind`, or of `text`, also reads
+  Label3Ds; keep them out with a `rect` or `"kind": "box"`. Not looked at: whether something in the scene stands in
+  front of it, its `transparency`, its `visibility_range_end`, and a camera inside a `SubViewport` (only the window's
+  camera shows Label3Ds to `ui`).
 - Each row also carries `source` (`control`, `label3d`) and `kind`, for the logs; they are not fields a check reads.
-- Limits: what a script draws itself (a `_draw` with `draw_string` or `draw_rect`, a shader) is no element, since
-  the engine keeps no list of it, and neither is a `TextMesh`. Where a readout is drawn that way, read the value
-  behind it with a `prop:` (section 2.4), or grade another outcome of the same issue.
+- Limits: `ui` reads the text of Controls and of `Label3D`s, nothing else. Text a script draws itself (a `_draw`
+  with `draw_string`), text a shader draws, text baked into a texture or a sprite, and a `TextMesh` are no element,
+  since the engine keeps no list of them, and `ui` never reads them. Where a readout the start has is drawn that way,
+  read the value behind it with a `prop:` (section 2.4), or grade another outcome of the same issue.
+- **Text the thread creates.** The writer can't know how a solver will draw new text: a correct build may draw it
+  in a `_draw` or bake it into a picture, where `ui` reads nothing. So a check of text the task adds never rests on
+  `ui` text alone: pair it with a required `looks_as_asked` judge item that the text shows, or read the state behind
+  it (the score, the timer, the flag the text reports).
 
 ### 2.19 `drawn`: what is drawn in a place, whatever draws it
 
@@ -1319,8 +1337,12 @@ task is void.
 
 - **Mouse axes go through the game's own scale.** An axis event's value is not degrees: `<Mouse>/delta/x` is a mouse
   movement in pixels, and the game's look sensitivity scales it. A play that assumes `"axis": 90` turns the camera 90
-  degrees barely moves it. Read the game's look scale at the seed and size the axis values (or send several events)
-  so the camera really turns, then measure the turn.
+  degrees barely moves it. Read the game's look scale at the seed and size the axis values so the camera really
+  turns, then measure the turn. A look around is a `move` spread over a second or two (section 1.1), as a player's
+  hand moves the mouse, not one jump.
+- **Count what the player sees placed.** Trees, rocks and tiles may be one node each or one multimesh, one grid map
+  or one merged mesh: count them with `pieces`, never with `objects` or `components`; where a fair build may merge
+  meshes, read `visible_triangles` calibrated or relative to the start, not a count of pieces.
 - **A game reads keys in more than one way.** A key input is an event with the key as both `keycode` and
   `physical_keycode`: an input action bound to that key, `Input.is_key_pressed` and `_input` all take it. A game
   that reads a key no control path names (a scancode of its own, a second keyboard) is not driven: check the game's

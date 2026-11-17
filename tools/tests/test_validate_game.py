@@ -595,7 +595,7 @@ class TaskRules(Base):
             self.assertEqual(list(vg.check_schema(c, schema['$defs']['Probe'], schema)), [], m)
             self.assertEqual(not any('never a literal' in e for e in vg.probe_errors(c, {}, 'r', {})), literal, m)
         play = {'name': 'look_about', 'seconds': 5, 'inputs': [{'t': 1, 'move': [300, -40], 'over': 2},
-                                                               {'t': 4, 'move': [-10, 0]}]}
+                                                               {'t': 3, 'move': [-10, 0], 'over': 2}]}   # ends at 5 s
         c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': play, 'measure': {'probe': 'player', 'field': 'y'},
              'expect': {'op': '>', 'value': 1}}
         self.assertEqual(list(vg.check_schema(c, schema['$defs']['Probe'], schema)), [])
