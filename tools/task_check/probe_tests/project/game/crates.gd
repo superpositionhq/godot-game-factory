@@ -6,6 +6,7 @@ const OUT := 0.5  ## seconds the pieces take to fly apart
 
 var _broken := -1.0
 var _pieces: Array[MeshInstance3D] = []
+var _bodies: Array[RigidBody3D] = []
 
 
 func _ready() -> void:
@@ -52,6 +53,22 @@ func _ready() -> void:
 	var still := _box("StillCrate", Vector3(4, 0, 0), Vector3.ONE)
 	still.add_to_group("crate")
 	add_child(still)
+	# one pushed whole, one freed (its debris would be spawned beside it), one that breaks into rigid bodies
+	_crate("PushedCrate", 8.0).add_child(_box("Whole", Vector3.ZERO, Vector3.ONE))
+	_crate("FreedCrate", 12.0).add_child(_box("Whole", Vector3.ZERO, Vector3.ONE))
+	var physics := _crate("PhysicsCrate", 16.0)
+	for corner: Vector3 in [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(1, 0, 1)]:
+		var body := RigidBody3D.new()
+		body.name = "Body"
+		body.position = corner * 0.25
+		body.freeze = true
+		body.add_child(_box("Piece", Vector3.ZERO, Vector3.ONE * 0.5))
+		var shape := CollisionShape3D.new()
+		shape.shape = BoxShape3D.new()
+		(shape.shape as BoxShape3D).size = Vector3.ONE * 0.5
+		body.add_child(shape)
+		physics.add_child(body)
+		_bodies.append(body)
 
 
 func _crate(crate: String, x: float) -> Node3D:
@@ -79,6 +96,11 @@ func _break() -> void:
 	for piece in _pieces:
 		piece.visible = true
 	($AnimCrate/Player as AnimationPlayer).play("break")
+	($PushedCrate as Node3D).position.x += 1.0
+	$FreedCrate.queue_free()
+	for body in _bodies:
+		body.freeze = false
+		body.linear_velocity = Vector3(signf(body.position.x), 1, signf(body.position.z)) * 3.0
 
 
 func _process(delta: float) -> void:

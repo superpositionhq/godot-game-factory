@@ -8,6 +8,7 @@
     {"t": 2.1, "key": "<Keyboard>/b", "press": false}
   ],
   "queries": [
-    {"id": "crates", "kind": "objects", "select": {"tag": "crate"}, "fields": ["bounds_change", "changed", "pose_change", "spread"]}
+    {"id": "crates", "kind": "objects", "select": {"tag": "crate"}, "fields": ["bounds_change", "changed", "pose_change", "simulating", "spread"]},
+    {"id": "freed", "kind": "objects", "select": {"name": "FreedCrate", "inactive": true}, "fields": []}
   ]
 }

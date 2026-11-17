@@ -802,6 +802,9 @@ def denied_play_args(args):
 NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'glow', 'spin'),
                  'objects': ('spread', 'bounds_change', 'pose_change', 'glow', 'spin'),
                  'audio': ('volume', 'max_volume', 'level')}
+# fields that read 0 at the start in the usual case (an object whole and at rest), so a threshold relative to the start
+# says nothing (start_times gives 0, start_plus is a literal): calibrated only
+CALIBRATE_ONLY = {'objects': ('spread', 'bounds_change', 'pose_change')}
 AUDIO_NAMED = ('sounds', 'repeats')   # read from the names of the streams that started, over the whole window
 UI_SIGNATURE_AGGS = ('changes', 'any', 'all', 'count')  # a ui signature's value means nothing; whether it changes does
 WAITS = 300   # seconds of real time a task play's waits add at most
@@ -992,6 +995,9 @@ def probe_errors(c, seed, ref, plays):
     if field in NEVER_LITERAL.get(probe, ()) and not rel:
         errs.append(f"check {n}: a {probe} measure's {field} depends on what a build chose, so its "
                     'threshold is calibrated or relative to the start, never a literal value')
+    if field in CALIBRATE_ONLY.get(probe, ()) and rel == 'start':
+        errs.append(f"check {n}: a {probe} measure's {field} usually reads 0 at the start, so a threshold relative "
+                    'to it says nothing: calibrate it')
     if probe == 'player' and field == 'dist' and measure.get('to') is None:
         errs.append(f"check {n}: a player measure's dist is the distance to its `to` point, which it lacks")
     if measure.get('to_angle') is not None and measure.get('to_axis') is not None:

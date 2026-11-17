@@ -282,8 +282,8 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
   alone has none).
 
 Where the number depends on what a build chose, the threshold is calibrated or relative to the start, never a literal
-value, and `tools/validate-game.py` refuses a literal: `objects` `spread`, `bounds_change`, `pose_change`, `glow`
-and `spin`; `components` `intensity`,
+value, and `tools/validate-game.py` refuses a literal: `objects` `spread`, `bounds_change`, `pose_change` (these
+three calibrated only: section 2.4), `glow` and `spin`; `components` `intensity`,
 `extent_*`, `glow` and `spin`; every `screen` field; `audio` `volume`, `max_volume` and `level`. Each section says
 why. A `render` field takes a literal: a budget is a number of its own (section 2.20).
 
@@ -569,24 +569,34 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     sprite or label) and a 2D node with a rectangle (a sprite), never a particle effect (it spans where its particles
     went), a collision shape or a light. A part is **drawn** when it is shown, on a render layer, not faded out by its
     `transparency`, not only casting a shadow, and, a multimesh, has an instance to draw;
-  - `spread` (m): how far apart the object's parts are, the diagonal of the world-aligned box around the centres of
-    its drawn parts' boxes: a skinned mesh whose skeleton carries two `PhysicalBone3D`s or more (a ragdoll) by each
-    bone's place; 0 with one part, no value when it draws nothing. A whole crate reads its pieces' own layout; one
-    broken into pieces that fell apart reads more, though its pieces stay drawn and in its group. **Its threshold is
-    calibrated or relative to the start, never a literal value**;
+  - `spread` (m; in 2D, pixels): how far apart the object's parts are, the diagonal of the world-aligned box around
+    the centres of its drawn parts' boxes: a skinned mesh whose skeleton carries two `PhysicalBone3D`s or more (a
+    ragdoll) by each bone's place; 0 with one part, no value when it draws nothing. A whole crate reads its pieces'
+    own layout; one broken into pieces that fell apart reads more, though its pieces stay drawn and in its group;
   - `changed`: 1 when the object differs from the first sample it was seen in (the play's first sample, for an object
     there from the start), else 0. It reads 1 when a part was hidden or shown, a part drawn then is gone or a part
     drawn now was not there, a part's world box moved more than 0.01 m (moved, turned, scaled), or its pose moved
     more than 0.05 m in all (below), or a skeleton's bones changed in number. So an object that breaks by hiding a
-    part and showing its pieces, or by animating its pieces or its rig in place with no physics, reads 1, as one that
-    moves does; one left alone reads 0. An object animated from the start (a looping idle) reads 1 too: read it after
-    the start of the play that matters, or read `pose_change`. The nodes below it count as its own: a spawner that
-    draws nothing reads 1 once the things it spawns as its children appear or move;
-  - `bounds_change` (m): the furthest any face of a part's world box moved since that first sample, the largest over
-    its parts; `pose_change` (m): how far its pose moved since then, summed: every bone of each `Skeleton3D` in it,
-    in the skeleton's own space, and each part below it, its place in the object's own space (so the object moving
-    as a whole is no pose). No value for an object with neither a skeleton nor a part below it. **Their thresholds
-    are calibrated or relative to the start, never a literal value**; `changed` takes a literal;
+    part and showing its pieces, or by animating its pieces or its rig in place with no physics, reads 1. **It reads
+    1 just as well for an object that moved, turned or was scaled whole, one that plays an idle animation, and one
+    that a new drawing child joined** (the nodes below it count as its own: a spawner that draws nothing reads 1 once
+    the things it spawns as its children appear or move). So read "it broke" from `changed` only of an object the
+    play never moves, or together with `spread` (calibrated) or `simulating`. One left alone reads 0;
+  - the first sample is the query's own: a `window` doesn't reset it, so an object animated from the start (a looping
+    idle) reads 1 in every window. Read such an object in a play that starts at the moment that matters, or read its
+    `pose_change` calibrated;
+  - **An object freed, or hidden at its root (without `"inactive": true`), has no row**, and its first sample is
+    forgotten once it is freed: `changed` can't see it go, and `of` `any` or `all` of no rows reads 0 (section 2.1).
+    A build may break a crate by freeing it and spawning its debris beside it: read the crate's `count` (or select it
+    with `"inactive": true`) together with `changed`, and never read "still whole" from `changed` alone;
+  - `bounds_change` (m; in 2D, pixels): the furthest any face of a part's world box moved since that first sample, the
+    largest over its parts; `pose_change` (m; in 2D, pixels): how far its pose moved since then, summed: every bone
+    of each `Skeleton3D` in it, in the skeleton's own space (a skeleton imported at a scale of 0.01 reads 100 times
+    larger), and each part below it, its place in the object's own space (so the object moving as a whole is no
+    pose). No value for an object with neither a skeleton nor a part below it;
+  - **`spread`, `bounds_change` and `pose_change` are calibrated, never a literal and never relative to the start**:
+    they read 0 at the start in the usual case (the object whole and at rest), where `start_times` gives a threshold
+    of 0 and `start_plus` is a literal in disguise; `tools/validate-game.py` refuses both. `changed` takes a literal;
   - `prop:<Class>.<member>[.<sub>]` or `prop:<member>`: a property of a node or a variable of its script, whether or
     not it is exported. With a class first (as `component` names one), the node itself when it is of that class, else
     the first node below it that is (`prop:Health.current`, `prop:RigidBody3D.mass`, `prop:Light3D.light_energy`);
@@ -1212,9 +1222,15 @@ task is void.
 - **A broken object still draws.** A crate broken into pieces may keep every piece drawn and in its group, so
   `count` and `visible` can't see it go: read `simulating` of the crate, or its `spread` calibrated or relative to
   the start.
-- **An object can break without physics.** A build may break it by hiding its whole mesh and showing its pieces, or
-  by playing an animation on its pieces or its rig, so nothing simulates and no part need move apart: read `changed`
-  of the object (1 when anything about it changed since the start), so every way of breaking it reads the same.
+- **An object can break without physics, or go.** A build may break it by hiding its whole mesh and showing its
+  pieces, or by playing an animation on its pieces or its rig, so nothing simulates and no part need move apart:
+  `changed` of the object reads 1 for these, as for physics. A build may also free it and spawn its debris beside
+  it: then it has no row, so read its `count` (or select it with `"inactive": true`) beside `changed`. `changed` is
+  also 1 for an object moved whole or idling: gate "it broke" on an object the play never moves, or with `spread`
+  calibrated or `simulating`.
+- **Breaks these fields don't see**: a shader or material dissolve, a mesh swapped for another with the same box, a
+  2D part faded by its `modulate` alpha, debris made only of particles. Read what changes there: a `prop:` the start
+  names, the frame (`screen`, a judge), or the effect (`components` `effect`).
 - **A HUD need not be one kind of node.** A build may show its score in a `Label`, a `RichTextLabel` or a `Button`:
   check what it shows with `ui` (text with `match`, counts by `kind` and `rect`), which reads them all the same;
   `widgets` sees only the widget it names.

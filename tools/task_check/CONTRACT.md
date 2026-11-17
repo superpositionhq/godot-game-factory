@@ -131,8 +131,9 @@ The validator's rules beyond the schema include:
 
 Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's `NEVER_LITERAL`):
 objects `spread`, `bounds_change`, `pose_change`, `glow`, `spin`; components `intensity`, `extent_*`, `glow`, `spin`;
-`screen` (all); audio `volume`,
-`max_volume`, `level`. A `render` field takes a literal: a budget is a number of its own.
+`screen` (all); audio `volume`, `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its
+own. Objects `spread`, `bounds_change` and `pose_change` are calibrated only, never relative to the start
+(`CALIBRATE_ONLY`): they read 0 at the start in the usual case.
 
 Six of the task check's rules, each closing a case that would otherwise read wrongly:
 
@@ -247,7 +248,10 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
     `BOUNDS` (0.01 m: the largest move of any face), a skeleton's bone count differs, or the pose's summed distance
     is above `POSE` (0.05 m); the first sample reads 0. `bounds_change`: the largest face move over the parts
     compared (0 on the first sample, no value without a part); `pose_change`: the summed distance (no value without
-    a skeleton or a part below the object);
+    a skeleton or a part below the object). The first sample is per query and instance id: with a `where` or `near`
+    select an object is first seen when it first matches, mid-play, and a pooled object hidden and shown again keeps
+    its old first sample; a freed object has no row and its first sample is dropped. Units are the game's: metres in
+    3D, pixels in 2D, a skeleton's own space for its bones;
   - `damage_taken` (`inputs.gd` `damage_taken`): the sum of what `take_damage` returned for the play's `damage`
     stages on the node or on a node below it; no value when none struck it, or when a call returned no number.
 - **components** (`queries/components.gd`): the nodes of the class, or with `effect` alone every particle node

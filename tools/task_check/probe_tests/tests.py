@@ -502,7 +502,8 @@ def check_crates(c, found):
         return row(found, "crates", t, name).get(field)
 
     names = ("HideCrate", "AnimCrate", "StillCrate")
-    c.eq("the crates", [r["name"] for r in rows(found, "crates", 1.0)], list(names))
+    c.eq("the crates", [r["name"] for r in rows(found, "crates", 1.0)], list(names) + ["PushedCrate", "FreedCrate",
+                                                                                        "PhysicsCrate"])
     c.eq("whole: none changed", [crate(t, n, "changed") for t in (1 / 30, 1.0) for n in names], [0] * 6)
     c.eq("whole: no part moved; a mesh with nothing below it has no pose",
          [(crate(1.0, n, "bounds_change"), crate(1.0, n, "pose_change")) for n in names], [(0, 0), (0, 0), (0, None)])
@@ -517,6 +518,18 @@ def check_crates(c, found):
     c.eq("spread whole: one drawn part, two, one", [crate(1.0, n, "spread") for n in names], [0, 0.5, 0])
     c.near("spread broken: the pieces' centres 2 m apart each way", crate(3.0, "HideCrate", "spread"), math.sqrt(8), 1e-4)
     c.near("and the lid 1.5 m above the body", crate(3.0, "AnimCrate", "spread"), 1.5, 1e-4)
+    c.eq("a crate pushed whole reads changed, its spread unchanged",
+         (crate(3.0, "PushedCrate", "changed"), crate(3.0, "PushedCrate", "spread")), (1, 0))
+    c.eq("a crate freed has no row: changed can't see it go, count can",
+         ([r["name"] for r in rows(found, "crates", 3.0)].count("FreedCrate"), len(rows(found, "freed", 1.0)),
+          len(rows(found, "freed", 3.0))), (0, 1, 0))
+    c.eq("a crate broken into rigid bodies: whole, it neither simulates nor changed",
+         (crate(1.0, "PhysicsCrate", "simulating"), crate(1.0, "PhysicsCrate", "changed")), (0, 0))
+    c.eq("broken, it simulates and changed", (crate(3.0, "PhysicsCrate", "simulating"), crate(3.0, "PhysicsCrate", "changed")),
+         (1, 1))
+    c.near("its pieces' layout, whole", crate(1.0, "PhysicsCrate", "spread"), math.sqrt(0.5), 1e-4)
+    c.true("and spread apart once broken (%s m)" % crate(3.0, "PhysicsCrate", "spread"),
+           (crate(3.0, "PhysicsCrate", "spread") or 0) > 3.0)
     c.eq("no error", errors(found), [])
 
 

@@ -581,6 +581,20 @@ class TaskRules(Base):
             self.assertTrue(any('never a literal' in e for e in vg.probe_errors(c, {}, 'r', {})), field)
 
 
+    def test_spread_and_the_moves_are_calibrated_only(self):
+        """spread, bounds_change and pose_change read 0 at the start of most plays: a threshold relative to the start
+        says nothing, so only a calibrated one is valid."""
+        for field in ('spread', 'bounds_change', 'pose_change'):
+            for expect, bad in (({'op': '>', 'calibrate': 0.5}, False), ({'op': '>', 'start_times': 2}, True),
+                                ({'op': '>', 'start_plus': 0.5}, True)):
+                c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'expect': expect,
+                     'measure': {'probe': 'objects', 'select': {'tag': 'crate'}, 'field': field, 'of': 'max'}}
+                errs = [e for e in vg.probe_errors(c, {}, 'r', {}) if 'calibrate it' in e]
+                self.assertEqual(bool(errs), bad, (field, expect, errs))
+        c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'expect': {'op': '>', 'start_plus': 5},
+             'measure': {'probe': 'objects', 'select': {'tag': 'crate'}, 'field': 'spin', 'of': 'max'}}
+        self.assertFalse([e for e in vg.probe_errors(c, {}, 'r', {}) if 'calibrate it' in e], 'spin may be relative')
+
     def test_changed_takes_a_literal(self):
         """objects `changed` is a fact (the object differs from its first sample): a literal threshold is valid."""
         c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look',

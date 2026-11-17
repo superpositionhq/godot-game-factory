@@ -403,12 +403,14 @@ looks up and a positive yaw turns left.
     `class_name` or its file name), `near` a point, `where` (a property's value) or `has` (what it carries): how
     many, where, shown or hidden, and a variable of the node's own by `prop:` (`prop:health`, `prop:position.y`;
     `prop:<Class>.<member>` reads it on a node of that class below the matched one); after a staged contact, its
-    own short stop (`frozen`) and what a staged hit did (`damage_taken`); whether it broke: `changed` (1 when
-    anything about it differs from the start, so a crate broken by hiding its mesh and showing pieces, by an
-    animation or by physics reads the same; never `count`, which still sees every piece) and how far its pieces lie
-    apart or moved (`spread`, `bounds_change`, `pose_change`, never a literal threshold); whether it gives light
-    (`lit`) and how much (`glow`, never a literal threshold), whatever lights it: a light node, an emissive or an
-    unshaded material, a shader of the game's own, a particle effect. Gate "the lamp is on" with `lit`, never by counting
+    own short stop (`frozen`) and what a staged hit did (`damage_taken`); whether it changed since the start
+    (`changed`: 1 when a crate breaks by hiding its mesh and showing pieces, by an animation or by physics, and as
+    well when it moves, turns or scales whole, idles or gains a drawing child: gate "it broke" only on an object the
+    play never moves, or with `spread` or `simulating`; a crate a build frees has no row, so read its `count` beside
+    `changed`, never "still whole" from `changed` alone) and how far its pieces lie apart or moved (`spread`,
+    `bounds_change`, `pose_change`, in the game's units, calibrated only); whether it gives light (`lit`) and how
+    much (`glow`, never a literal threshold), whatever lights it: a light node, an emissive or an unshaded
+    material, a shader of the game's own, a particle effect. Gate "the lamp is on" with `lit`, never by counting
     its light nodes: another build lights it without one. Read `glow` only where the ask is about how bright: it
     has no value for a lamp an effect, a texture or a shader of the game's own lights. In a game drawn unshaded
     every mesh reads lit, on or off: gate on the property that switches the lamp there. Read a count or `"of":
@@ -640,6 +642,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | a probe that isn't required but passes at the start carried weight | every check the start passes takes `"weight": 0`, a `"required": false` probe too |
 | a probe that tests the reference's implementation ("spawn_height = 0.92") | measure the outcome; another valid fix must pass |
 | the brief said "scenario 1" but the task had no `-scenario 1` | `play_args` (and `play_scene` where needed) always set and checked at the seed |
+| a break read where these fields don't see it: a shader or material dissolve, a mesh swapped for one with the same box, a 2D part faded by `modulate`, debris made only of particles | read what changes there: a `prop:` the start names, the frame, the effect (docs/task-probes.md, section 5) |
 | a control or class name guessed | read the names from the code and scenes at `seed.commit` |
 | a probe matched an exact on-screen string, or a play walked a menu by counting key presses, that only the reference's layout gives | a loose `match` on what `ui` reads, a click or touch on a control the start names; never a string the instruction doesn't quote |
 | a "no longer shown" check read a widget the build had hidden, not removed | `ui` and `widgets` read what is on screen; `"visible": false` only when the check means "exists while hidden" (section 5) |
