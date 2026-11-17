@@ -151,9 +151,8 @@ recorded commands. Never start the engine another way for something a mode does.
   play to reach gets a scenario start option (a scene and a command-line flag), listed in the README's QA section.
   `tools/validate-game.py` checks the method and where the state lives (rule `contract`), and the packager refuses a
   game that fails it.
-  _(failure: combat asks could not be graded because damage and state lived in private sim code: a task's hit,
-  stagger, parry, stun or boss phase could not be staged or read by the grader, so tasks shipped those asks
-  unchecked)_
+  _(why: damage and state kept in private code can't be staged or read by the grader, so a task's hit, stagger,
+  parry, stun or boss phase would go unchecked)_
 - **Art style (user rule):** every game has one style from the library
   [docs/art-styles/](../../docs/art-styles/index.md) (100 guides: references, visual definition, Godot recipe, do /
   do not), and everything on screen follows it: models and materials, lighting, post-processing, effects, UI.
@@ -210,8 +209,8 @@ recorded commands. Never start the engine another way for something a mode does.
   is an imported audio file (a clip from the godot-sound skill, or a WAV a committed script made and the engine
   imported); none is made at run time: no `AudioStreamGenerator`, no script that fills a stream's samples while the
   game runs, for a game sound. `tools/validate-game.py` scans for them (rule `sound`), and the packager refuses a game
-  that fails it. _(failure: games that synthesised their sounds at run time left a task asking "each gun has its own
-  sound" with no asset name for the grader to tell sounds apart by)_
+  that fails it. _(why: a sound made at run time has no file name, so the grader can't tell
+  one sound from another when a task asks "each gun has its own sound")_
 - **UI (user rule):** matches the game's art style (its guide's UI and typography line): kit frames, icons, display
   fonts, styled numbers. Built from `Control` nodes under one `Theme` resource. No plain or default-font text on
   screen: never the engine's built-in fallback font; import the game's own display font and set it as the theme's
@@ -222,8 +221,7 @@ recorded commands. Never start the engine another way for something a mode does.
   its world, show only what the player needs at that moment and leave the play view open. Blue is used only where the
   style guide itself asks for it. Before calling a screen or the HUD done, look at a screenshot of it: if it reads as
   a blue sci-fi dashboard laid over a game that is not one, or as a wall of panels, redo it.
-  _(failure: games built by Codex came out one after another with the same dense blue UI, unrelated to their art
-  style)_
+  _(why: left to its defaults an agent builds the same dense blue UI for every game, whatever its art style)_
 - **Story (user rule):** a strong background story told in play, never a wall of text: environmental storytelling, at
   most one short line (under ~15 words) per area, optional discoverable details, a late payoff that recolours earlier
   play.
@@ -235,8 +233,8 @@ recorded commands. Never start the engine another way for something a mode does.
   between runs, opponents or hazards that behave in different ways, choices with a trade-off. Each one works, shows in
   play with its own feedback, and is reachable by a scenario. One example, not a template: a racing game that is only
   driving laps is too thin; one with drifting, item pick-ups and car modification is the depth meant. Choose what
-  fits your own game's genre and story and never copy this list. _(failure: a racing game shipped as plain racing,
-  too simple as a game and too thin to give hard tasks)_
+  fits your own game's genre and story and never copy this list. _(why: a game of one plain loop is too simple to play
+  and too thin to give hard tasks)_
 - **Play loops are designed with the person (user rule):** do not settle the game's loops alone. Before writing the
   design doc's systems, propose the core loop and the further systems to the person in plain words, with two or three
   real alternatives where the choice is open, ask what they would want to play, and build what you agree. Keep doing
@@ -245,8 +243,7 @@ recorded commands. Never start the engine another way for something a mode does.
   the better; a session where the person only says "continue" is a weak one. Their choices are `user.direction` rows
   (godot-commit-always skill). Ask about play, not about engine detail, and never stall on a question: when the
   person is away, go on with your best proposal, say so, and bring it up when they are back.
-  _(failure: agents chose every loop themselves, so games came out thin and the record held little of the person's
-  judgement)_
+  _(why: loops an agent chooses alone come out thin, and the record then holds little of the person's judgement)_
 - **Quality bar and room for hard tasks:** in the skill of your game's platform: **godot-desktop-game**, or
   **godot-mobile-game** for a game made with `new-game.ps1 -Platform mobile` (its `Platform.json` says so). Read that
   one, never both.
@@ -447,7 +444,8 @@ commits. Follow the godot-write-tasks skill (the branch and worktree, seeds, the
 scene, deterministic probe checks, what must never reach the agent); never point the game's code or docs at `Tasks/`.
 validate-game.py checks their format, and `tools/task-check.py <games>/<slug> --all` (docs/task-check.md), started
 once all the tasks are written as a background process the person can leave running (godot-write-tasks section 5),
-checks them on the engine: a task ships only when the task check says VALID. Judge each task's difficulty in the
+checks them on the engine: a task ships only when the task check says VALID, its no-op failing and its oracle
+passing (godot-write-tasks, "The no-op and the oracle, on your own machine"). Judge each task's difficulty in the
 session against the bar (godot-write-tasks skill, section 6); never run a task with another coding agent
 (`tools/task-try.py` is ours, run on submitted tasks).
 

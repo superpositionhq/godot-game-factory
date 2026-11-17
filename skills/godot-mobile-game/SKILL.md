@@ -151,7 +151,9 @@ player as the product, the rule here is the one that applies.
   first visible `Control` of that node name); `hold` for a held touch, `finger` for a second finger. The back button
   is the key `<Keyboard>/escape`. The checker's own `drive` play is by touch on a mobile game: a left thumb at the
   lower left pushed along the route, a tap at the lower right. A brief written for a mobile game never asks for a
-  key or a mouse.
+  key or a mouse. A touch whose control isn't on screen is a miss (`inputs_missed`): on the reference it makes the
+  task INVALID (its own fix can't be driven by the play), on the start it fails that play's checks. Read both sides'
+  `probe.log` in the no-op and oracle check (godot-write-tasks, "The no-op and the oracle, on your own machine").
 - Good mobile threads to look for in your history: a control that was too small or badly placed and took rounds to
   fix, a layout broken in the game's orientation, a view over a budget brought back under it (the `render` reading
   with a literal threshold, `{"op": "<=", "value": 700}`, in a play of its own that takes the player to the view and
