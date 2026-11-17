@@ -1349,6 +1349,10 @@ class Schema(unittest.TestCase):
         self.assertEqual(vg.render_errors(apart), [])
         plain = [budget, dict(probe_check({'probe': 'objects', 'select': lamp, 'field': 'count'}, 'look'), name='lamp')]
         self.assertEqual(vg.render_errors(plain), [])
+        self.assertEqual(vg.render_errors([budget], {'tag': 'hero', 'has': {'lit': True}}), [
+            'the task takes a render measure and its player select has has.lit, which makes the probe render in every '
+            'play: name the player another way'])
+        self.assertEqual(vg.render_errors([budget], {'tag': 'hero'}), [])
         t = task('a' * 40, 'b' * 40)
         t['milestones'][2]['checks'] += [budget, dict(probe_check({'probe': 'objects', 'select': lamp, 'field': 'lit'},
                                                                   'look', {'op': '>=', 'value': 1}), name='lamp_lit')]

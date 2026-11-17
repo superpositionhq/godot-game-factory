@@ -121,8 +121,8 @@ The validator's rules beyond the schema include:
 - a project path (the task's `play_scene`, a task play's `scene`) has no `.` or `..` part and no empty one;
 - an audio measure's `sounds` or `repeats` takes no `agg` (`AUDIO_NAMED`);
 - a play that takes a `render` measure takes no reading that can make the probe draw: no objects or components
-  measure of `lit` or `glow` and no select with `has.lit`, in its measures or its inputs (`captures`,
-  `render_errors`);
+  measure of `lit` or `glow` and no select with `has.lit`, in its measures or its inputs, and the task's `player`
+  select has no `has.lit` when any play takes one (`captures`, `render_errors`);
 - a warning, never an error, when a `teleport_to`, a `pin`, a `damage`'s `to`, a `set`'s `on` without `all`, an
   object point or an `"of": "first"` measure takes its one object by a wildcard name and nothing else: a spawner, a
   pool or a parent named like the things fits too;
@@ -241,42 +241,58 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   too); `simulating` a rigid body that isn't frozen, or a shape of one; `intensity` a `Light3D`'s `light_energy` or
   a `Light2D`'s `energy`, `on` that it is shown and its energy is above 0 (a `Light2D` also enabled); `active` shown
   and, by its class, emitting, playing, not disabled or on.
-- **lit, glow, has.lit** (`find.gd` `light_of`, `light_of_object`, `material_light`, `drawn_with`): read from the
-  nodes' own properties, and for a mesh whose properties don't tell by drawing it alone. One node as a source
-  (`light_of`; null for any other node): a `Light3D` (shown, not `light_negative`, `light_energy` times the luminance
-  of `light_color` above 0: that product is its glow) or a `Light2D` (also `enabled`, not `BLEND_MODE_SUB`; `energy`,
-  `color`); a 3D part (a `MeshInstance3D` with a mesh: each surface's `get_active_material` and its
+- **lit, glow, has.lit** (`find.gd` `light_of`, `light_of_object`, `material_light`, `drawn_with`, `part_drawn`): read
+  from the nodes' own properties, and for a mesh whose properties don't tell by drawing it alone. One floor,
+  `LIT_FLOOR` (0.01, a linear luminance), holds for a light's amount, a material's light and a drawn pixel. One node
+  as a source (`light_of`; null for any other node): a `Light3D` (shown, not `editor_only`, not `light_negative`,
+  `light_energy` times the luminance of `light_color` above the floor: that product is its glow) or a `Light2D` (also
+  `enabled`, not `editor_only`, not `BLEND_MODE_SUB`, a `PointLight2D` with a `texture`; `energy` times the luminance
+  of `color` times its alpha); a 3D part (a `MeshInstance3D` with a mesh: each surface's `get_active_material` and its
   `material_overlay`; a `MultiMeshInstance3D` or a particle effect: its `material_override`, else its meshes' surface
-  materials; a `CSGShape3D`: its override, else its `material`) or a 3D effect (`GPUParticles3D`, `CPUParticles3D`),
-  dark when it isn't shown, its `transparency` is 1 or, an effect, it isn't `emitting`. A material's light
-  (`material_light`): a `BaseMaterial3D` that is unshaded gives the luminance of `albedo_color` (`unlit`; a bound when
-  it has an albedo texture); else with `emission_enabled` the luminance of `emission` (plus 1 when an emission texture
-  is added: `EMISSION_OP_ADD`) times `emission_energy_multiplier` (`emissive`; a bound with an emission texture); else
-  0; no material is the engine's default, 0; any other material class is unknown. Luminance is linear Rec. 709 of the
-  colour made linear (`Find.luminance`). The brightest material above `LIT_FLOOR` (0.01) lights the part: glow is that
-  times a quarter of the surface of `get_aabb()` scaled by the node's global scale; an effect's glow is null. A mesh
-  instance or a multimesh instance whose properties don't tell (no material that gives light whatever its textures,
-  and an unknown material or a bound above the floor) is drawn alone (`drawn_lit`, `_room`): its mesh with its
-  materials and its instance shader parameters, at the origin, in a `World3D` of its own whose environment has a black
-  background, no ambient and no reflected light, seen by three orthogonal cameras (`DRAWN_VIEWS`) fitted to the mesh's
-  box, each in a `SubViewport` of `DRAWN_SIZE` (48) pixels a side that updates once. The rooms a frame drew are read
-  at `RenderingServer.frame_post_draw` by the queries that wait for them (`needs_frame`, `frame_drawn`, as `screen`)
-  or at the next pass (`light_collect`, `light_tick`): lit when `DRAWN_PIXELS` (3) pixels over the views have a linear
-  luminance above `DRAWN_FLOOR` (0.02); `glow_read` `drawn`, glow null when lit. The answer is kept by the part until
-  its signature changes (`_signature`: the mesh, each material's light-giving properties, a shader's code and every
-  parameter, the instance shader parameters), which `light_tick` looks at once a frame for every part drawn before. A
-  part not drawn yet is unread for a select's `has.lit`. A play that draws nothing (`--headless`) leaves such a part
-  unread and says so once in `query_errors` (`lit: a part whose light only a drawing tells ... has no value: this play
-  draws nothing (headless)`). Measured on the factory PC, on Forward+ and on the Mobile renderer: a shader that emits
-  and a white emission texture read 3076 bright pixels, the same shader with its emission at 0 and a black emission
-  texture read 0; the frame that draws n parts has 3 n more draw calls in `RenderingServer.get_rendering_info`'s
-  totals, which `probe.log` notes (`lit: the frame that drew 4 part(s) alone had 24 draw call(s) in all (the frame
-  before it: 12)`), so the validator keeps these readings out of a `render` measure's play (`captures`,
-  `render_errors`). A CSG shape or an effect with an unknown material and no lit one is unread. An object
-  (`light_of_object`) sums the sources of itself and every node below it: lit when one is, glow their sum (null when a
-  lit one has none), no value when a source is unread and none is lit. A row holds `glow_sources` (the kinds lit,
-  joined by commas) and `glow_read` (`props`, `drawn`, `bound`, `unread`) when it has any. `has.lit` keeps a part
-  whose `light_of` is lit.
+  materials; a `CSGShape3D`: its override, else its `material`, else, a `CSGMesh3D`, its mesh's surface materials),
+  each material followed by its `next_pass` chain (`MAX_PASSES`, 8, at most), or a 3D effect (`GPUParticles3D`,
+  `CPUParticles3D`), dark when it isn't drawn (`part_drawn`: not shown, `layers` 0, `transparency` 1,
+  `SHADOW_CASTING_SETTING_SHADOWS_ONLY`, the distance from the probe's camera to its box's centre outside its
+  visibility range, a multimesh with `instance_count` or `visible_instance_count` 0) or, an effect, it isn't
+  `emitting`. A material's light (`material_light`): a `BaseMaterial3D` that is unshaded gives the luminance of
+  `albedo_color` (`unlit`; a bound when it has an albedo texture); else with `emission_enabled` the luminance of
+  `emission` (plus 1 when an emission texture is added: `EMISSION_OP_ADD`) times `emission_energy_multiplier`
+  (`emissive`; a bound with an emission texture); either times `albedo_color.a` when its `transparency` isn't
+  disabled (a bound with an albedo texture); else 0; no material is the engine's default, 0; any other material class
+  is unknown. Luminance is linear Rec. 709 of the colour made linear (`Find.luminance`). The brightest material above
+  the floor lights the part: glow is that times a quarter of the surface of `get_aabb()` scaled by the node's global
+  scale; an effect's glow is null. A mesh instance or a multimesh instance whose properties don't tell (no material
+  that gives light whatever its textures, and an unknown material or a bound above the floor) is drawn alone
+  (`drawn_lit`, `_room`): its mesh with the part's `material_override`, `material_overlay`, surface override
+  materials and instance shader parameters, at the origin, in a `World3D` of its own whose environment has a black
+  background, no ambient and no reflected light, seen by three orthogonal cameras (`DRAWN_VIEWS`) fitted to the
+  mesh's box, each in a `SubViewport` of `DRAWN_SIZE` (128) pixels a side that updates once. The rooms a frame drew
+  are read at `RenderingServer.frame_post_draw` by the queries that wait for them (`needs_frame`, `frame_drawn`, as
+  `screen`) or in the next frame (`light_collect`, from `light_tick`, which the probe's `_process` calls once a
+  frame): each view's image made linear (`Image.srgb_to_linear`) and converted to `FORMAT_L8` (Rec. 709 weights),
+  lit when one byte is above `DRAWN_BYTE` (2: the floor in 8 bits); `glow_read` `drawn`, glow null when lit. A part
+  is drawn only when a reading asks for it (a row's field, a select's `has.lit`) and its signature (`_signature`: the
+  mesh, each material's and next pass's light-giving properties, a shader's code and every parameter, the instance
+  shader parameters) differs from its last drawing's; until the new drawing is read the part keeps its last answer.
+  A part whose first drawing isn't read yet is unread: `Find.pending` counts the askings, and a sample whose select
+  asked for one has no rows and `"pending": true` (the checker reads no value, `probes.series`). An input row with a
+  `has.lit` select has the select looked at every frame from `WARM` (0.2 s) before its time (`Inputs.warm`), and is
+  held back while one of them waits for a first drawing, `LIT_WAIT` (1 s) at most. A play that draws nothing
+  (`--headless`) leaves such a part unread and says so once in `query_errors` (`lit: a part whose light only a drawing
+  tells ... has no value: this play draws nothing (headless)`). `probe.log` notes a drawing whose answer changed
+  (`lit: Lamp/Shade drawn alone in a room without light: <n> bright pixel(s), the brightest <b> of 255, lit`) and,
+  once, the draw calls of the first frame that drew parts alone. Measured on the factory PC, on Forward+ and on the
+  Mobile renderer alike: a shader that emits, a white emission texture and a shader whose light changes every frame
+  read 21548 bright pixels of 49152, a pure blue emission 21548 (the brightest 18 of 255), a 10 cm glowing band on a
+  4 m post 47; the same shader with its emission at 0, a black emission texture, the post's dark band and a
+  two-surface glowing mesh under a dark override read no pixel above 0. The frame that draws n parts has 3 n
+  more draw calls in `RenderingServer.get_rendering_info`'s totals, so the validator keeps these readings out of a
+  `render` measure's play and refuses a task whose `player` select has `has.lit` alongside a `render` measure
+  (`captures`, `render_errors`). The Compatibility renderer is not measured. A CSG shape or an effect with an unknown
+  material and no lit one is unread. An object (`light_of_object`) sums the sources of itself and every node below
+  it: lit when one is, glow their sum (null when a lit one has none), no value when a source is unread and none is
+  lit. A row holds `glow_sources` (the kinds lit, joined by commas) and `glow_read` (`props`, `drawn`, `bound`,
+  `unread`) when it has any. `has.lit` keeps a part whose `light_of` is lit.
 - **widgets** (`queries/widgets.gd`, `ui_scan.gd`): every `Control` of the game's window (`UiScan.controls`: a
   `Control` in a `SubViewport` is not the window's), hidden ones included. `component` is the Control's class; with a
   `name`, the class of a Control above it matches too (the row keeps its own class). A rectangle is the Control's
@@ -604,7 +620,9 @@ so the engine imports nothing there), each made fresh before its job.
   `rows` for `objects`, `components`, `widgets` and `ui` (at most 200; when more matched, also `total`, how many, and
   `full`, an entry for every field asked for, in the order asked: its `n`, `nonzero`, `sum`, `min` and `max` over
   every match's number, `n` 0 and `min` and `max` null for a field no match has a number for), or `value`, an object
-  or null, for the others. A `screen` sample whose frame never came has a null value.
+  or null, for the others. A `screen` sample whose frame never came has a null value. An `objects` or `components`
+  sample whose select waits for a part's first drawing (`has.lit`) has empty `rows` and `"pending": true`: no value
+  for any field, a `count` too.
 - `query_errors` (only when there was one): each line once, at most 50, then `<n> more in probe.log`. A query's own:
   `<kind> <id>: <message>` (`components q3c1d2e4f5a: no component type Lantren`, `objects <id>: no field glow`,
   `components <id>: the select names no component and no effect`, `widgets <id>: the text regex ( doesn't compile`,

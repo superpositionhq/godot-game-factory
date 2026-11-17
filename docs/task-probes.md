@@ -242,7 +242,8 @@ Every play of the game, the checker's own (look, drive, a boot check's) and a ta
   probe writes its files, marks the play's end in the game's log, tells the game it is being closed
   (`NOTIFICATION_WM_CLOSE_REQUEST`, as a player closing the window does) and asks the engine to quit. So nothing
   the game does or prints while it closes reaches a sample, a `log` measure or a `log_absent` check. A game that quits
-  by itself ends the play there (`"ended": "shutdown"` in its `probe.json`), with the samples taken until then.
+  by itself ends the play there (`"ended": "shutdown"` in its `probe.json`), with the samples taken until then. A
+  crash while the game closes still fails a `boot` check: it reads the whole log.
 
 ### 1.2 Thresholds (`expect`)
 
@@ -655,30 +656,40 @@ not the node the `owner` select matched).
 - `lit` and `glow`: whether one source gives off light and how much, read from what the engine holds of it, and
   for a part whose light its properties don't tell, by drawing it alone (below). No value for a node that is no
   source.
-  - **A light** (`Light3D`, `Light2D`): `lit` when it is shown, its energy is above 0 and its colour isn't black (a
-    `Light2D` also enabled; a light that takes light away, `light_negative` or a subtracting 2D light, never);
-    `glow` its energy times its colour's linear luminance.
-  - **A 3D part** (a `MeshInstance3D`, a `MultiMeshInstance3D`, a CSG shape): dark when it isn't drawn (hidden, or
-    faded out by its `transparency`). Else it is read **from its materials' properties** where they tell: a
-    standard material with emission on gives its emission colour times its emission energy, an unshaded one its
-    albedo colour, any other standard material nothing; `lit` when the brightest gives more than a luminance of
-    0.01, and `glow` is that light times a quarter of the surface of the part's box in m2, scaled (what a glowing
-    surface that size gives every way). `glow_read` is `props`.
+  - One floor holds for every source: a luminance of 0.01 (linear), for a light's amount, a material's light and a
+    drawn pixel alike.
+  - **A light** (`Light3D`, `Light2D`): `lit` when it lights the game (shown, not an editor's own light, not one that
+    takes light away: `light_negative` or a subtracting 2D light; a `Light2D` also enabled, a `PointLight2D` with a
+    texture) and its energy times its colour's linear luminance (a `Light2D`'s also times its colour's alpha) is
+    above the floor; `glow` is that amount.
+  - **A 3D part** (a `MeshInstance3D`, a `MultiMeshInstance3D`, a CSG shape): dark when it isn't drawn: hidden (it
+    or a node above it), on no render layer, faded out by its `transparency`, casting only a shadow, outside its
+    visibility range from the camera, a multimesh with no instance to draw. Else it is read **from its materials'
+    properties** where they tell, each material with the passes drawn over it (`next_pass`): a standard material
+    with emission on gives its emission colour times its emission energy, an unshaded one its albedo colour, each
+    times its albedo's alpha when it is drawn transparent (a lamp switched off by fading reads dark), any other
+    standard material nothing; `lit` when the brightest gives more than the floor, and `glow` is that light times a
+    quarter of the surface of the part's box in m2, scaled (what a glowing surface that size gives every way).
+    `glow_read` is `props`. A CSG mesh without a material of its own is read by its mesh's materials.
   - **Where the properties don't tell**, the part is **drawn alone**: a material that isn't a standard one (a
-    `ShaderMaterial`: its light is its shader's own code), or a standard material with a texture on the colour read
-    (an emission texture may be black where the mesh shows, or bright where the colour is black), and no other
-    material of the part that surely gives light. The probe draws the part's mesh with its own materials in a room
-    of its own with no light at all (black background, no ambient or reflected light), from three sides, 48 x 48
-    pixels each: whatever shows there is the part's own light. `lit` when at least 3 pixels are brighter than a
-    linear luminance of 0.02; `glow_read` is `drawn`, and the part has **no `glow`** (a yes or a no is what such a
-    drawing gives on every renderer; an amount is not). The mesh is drawn as it rests: a skinned mesh without its
-    pose, a shader that reads the world around it or the time without them. A drawing is kept until what the
-    part's light depends on changes (its mesh, a material, a shader parameter), then it is drawn again, so a
-    shader that changes its light by time alone is read as it was when last drawn. The first sample that reads a
-    part is completed when its frame is drawn; a select's `has.lit` reads the last drawing, so a part never read
-    before, or one whose materials changed in that very frame, matches from the next sample on. The play's
-    `probe.log` says what each drawing found (`lit: Lamp/Shade drawn alone in a room without light: 3076 bright
-    pixel(s), lit`).
+    `ShaderMaterial`, a next pass among them: its light is its shader's own code), or a standard material with a
+    texture on what is read (an emission texture may be black where the mesh shows, or bright where the colour is
+    black), and no other material of the part that surely gives light. The probe draws the part's mesh with its own
+    materials in a room of its own with no light at all (black background, no ambient or reflected light), from
+    three sides, 128 x 128 pixels each: whatever shows there is the part's own light. `lit` when one pixel is
+    brighter than the floor, so a small glowing patch on a large mesh counts (a shaded material that gives no light
+    draws no pixel above black there); `glow_read` is `drawn`, and the part has **no `glow`** (a yes or a no is
+    what such a drawing gives on every renderer; an amount is not). The mesh is drawn as it rests: a skinned mesh
+    without its pose, a shader that reads the world around it or the time without them. A part is drawn again only
+    when a reading asks for it and what its light depends on (its mesh, a material, a shader parameter) changed
+    since its last drawing; until the new drawing is read, the part keeps its last answer, so a lamp whose light
+    changes every frame reads as it was a frame before, and a shader that changes its light by time alone reads as
+    it was when last drawn. The first drawing of a part is read when its frame is drawn: a sample's `lit` or `glow`
+    of it is completed then, but a select's `has.lit` can't wait, so **a sample whose select waits for a first
+    drawing has no value** (no rows, `"pending": true` in it: not a count of 0). An input whose select has
+    `has.lit` has the parts drawn in the frames just before it, and waits for a first drawing up to 1 s. The play's
+    `probe.log` says what a drawing found when its answer changes (`lit: Lamp/Shade drawn alone in a room without
+    light: 21548 bright pixel(s), the brightest 255 of 255, lit`).
   - **A 3D effect** (`GPUParticles3D`, `CPUParticles3D`): `lit` when it is emitting, shown and what it draws (its
     draw passes' or its mesh's materials) gives light by its materials' properties, a texture taken as white
     (`glow_read` `bound`), so a spark effect reads lit and smoke drawn with a shaded material doesn't. It has no
@@ -692,6 +703,11 @@ not the node the `owner` select matched).
     its properties counts its brightest material over its whole box, so a lamp post with a small glowing bulb reads
     the post's size: compare a `glow` with itself, calibrated or relative to the start, or select the bulb by
     `mesh` or by its name. `glow` has no value for a lamp an effect, a texture or a shader of its own lights.
+  - **In a game drawn unshaded, every mesh reads lit**, on or off (an unshaded material shows its colour whatever
+    lights it), and so does unshaded smoke: don't gate on `lit` there; read the property that switches the lamp.
+  - **A count or `"of": "all"` over a `has.lit` select is read at the end or after a settle window**, never at the
+    first sample or the sample right after a switch: a part drawn for the first time gives that sample no value,
+    and a part whose light just changed reads its last drawing until the new one is read.
   - These readings can make the probe draw, and what it draws is in the frame's `render` counts (3 draw calls a
     part drawn, in the frame it is drawn): a play that takes a `render` measure takes none of them (section 2.20).
 - `prop:<path>`: a property of the node itself or a variable of its script, as an object's `prop:` reads it
@@ -966,8 +982,9 @@ budget is a number of its own: `{"op": "<=", "value": 700}`.
   read at its phone's size.
 - The counts are of everything the renderer drew in the frame, the probe's own drawings among them: a `lit` or
   `glow` reading, or a select with `has.lit`, may draw a part alone (section 2.5), 3 draw calls each. So **a play
-  that takes a `render` measure takes none of those**, in its measures or its inputs; `tools/validate-game.py`
-  refuses a task where one does. Give the budget check a play of its own.
+  that takes a `render` measure takes none of those**, in its measures or its inputs, and the task's `player`
+  select has no `has.lit` (it is looked at in every play); `tools/validate-game.py` refuses a task where one does.
+  Give the budget check a play of its own.
 - The first sample of a play, before any frame was drawn, has no counts. A reachable view is reached with the
   play's inputs (teleports, a scenario's `args`): give a budget check a play that goes where the game is heaviest,
   and read `"agg": "max"`.

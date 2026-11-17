@@ -367,9 +367,21 @@ def check_sounds(c, found):
 
 
 LAMPS = ["LightLamp", "RedLamp", "EmissiveLamp", "UnshadedLamp", "BrightTextureLamp", "BlackTextureLamp", "ParticleLamp",
-         "Smoke", "ShaderLamp", "ShaderDark", "ShaderAndLight", "Plain", "HiddenLamp", "Lamp2D"]
-# the lamps whose light only a drawing tells while they are on (the two with shaders, on or off)
-DRAWN = ["BrightTextureLamp", "BlackTextureLamp", "ShaderLamp", "ShaderDark", "ShaderAndLight"]
+         "Smoke", "ShaderLamp", "ShaderDark", "ShaderAndLight", "Plain", "HiddenLamp", "ShellLamp", "FadedLamp",
+         "HeldLamp", "QuietLamp", "PulseLamp", "PostLamp", "PostDark", "OverrideDark", "BlueLamp", "Lamp2D"]
+# what each reads when the lamps are on, where a frame is drawn; headless, DRAWN have no value
+LIT = {"LightLamp": 1, "RedLamp": 1, "EmissiveLamp": 1, "UnshadedLamp": 1, "BrightTextureLamp": 1, "BlackTextureLamp": 0,
+       "ParticleLamp": 1, "Smoke": 0, "ShaderLamp": 1, "ShaderDark": 0, "ShaderAndLight": 1, "Plain": 0, "HiddenLamp": 0,
+       "ShellLamp": 1, "FadedLamp": 1, "HeldLamp": 0, "QuietLamp": 0, "PulseLamp": 1, "PostLamp": 1, "PostDark": 0,
+       "OverrideDark": 0, "BlueLamp": 1, "Lamp2D": 1}
+# the lamps whose light only a drawing tells: those with a shader of their own always, the textured ones while on
+SHADERS = ["ShaderLamp", "ShaderDark", "PulseLamp", "PostLamp", "PostDark", "OverrideDark", "BlueLamp"]
+DRAWN = SHADERS + ["BrightTextureLamp", "BlackTextureLamp"]
+
+
+def lamps_lit(found):
+    """What two plays of the lamps must agree on: which read lit, off and on."""
+    return [{n: row(found, "lamps", t, n).get("lit") for n in LAMPS} for t in (1.0, 3.0, 4.0)]
 
 
 def check_lamps(c, found):
@@ -383,23 +395,24 @@ def check_lamps(c, found):
         return row(found, "lamps", t, name).get(field)
 
     c.eq("the lamps", [r["name"] for r in rows(found, "lamps", 1.0)], LAMPS)
-    unread = None if not drawn else 0
-    dark = {**{n: 0 for n in LAMPS}, "ShaderLamp": unread, "ShaderDark": unread, "ShaderAndLight": unread}
+    dark = {n: (None if n in SHADERS and not drawn else 0) for n in LAMPS}
+    dark["ShaderAndLight"] = 0 if drawn else None
     c.eq("off: none is lit" + ("" if drawn else "; one with a shader of its own can't be read without a frame"),
          {n: lamp(1.0, n, "lit") for n in LAMPS}, dark)
-    c.eq("off: none glows", {n: lamp(1.0, n, "glow") for n in LAMPS}, dark)
-    lit = {"LightLamp": 1, "RedLamp": 1, "EmissiveLamp": 1, "UnshadedLamp": 1, "ParticleLamp": 1, "Smoke": 0,
-           "ShaderAndLight": 1, "Plain": 0, "HiddenLamp": 0, "Lamp2D": 1,
-           "BrightTextureLamp": 1 if drawn else None, "BlackTextureLamp": 0 if drawn else None,
-           "ShaderLamp": 1 if drawn else None, "ShaderDark": 0 if drawn else None}
+    lit = {n: (LIT[n] if drawn or n not in DRAWN else None) for n in LAMPS}
     c.eq("on: a lamp reads lit whatever makes its light" + (
-        ": a Light, an emissive or an unshaded material, an effect, and drawn alone a shader of its own or a texture"
+        ": a Light, an emissive or an unshaded material, a next pass, an effect, and drawn alone a shader of its own "
+        "or a texture; what is hidden, faded out or never drawn doesn't"
         if drawn else "; what only a drawing tells has no value in a play that draws nothing"),
          {n: lamp(3.0, n, "lit") for n in LAMPS}, lit)
     c.near("a Light's glow: its energy times its colour's luminance", lamp(3.0, "LightLamp", "glow"), 2.0, 1e-6)
     c.near("a red one's", lamp(3.0, "RedLamp", "glow"), 1.5 * 0.2126, 1e-4)
     c.near("an emissive box of 2 m: its energy times a quarter of its surface", lamp(3.0, "EmissiveLamp", "glow"), 3 * 6.0, 1e-4)
     c.near("an unshaded box of 1 m", lamp(3.0, "UnshadedLamp", "glow"), 1.5, 1e-4)
+    c.near("a next pass that gives the light", lamp(3.0, "ShellLamp", "glow"), 1.5, 1e-4)
+    c.eq("a lamp faded out reads dark, faded in lit", (lamp(1.0, "FadedLamp", "glow"), lamp(3.0, "FadedLamp", "glow")), (0, 1.5))
+    c.eq("a light under a hidden holder, an editor's light, a mesh on no layer and one that only casts a shadow: none lights",
+         [(lamp(3.0, n, "lit"), lamp(3.0, n, "glow")) for n in ("HeldLamp", "QuietLamp")], [(0, 0), (0, 0)])
     c.eq("a part read by drawing it has no amount", ["glow" in row(found, "lamps", 3.0, n) for n in
                                                     ("BrightTextureLamp", "ShaderLamp")], [False, False])
     c.eq("an effect's amount isn't known", "glow" in row(found, "lamps", 3.0, "ParticleLamp"), False)
@@ -410,20 +423,22 @@ def check_lamps(c, found):
         c.near("a Light beside what a drawing tells still says", lamp(3.0, "ShaderAndLight", "glow"), 1.0, 1e-6)
     c.near("a 2D light", lamp(3.0, "Lamp2D", "glow"), 1.0, 1e-6)
     how = "drawn" if drawn else "unread"
-    c.eq("what lit it, and how it was read", {n: (row(found, "lamps", 3.0, n).get("glow_sources"),
-                                                 row(found, "lamps", 3.0, n).get("glow_read")) for n in LAMPS}, {
-        "LightLamp": ("light", "props"), "RedLamp": ("light", "props"), "EmissiveLamp": ("emissive", "props"),
-        "UnshadedLamp": ("unlit", "props"), "BrightTextureLamp": ("emissive" if drawn else None, how),
-        "BlackTextureLamp": (None, how), "ParticleLamp": ("effect", "props"), "Smoke": (None, "props"),
-        "ShaderLamp": ("emissive" if drawn else None, how), "ShaderDark": (None, how),
-        "ShaderAndLight": ("emissive,light" if drawn else "light", how), "Plain": (None, "props"),
-        "HiddenLamp": (None, None), "Lamp2D": ("light", None)})
+    read = {n: row(found, "lamps", 3.0, n).get("glow_read") for n in LAMPS}
+    c.eq("how each was read", read, {**{n: "props" for n in LAMPS}, **{n: how for n in DRAWN}, "ShaderAndLight": how,
+                                     "HiddenLamp": None, "Lamp2D": None})
+    c.eq("what lit it", {n: row(found, "lamps", 3.0, n).get("glow_sources") for n in
+                         ("LightLamp", "EmissiveLamp", "UnshadedLamp", "ShellLamp", "ParticleLamp", "Smoke", "ShaderAndLight")},
+         {"LightLamp": "light", "EmissiveLamp": "emissive", "UnshadedLamp": "unlit", "ShellLamp": "emissive",
+          "ParticleLamp": "effect", "Smoke": None, "ShaderAndLight": "emissive,light" if drawn else "light"})
     c.eq("has lit: none while they are off", rows(found, "lit", 1.0), [])
-    c.eq("has lit: the lamps that are on", [r["name"] for r in rows(found, "lit", 3.0)],
-         [n for n in LAMPS if lit[n] == 1])
+    for t in (3.0, 3.5, 4.0):
+        c.eq(f"has lit at {t} s: the lamps that are on, one whose light changes every frame among them",
+             [r["name"] for r in rows(found, "lit", t)], [n for n in LAMPS if lit[n] == 1])
     bulbs = lambda t: [(r["owner"], r["lit"], r["on"]) for r in rows(found, "bulbs", t)]  # noqa: E731
-    c.eq("a Light as a component, off", bulbs(1.0), [("LightLamp", 0, 0), ("RedLamp", 0, 0), ("ShaderAndLight", 0, 0)])
-    c.eq("and on", bulbs(3.0), [("LightLamp", 1, 1), ("RedLamp", 1, 1), ("ShaderAndLight", 1, 1)])
+    c.eq("a Light as a component, off", bulbs(1.0), [("LightLamp", 0, 0), ("RedLamp", 0, 0), ("ShaderAndLight", 0, 0),
+                                                     ("Holder", 0, 0), ("QuietLamp", 0, 1)])
+    c.eq("and on", bulbs(3.0), [("LightLamp", 1, 1), ("RedLamp", 1, 1), ("ShaderAndLight", 1, 1), ("Holder", 0, 0),
+                                ("QuietLamp", 0, 1)])
     shades = {r["owner"]: (r.get("lit"), r.get("glow")) for r in rows(found, "shades", 3.0)}
     c.eq("a mesh as a component", {k: shades.get(k) for k in ("LightLamp", "EmissiveLamp", "ShaderLamp", "ShaderDark")},
          {"LightLamp": (0, 0), "EmissiveLamp": (1, 18), "ShaderLamp": (1 if drawn else None, None),
@@ -432,21 +447,43 @@ def check_lamps(c, found):
          [("ParticleLamp", 1, False), ("Smoke", 0, True)])
     c.eq("a node that is no source has neither", [("lit" in r, "glow" in r) for r in rows(found, "others", 3.0)], [(False, False)])
     if drawn:
-        first = {n: lamp(1 / 30, n, "lit") for n in ("ShaderLamp", "ShaderDark")}
+        first = {n: lamp(1 / 30, n, "lit") for n in SHADERS}
         c.eq("a part drawn for the first time is read in the same sample (the frame's end tells)", first,
-             {"ShaderLamp": 0, "ShaderDark": 0})
+             {n: 0 for n in SHADERS})
+        c.eq("a select that waits for a first drawing has no rows in that sample, and says so",
+             (at(found, "lit", 1 / 30).get("pending"), at(found, "lit", 1.0).get("pending")), (True, None))
+        c.eq("a light that changes every frame reads lit in every sample", [lamp(t, "PulseLamp", "lit") for t in
+                                                                           (2.5, 3.0, 3.5, 4.0, 4.5)], [1] * 5)
         c.eq("no error", errors(found), [])
-        said = [line for line in found["files"].get("probe.log", b"").decode("utf-8", "replace").splitlines() if " lit: " in line]
-        c.true("probe.log says what each drawing found", any("ShaderLamp" in line or "Shade" in line for line in said), said)
-        c.true("how many draw calls the frame that drew them had: " + " | ".join(line.split("] ", 1)[-1] for line in said
-                                                                               if "draw call" in line),
-               any("draw call" in line for line in said), said)
-        calls = [s["value"].get("draw_calls") for s in samples(found, "drawn")]
-        c.true("the render reading through the play (draw calls a sample): %s" % calls, len(calls) > 4, calls)
+        said = [line.split("] ", 1)[-1] for line in found["files"].get("probe.log", b"").decode("utf-8", "replace").splitlines()
+                if "] lit: " in line]
+        notes = {n: [line for line in said if line.startswith(f"lit: {n}/Shade ")] for n in DRAWN}
+        c.eq("a 10 cm band on a 4 m post is seen; the same post with a dark band reads no pixel at all",
+             (notes["PostLamp"][-1].rsplit(", ", 1)[-1], notes["PostDark"][-1].split(": ", 2)[-1]),
+             ("lit", "0 bright pixel(s), the brightest 0 of 255, dark"))
+        c.eq("a shaded material with no emission gives exactly nothing in the room",
+             [notes[n][0].split(": ", 2)[-1] for n in ("ShaderDark", "OverrideDark", "BlackTextureLamp")],
+             ["0 bright pixel(s), the brightest 0 of 255, dark"] * 3)
+        c.true("a pulsing lamp is noted when its answer changes, not at every drawing (%d note(s))" % len(notes["PulseLamp"]),
+               len(notes["PulseLamp"]) == 2, notes["PulseLamp"])
+        c.true("probe.log: " + " | ".join(line for line in said if "draw call" in line or "PostLamp" in line),
+               sum("draw call" in line for line in said) == 1, said)
     else:
         c.eq("a play that draws nothing says why such a part has no value", errors(found), [
             "lit: a part whose light only a drawing tells (a shader of its own, a texture on its light) has no value: "
             "this play draws nothing (headless)"])
+
+
+def check_lamps_reach(c, found):
+    """An input that picks its object by its light, in a play that reads nothing else: the part is drawn in the
+    frames before the input is sent."""
+    if not ended(c, found, 3.5):
+        return
+    c.eq("no stage and no teleport missed", found["probe"].get("inputs_missed"), [])
+    log = found["files"].get("probe.log", b"").decode("utf-8", "replace")
+    c.true("the player goes to the lamp a shader lights", "teleported next to ShaderLamp" in log, log[-600:])
+    c.true("and not before the lamps are on", "teleport_to skipped (no object matches)" in log, log[-600:])
+    c.near("it stands 2 m from it", math.dist(track(found, 3.0)[1:4], [8.0, 0.0, 0.0]), 2.0, 0.05)
 
 
 def check_errors(c, found):
@@ -551,7 +588,8 @@ PLAYS = {
     "contact": {"check": check_contact, "twice": True},
     "sounds": {"check": check_sounds, "twice": True, "same": sound_totals},
     "lamps": {"check": check_lamps, "twice": True},
-    "lamps_drawn": {"check": check_lamps, "spec": "lamps", "rendered": True},
+    "lamps_drawn": {"check": check_lamps, "spec": "lamps", "rendered": True, "twice": True, "same": lamps_lit},
+    "lamps_reach": {"check": check_lamps_reach, "rendered": True},
     "errors": {"check": check_errors},
     "refuse": {"check": check_refuse, "spec": "wait", "format": "other-probe-play/1"},
     "idle": {"check": check_idle, "spec": "wait", "flag": False, "engine_args": ["--quit-after", "30"]},

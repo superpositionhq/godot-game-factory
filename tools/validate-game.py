@@ -938,10 +938,11 @@ def captures(value):
     return isinstance(value, list) and any(captures(v) for v in value)
 
 
-def render_errors(checks):
+def render_errors(checks, player=None):
     """A play that takes a render measure (draw calls, triangles) takes no reading that makes the probe render
     (`captures`): the counts would hold the probe's own renders, and a budget a correct game keeps could read as
-    broken. A budget check gets a play of its own (docs/task-probes.md, section 2.20)."""
+    broken. A budget check gets a play of its own (docs/task-probes.md, section 2.20). The task's `player` select is
+    looked at in every play, so one with has.lit leaves no play for a render measure."""
     reads, capturing = set(), {}
     for c in checks:
         if c.get('kind') != 'probe' or not isinstance(c.get('measure'), dict):
@@ -952,6 +953,9 @@ def render_errors(checks):
             reads.add(name)
         if captures(c['measure']) or (isinstance(play, dict) and captures(play.get('inputs'))):
             capturing.setdefault(name, c.get('name'))
+    if captures(player) and reads:
+        return ['the task takes a render measure and its player select has has.lit, which makes the probe render in '
+                'every play: name the player another way']
     return [f'play {name} takes a render measure and also makes the probe render (check {capturing[name]}: a lit or '
             'glow reading, or a select with has.lit): give the render measure a play with none of them'
             for name in sorted(x for x in reads & set(capturing) if x)]
@@ -1097,7 +1101,7 @@ def task_semantic_errors(t):
             if missing:
                 errs.append(f'check {n} needs {missing}, which come later or do not exist')
             seen.add(n)
-    return errs + play_after_errors(checks) + render_errors(checks)
+    return errs + play_after_errors(checks) + render_errors(checks, t.get('player'))
 
 
 def play_after_errors(checks):

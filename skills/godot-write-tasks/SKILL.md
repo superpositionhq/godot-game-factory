@@ -407,8 +407,11 @@ looks up and a positive yaw turns left.
     much (`glow`, never a literal threshold), whatever lights it: a light node, an emissive or an unshaded
     material, a shader of the game's own, a particle effect. Gate "the lamp is on" with `lit`, never by counting
     its light nodes: another build lights it without one. Read `glow` only where the ask is about how bright: it
-    has no value for a lamp an effect, a texture or a shader of the game's own lights. Neither goes in a play that
-    reads a `render` budget (the probe may draw a part alone to read it);
+    has no value for a lamp an effect, a texture or a shader of the game's own lights. In a game drawn unshaded
+    every mesh reads lit, on or off: gate on the property that switches the lamp there. Read a count or `"of":
+    "all"` over a `has.lit` select at the end or after a settle window, never at the first sample or right after a
+    switch (a part drawn for the first time gives that sample no value). Neither goes in a play that reads a
+    `render` budget (the probe may draw a part alone to read it);
   - `components`: the nodes of a class wherever they sit (lights, particle effects, mesh instances, audio players),
     by what they are rather than by a name;
   - `widgets`: a `Control`'s own state (visible, text, a bar's percent, a slider's value);

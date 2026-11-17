@@ -41,6 +41,8 @@ const PAD_AXES := {
 }
 ## the control that is the phone's back button in a mobile game's play (the spec says `touch`)
 const BACK := "<keyboard>/escape"
+const WARM := 0.2  ## seconds before an input's time from which its has.lit selects are looked at every frame
+const LIT_WAIT := 1.0  ## seconds an input whose has.lit select waits for a part's first drawing is held back at most
 
 var probe: Node
 var rows: Array[Dictionary] = []
@@ -56,6 +58,8 @@ var _buttons := 0  # the mouse buttons held, as a mask
 var _parsed := false  # an event was handed to the engine in this frame
 var _touching: Array[Dictionary] = []  # fingers on the screen
 var _clicks: Array[Dictionary] = []  # widget clicks under way
+var _lit: Dictionary = {}  # an input row's index -> its selects that ask for a lit part
+var _lit_waits: Dictionary = {}  # an input row's index -> one of its has.lit selects waits for a part's first drawing
 var _hold_at := Vector3.ZERO
 var _hold_until := -1.0
 var _pins: Array[Dictionary] = []  # objects held at a place: {ref, at, until}
@@ -126,10 +130,29 @@ func send(elapsed: float) -> void:
 	_step(elapsed)
 	while not waiting and _next < rows.size() and _at(rows[_next]) <= elapsed + 1e-9:
 		var row := rows[_next]
+		if _lit_waits.get(_next, false) and elapsed < _at(row) + LIT_WAIT:
+			break  # who it picks isn't known before the part's first drawing is read: sent in a later frame
 		_next += 1
 		_send_one(row, elapsed)
 		sent += 1
 	_flush()
+
+
+func warm(elapsed: float) -> void:
+	## an input about to be sent that picks its object by its light (a select with has.lit) has that select looked at
+	## in the frames before, so a part whose light only a drawing tells is drawn by the time the input is sent; one
+	## still waiting for a part's first drawing when it is due is sent once it is read (at most LIT_WAIT later)
+	for i in range(_next, rows.size()):
+		if _at(rows[i]) > elapsed + WARM:
+			break
+		if not _lit.has(i):
+			var found: Array = []
+			Find.lit_selects(rows[i], found)
+			_lit[i] = found
+		var asked: int = Find.pending
+		for select: Dictionary in _lit[i]:
+			Find.objects(select)
+		_lit_waits[i] = Find.pending != asked
 
 
 func wait_tick() -> void:

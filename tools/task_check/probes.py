@@ -422,6 +422,9 @@ def series(measure, probe):
             if probe_kind == "ui" and not isinstance(s.get("rows"), list):  # no frame was drawn after the sample
                 out.append((s["t"], None))
                 continue
+            if s.get("pending") is True:  # the select waits for a part's first drawing (has.lit): no value, never 0
+                out.append((s["t"], None))
+                continue
             rows = [r for r in s.get("rows") or [] if isinstance(r, dict)]
             if field == "signature":
                 out.append((s["t"], ui_signature(s, rows)))

@@ -507,6 +507,11 @@ class MoreFairReadings(unittest.TestCase):
         self.assertEqual(probes.query_id(probes.needs(glow)[0]), probes.query_id(query), "one query, both fields")
         bright = [[{"name": "A", "glow": 2.0}, {"name": "B", "glow_read": "unread"}]]
         self.assertEqual(probes.reduce(glow, objects_play(glow, bright)), 2, "a lamp that can't be read adds nothing")
+        waiting = {"measures": {probes.query_id(query): [{"t": 0.0, "rows": [], "pending": True},
+                                                          {"t": 0.5, "rows": [{"name": "A", "lit": 1.0}]}]}}
+        count = m(probe="objects", select=lamp, field="count", at=[0.0])
+        self.assertIsNone(probes.reduce(count, waiting), "a select that waits for a first drawing: no value, never 0")
+        self.assertEqual(probes.reduce(m(probe="objects", select=lamp, field="count", at=[0.5]), waiting), 1)
         unread = m(probe="objects", select={"name": "B"}, field="glow", of="first")
         self.assertIsNone(probes.reduce(unread, objects_play(unread, [[{"name": "B", "glow_read": "unread"}]])))
         bulb = m(probe="components", select={"component": "Light3D", "owner": {"tag": "lamp"}}, field="glow", of="max")

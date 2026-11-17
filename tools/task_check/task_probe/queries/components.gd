@@ -48,7 +48,6 @@ func load_query() -> void:
 
 
 func frame(_dt: float) -> void:
-	Find.light_tick()
 	_motion.frame()
 
 
@@ -56,7 +55,12 @@ func sample(_t: float, sample: Dictionary) -> void:
 	var rows: Array = []
 	_waiting.clear()
 	if not _broken:
-		for n in _match():
+		var asked: int = Find.pending
+		var matched := _match()
+		if Find.pending != asked:  # an owner select waits for a part's first drawing (has.lit): no rows, and it says so
+			sample["pending"] = true
+			matched = []
+		for n in matched:
 			rows.append(_row(n))
 	_motion.end_sample()
 	_rows = rows
@@ -194,7 +198,7 @@ func _row(n: Node) -> Dictionary:
 					v = 1.0 if _on(n) else 0.0
 			"lit", "glow":
 				var light: Variant = Find.light_of(n)
-				if light != null and light.get("drawing", false) and (_waiting.is_empty() or _waiting[-1][0] != row):
+				if light != null and light.get("drawing", false) and (_waiting.is_empty() or not is_same(_waiting[-1][0], row)):
 					_waiting.append([row, weakref(n)])
 				v = Find.light_field(light, f, row)
 			_:

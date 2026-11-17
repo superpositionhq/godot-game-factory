@@ -1,0 +1,13 @@
+{
+  "seconds": 3,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/Lamps.tscn",
+  "inputs": [
+    {"t": 0.3, "teleport_to": {"name": "ShaderLamp", "has": {"lit": true}}, "distance": 2.0, "offset": [0.0, 0.0, 0.0]},
+    {"t": 0.5, "key": "<Keyboard>/l", "press": true},
+    {"t": 0.6, "key": "<Keyboard>/l", "press": false},
+    {"t": 2.0, "teleport_to": {"name": "ShaderLamp", "has": {"lit": true}}, "distance": 2.0, "offset": [0.0, 0.0, 0.0]}
+  ],
+  "queries": []
+}

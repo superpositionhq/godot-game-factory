@@ -763,8 +763,9 @@ static func forward(n: Node) -> Variant:
 
 # ---------------------------------------------------------------- what gives light (lit, glow, has.lit)
 
-const LIT_FLOOR := 0.01  ## a source brighter than this (linear luminance) is lit
+const LIT_FLOOR := 0.01  ## a source brighter than this (linear luminance) is lit: a light, a material, a drawn pixel
 const EFFECTS_3D := ["GPUParticles3D", "CPUParticles3D"]
+const MAX_PASSES := 8  ## the materials of one next_pass chain read at most
 
 
 static func luminance(c: Color) -> float:
@@ -776,30 +777,51 @@ static func luminance(c: Color) -> float:
 static func material_light(m: Material) -> Array:
 	## [known, light, exact, kind] of what a material gives off by its own properties, whatever lights it: an unshaded
 	## material its albedo colour ("unlit"), one with emission on its emission colour times its energy ("emissive"),
-	## any other standard material nothing. `exact` false when a texture multiplies or adds to the colour (it is taken
-	## as white: a bound). `known` false for a material whose light is its shader's own code (a ShaderMaterial).
+	## each times its albedo's alpha when it is drawn transparent; any other standard material nothing. `exact` false
+	## when a texture multiplies or adds to what is read (it is taken as white: a bound). `known` false for a
+	## material whose light is its shader's own code (a ShaderMaterial).
 	if m == null:
 		return [true, 0.0, true, ""]  # the engine's default material: shaded, no emission
 	if not (m is BaseMaterial3D):
 		return [false, 0.0, false, ""]
 	var standard := m as BaseMaterial3D
+	var fades := standard.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED
+	var alpha := standard.albedo_color.a if fades else 1.0
+	var plain := not (fades and standard.albedo_texture != null)  # no texture sets the alpha
 	if standard.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED:
-		return [true, luminance(standard.albedo_color), standard.albedo_texture == null, "unlit"]
+		return [true, luminance(standard.albedo_color) * alpha, standard.albedo_texture == null, "unlit"]
 	if standard.emission_enabled:
 		var colour := luminance(standard.emission)
 		if standard.emission_texture != null and standard.emission_operator == BaseMaterial3D.EMISSION_OP_ADD:
 			colour += 1.0
-		return [true, colour * standard.emission_energy_multiplier, standard.emission_texture == null, "emissive"]
+		return [true, colour * standard.emission_energy_multiplier * alpha, plain and standard.emission_texture == null,
+			"emissive"]
 	return [true, 0.0, true, ""]
 
 
+static func _with_passes(materials: Array) -> Array:
+	## each material followed by its next_pass chain: a shell drawn over the mesh gives light as its base does
+	var all: Array = []
+	for m: Variant in materials:
+		all.append(m)
+		var at: Variant = m
+		for i in MAX_PASSES:
+			at = (at as Material).next_pass if at is Material else null
+			if at == null:
+				break
+			all.append(at)
+	return all
+
+
 static func drawn_with(n: Node) -> Variant:
-	## the materials a 3D part or a 3D effect draws with (an Array, null for a surface without one), or null for a
-	## node that is neither: a mesh instance, a multimesh instance, a CSG shape; a particle effect's draw passes
+	## the materials a 3D part or a 3D effect draws with, each with its next passes (an Array, null for a surface
+	## without one), or null for a node that is neither: a mesh instance, a multimesh instance, a CSG shape; a
+	## particle effect's draw passes
 	if not (n is GeometryInstance3D):
 		return null
 	var geometry := n as GeometryInstance3D
 	var meshes: Array = []
+	var extra: Array = [geometry.material_overlay] if geometry.material_overlay != null else []
 	if n is MeshInstance3D:
 		var instance := n as MeshInstance3D
 		if instance.mesh == null:
@@ -807,15 +829,16 @@ static func drawn_with(n: Node) -> Variant:
 		var found: Array = []
 		for i in instance.mesh.get_surface_count():
 			found.append(instance.get_active_material(i))
-		if geometry.material_overlay != null:
-			found.append(geometry.material_overlay)
-		return found
+		return _with_passes(found + extra)
 	if n is MultiMeshInstance3D:
 		if (n as MultiMeshInstance3D).multimesh == null or (n as MultiMeshInstance3D).multimesh.mesh == null:
 			return null
 		meshes = [(n as MultiMeshInstance3D).multimesh.mesh]
 	elif n is CSGShape3D:
-		return [geometry.material_override if geometry.material_override != null else n.get("material")]
+		if geometry.material_override == null and n.get("material") == null and n is CSGMesh3D:
+			meshes = [(n as CSGMesh3D).mesh]  # a CSG mesh without a material of its own draws with its mesh's
+		else:
+			return _with_passes([geometry.material_override if geometry.material_override != null else n.get("material")] + extra)
 	elif n is GPUParticles3D:
 		for i in (n as GPUParticles3D).draw_passes:
 			meshes.append((n as GPUParticles3D).get_draw_pass_mesh(i))
@@ -824,36 +847,63 @@ static func drawn_with(n: Node) -> Variant:
 	else:
 		return null
 	if geometry.material_override != null:
-		return [geometry.material_override]
+		return _with_passes([geometry.material_override] + extra)
 	var materials: Array = []
 	for mesh: Variant in meshes:
 		if mesh is Mesh:
 			for i in (mesh as Mesh).get_surface_count():
 				materials.append((mesh as Mesh).surface_get_material(i))
-	return materials
+	return _with_passes(materials + extra)
+
+
+static func part_drawn(n: Node) -> bool:
+	## whether a 3D part is drawn at all: shown, on a render layer, not faded out, not only a shadow, inside its
+	## visibility range from the camera, a multimesh with an instance to draw
+	var geometry := n as GeometryInstance3D
+	if not shown(n) or geometry.layers == 0 or geometry.transparency >= 1.0:
+		return false
+	if geometry.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+		return false
+	if n is MultiMeshInstance3D:
+		var many := (n as MultiMeshInstance3D).multimesh
+		if many == null or many.instance_count == 0 or many.visible_instance_count == 0:
+			return false
+	var view: Node = probe.view() if probe != null else null
+	if view is Camera3D and (geometry.visibility_range_begin > 0.0 or geometry.visibility_range_end > 0.0):
+		var away := (view as Camera3D).global_position.distance_to(geometry.global_transform * geometry.get_aabb().get_center())
+		if geometry.visibility_range_end > 0.0 and away > geometry.visibility_range_end + geometry.visibility_range_end_margin:
+			return false
+		if away < geometry.visibility_range_begin - geometry.visibility_range_begin_margin:
+			return false
+	return true
 
 
 static func light_of(n: Node) -> Variant:
-	## One node as a source of light, read from what the engine holds of it, with no rendering; null for a node that
-	## is no source. {"read": it could be read, "lit", "glow": how much (null: lit by something whose amount isn't
-	## known), "kinds": the kinds lit, "reads": how it was read}.
-	## - a Light3D or a Light2D: lit when shown, of an energy above 0 and a colour that isn't black (a Light2D also
-	##   enabled; never one that takes light away); glow its energy times its colour's luminance;
-	## - a 3D part (a mesh instance, a multimesh instance, a CSG shape): lit when it is drawn and its brightest
-	##   material gives more than LIT_FLOOR (material_light); glow that times a quarter of the surface of its box;
-	## - a 3D particle effect: lit when it is emitting, shown and what it draws gives more than LIT_FLOOR; its glow
+	## One node as a source of light; null for a node that is no source. {"read": it could be read, "lit", "glow": how
+	## much (null: lit by something whose amount isn't known), "kinds": the kinds lit, "reads": how it was read,
+	## "drawing": a drawing of it is under way, the frame's end tells}.
+	## - a Light3D or a Light2D: lit when it lights the game (shown, not an editor's own, not one that takes light
+	##   away; a Light2D enabled, a PointLight2D with a texture) and its energy times its colour's luminance (a
+	##   Light2D's times its colour's alpha) is above LIT_FLOOR; glow is that amount;
+	## - a 3D part (a mesh instance, a multimesh instance, a CSG shape): lit when it is drawn (part_drawn) and its
+	##   brightest material gives more than LIT_FLOOR (material_light); glow that times a quarter of the surface of
+	##   its box. A mesh whose materials don't tell is drawn alone (drawn_lit): lit or dark, no glow;
+	## - a 3D particle effect: lit when it is emitting, drawn and what it draws gives more than LIT_FLOOR; its glow
 	##   isn't known.
 	var r := {"read": true, "lit": false, "glow": 0.0, "kinds": [], "reads": []}
 	if n is Light3D:
 		var light := n as Light3D
 		var amount := light.light_energy * luminance(light.light_color)
-		if shown(n) and not light.light_negative and amount > 0.0:
+		if shown(n) and not light.editor_only and not light.light_negative and amount > LIT_FLOOR:
 			r.merge({"lit": true, "glow": amount, "kinds": ["light"]}, true)
 		return r
 	if n is Light2D:
 		var flat := n as Light2D
-		var given := flat.energy * luminance(flat.color)
-		if shown(n) and flat.enabled and flat.blend_mode != Light2D.BLEND_MODE_SUB and given > 0.0:
+		var given := flat.energy * luminance(flat.color) * flat.color.a
+		var lights := shown(n) and flat.enabled and not flat.editor_only and flat.blend_mode != Light2D.BLEND_MODE_SUB
+		if n is PointLight2D and (n as PointLight2D).texture == null:
+			lights = false  # a point light without a texture lights nothing
+		if lights and given > LIT_FLOOR:
 			r.merge({"lit": true, "glow": given, "kinds": ["light"]}, true)
 		return r
 	var effect := false
@@ -862,7 +912,7 @@ static func light_of(n: Node) -> Variant:
 	var materials: Variant = drawn_with(n)
 	if materials == null:
 		return null
-	if not shown(n) or (n as GeometryInstance3D).transparency >= 1.0 or (effect and not bool(n.get("emitting"))):
+	if not part_drawn(n) or (effect and not bool(n.get("emitting"))):
 		return r  # not drawn: no light, whatever its materials
 	var best := 0.0
 	var sure := 0.0  # the brightest light a material gives whatever its textures
@@ -881,12 +931,12 @@ static func light_of(n: Node) -> Variant:
 			best = given[1]
 			kind = given[3]
 	if sure <= LIT_FLOOR and (unknown or best > LIT_FLOOR) and _drawable(n) != null:
-		# its properties don't tell (a shader of its own, a texture on the colour read): the part is drawn alone
+		# its properties don't tell (a shader of its own, a texture on what is read): the part is drawn alone
 		var seen: Variant = drawn_lit(n, materials)
+		r["drawing"] = drawing(n)
 		if seen == null:
 			r["read"] = false
 			r["reads"] = ["unread"]
-			r["drawing"] = can_draw()
 		else:
 			r["reads"] = ["drawn"]
 			if seen:
@@ -905,16 +955,16 @@ static func light_of(n: Node) -> Variant:
 
 # ---------------------------------------------------------------- lit, where only drawing tells
 
-const DRAWN_FLOOR := 0.02  ## a pixel brighter than this (linear luminance) in a room without light is the part's own
-const DRAWN_PIXELS := 3  ## that many such pixels over the views make it lit
-const DRAWN_SIZE := 48  ## pixels a side of each view
+const DRAWN_BYTE := int(LIT_FLOOR * 255.0)  ## a pixel whose linear luminance is above this of 255 (LIT_FLOOR in 8 bits) in a room without light is lit
+const DRAWN_SIZE := 128  ## pixels a side of each view
 const DRAWN_VIEWS := [Vector3(1.0, 0.6, 0.8), Vector3(-0.8, 0.5, -1.0), Vector3(0.2, -1.0, 0.3)]
 
-static var _drawn: Dictionary = {}  # part instance id -> {ref, sign, lit (null until drawn), rig}
-static var _drawn_stamp := -1
+static var _drawn: Dictionary = {}  # part instance id -> {ref, sign, lit (null until first drawn), rig, next}
 static var _drew := 0  # parts whose views the last frame drew
 static var _calls_before := 0
+static var _calls_said := false
 static var _headless_said := false
+static var pending := 0  ## goes up whenever a part is asked for whose first drawing isn't read yet
 
 
 static func can_draw() -> bool:
@@ -931,16 +981,16 @@ static func _drawable(n: Node) -> Mesh:
 
 
 static func _signature(n: Node, materials: Array) -> int:
-	## what the part's own light depends on: its mesh and, of each material, what gives light (a shader's every
-	## parameter); another signature means it must be drawn again
+	## what the part's own light depends on: its mesh and, of each material and its next passes, what gives light (a
+	## shader's every parameter); another signature means it is drawn again when next asked for
 	var said: Array = [_drawable(n).get_instance_id()]
 	for m: Variant in materials:
 		if m is BaseMaterial3D:
 			var standard := m as BaseMaterial3D
 			said.append_array([
-				standard.get_instance_id(), standard.shading_mode, standard.albedo_color, standard.emission_enabled,
-				standard.emission, standard.emission_energy_multiplier, standard.emission_operator,
-				_identity(standard.albedo_texture), _identity(standard.emission_texture)])
+				standard.get_instance_id(), standard.shading_mode, standard.albedo_color, standard.transparency,
+				standard.emission_enabled, standard.emission, standard.emission_energy_multiplier,
+				standard.emission_operator, _identity(standard.albedo_texture), _identity(standard.emission_texture)])
 		elif m is ShaderMaterial and (m as ShaderMaterial).shader != null:
 			var custom := m as ShaderMaterial
 			said.append_array([custom.get_instance_id(), custom.shader.get_instance_id(), hash(custom.shader.code)])
@@ -958,10 +1008,17 @@ static func _identity(value: Variant) -> Variant:
 	return (value as Object).get_instance_id() if value is Object and is_instance_valid(value) else value
 
 
+static func drawing(n: Node) -> bool:
+	## whether a drawing of the part is under way (the frame's end reads it)
+	var e: Variant = _drawn.get(n.get_instance_id())
+	return e != null and e["rig"] != null and is_instance_valid(e["rig"])
+
+
 static func drawn_lit(n: Node, materials: Array) -> Variant:
 	## Whether a mesh part gives light of its own, as drawn alone in a room without light: true, false, or null while
-	## it isn't drawn yet (it is by the frame's end: light_collect) or in a play that draws nothing. A drawing is
-	## kept until what the part's light depends on changes (_signature).
+	## its first drawing isn't read yet (it is by the frame's end: light_collect) or in a play that draws nothing. A
+	## part is drawn only when it is asked for and what its light depends on changed since its last drawing
+	## (_signature); until the new drawing is read the answer stays the last one.
 	if not can_draw():
 		if not _headless_said and probe != null:
 			_headless_said = true
@@ -970,15 +1027,18 @@ static func drawn_lit(n: Node, materials: Array) -> Variant:
 	var id := n.get_instance_id()
 	var sign := _signature(n, materials)
 	var e: Variant = _drawn.get(id)
-	if e != null and e["sign"] == sign:
-		return e["lit"]
-	if e != null and e["rig"] != null and is_instance_valid(e["rig"]):
-		(e["rig"] as Node).queue_free()
-	_drawn[id] = {"ref": weakref(n), "sign": sign, "lit": null, "rig": _room(n, materials)}
-	return null
+	if e == null:
+		e = {"ref": weakref(n), "sign": 0, "lit": null, "rig": null, "next": 0}
+		_drawn[id] = e
+	if not drawing(n) and (e["lit"] == null or e["sign"] != sign):
+		e["rig"] = _room(n)
+		e["next"] = sign
+	if e["lit"] == null:
+		pending += 1
+	return e["lit"]
 
 
-static func _room(n: Node, materials: Array) -> Node:
+static func _room(n: Node) -> Node:
 	## the part's mesh with its materials alone in a world of its own, black and without light, seen from three sides
 	var mesh := _drawable(n)
 	var rig := Node.new()
@@ -1012,10 +1072,12 @@ static func _room(n: Node, materials: Array) -> Node:
 		if i == 0:
 			var copy := MeshInstance3D.new()
 			copy.mesh = mesh
-			for surface in mini(mesh.get_surface_count(), materials.size()):
-				copy.set_surface_override_material(surface, materials[surface])
-			if materials.size() > mesh.get_surface_count() and n is MeshInstance3D:
-				copy.material_overlay = (n as GeometryInstance3D).material_overlay
+			var part := n as GeometryInstance3D
+			copy.material_override = part.material_override
+			copy.material_overlay = part.material_overlay
+			if n is MeshInstance3D:
+				for surface in mesh.get_surface_count():
+					copy.set_surface_override_material(surface, (n as MeshInstance3D).get_surface_override_material(surface))
 			for property: Dictionary in n.get_property_list():
 				if String(property["name"]).begins_with("instance_shader_parameters/"):
 					copy.set(property["name"], n.get(property["name"]))
@@ -1026,47 +1088,57 @@ static func _room(n: Node, materials: Array) -> Node:
 
 
 static func light_collect() -> void:
-	## the rooms a frame has drawn are read: each part lit when enough of its pixels are brighter than black
+	## the rooms a frame has drawn are read: each part lit when a pixel of a view has a linear luminance above the floor
 	var read := 0
 	for id: int in _drawn.keys():
 		var e: Dictionary = _drawn[id]
 		if e["rig"] == null or not is_instance_valid(e["rig"]):
 			continue
 		var bright := 0
+		var brightest := 0
 		var seen := true
 		for view: Node in (e["rig"] as Node).get_children():
 			var image := (view as SubViewport).get_texture().get_image()
 			if image == null or image.is_empty():
 				seen = false
 				break
-			for y in image.get_height():
-				for x in image.get_width():
-					if luminance(image.get_pixel(x, y)) > DRAWN_FLOOR:
-						bright += 1
+			image.srgb_to_linear()  # the frame holds sRGB colours; L8 then weighs the linear ones as luminance does
+			image.convert(Image.FORMAT_L8)
+			var bytes := image.get_data()
+			if bytes.count(0) == bytes.size():
+				continue  # black all over
+			for b in bytes:
+				brightest = maxi(brightest, b)
+				if b > DRAWN_BYTE:
+					bright += 1
 		if not seen:
 			continue  # not drawn yet: read at the next look
-		e["lit"] = bright >= DRAWN_PIXELS
+		var lit := bright >= 1
+		var changed: bool = e["lit"] == null or e["lit"] != lit
+		e["lit"] = lit
+		e["sign"] = e["next"]
 		(e["rig"] as Node).queue_free()
 		e["rig"] = null
 		read += 1
-		var n: Node = e["ref"].get_ref()
-		var named := "a part" if n == null else "%s/%s" % [n.get_parent().name, n.name] if n.get_parent() != null else String(n.name)
-		probe.note("lit: %s drawn alone in a room without light: %d bright pixel(s), %s" % [
-			named, bright, "lit" if e["lit"] else "dark"])
+		if changed:
+			var n: Node = e["ref"].get_ref()
+			var named := "a part" if n == null else "%s/%s" % [n.get_parent().name, n.name] if n.get_parent() != null else String(n.name)
+			probe.note("lit: %s drawn alone in a room without light: %d bright pixel(s), the brightest %d of 255, %s" % [
+				named, bright, brightest, "lit" if lit else "dark"])
 	_drew += read
 
 
 static func light_tick() -> void:
-	## once a frame, before the game's scripts: the rooms drawn are read, and a part drawn before whose light may
-	## have changed since is drawn again, so a select's has.lit reads it fresh
-	if probe == null or _drawn_stamp == probe.stamp or _drawn.is_empty():
+	## once a frame, before the game's scripts (the probe's own frame): the rooms the frame before drew are read, and
+	## the parts that are gone are forgotten
+	if probe == null or _drawn.is_empty():
 		return
-	_drawn_stamp = probe.stamp
 	var calls := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
-	if _drew > 0:
+	if _drew > 0 and not _calls_said:
+		_calls_said = true
 		probe.note("lit: the frame that drew %d part(s) alone had %d draw call(s) in all (the frame before it: %d)" % [
 			_drew, calls, _calls_before])
-		_drew = 0
+	_drew = 0
 	_calls_before = calls
 	light_collect()
 	for id: int in _drawn.keys():
@@ -1076,10 +1148,18 @@ static func light_tick() -> void:
 			if e["rig"] != null and is_instance_valid(e["rig"]):
 				(e["rig"] as Node).queue_free()
 			_drawn.erase(id)
-			continue
-		var materials: Variant = drawn_with(n)
-		if materials != null and _drawable(n) != null and e["rig"] == null and _signature(n, materials) != e["sign"]:
-			drawn_lit(n, materials)
+
+
+static func lit_selects(value: Variant, found: Array) -> void:
+	## every object select inside `value` (a play's input row, a select) that asks for a lit part (has.lit)
+	if value is Dictionary:
+		if flag(obj(value, "has"), "lit"):
+			found.append(value)
+		for key: Variant in value:
+			lit_selects(value[key], found)
+	elif value is Array:
+		for item: Variant in value:
+			lit_selects(item, found)
 
 
 static func light_of_object(n: Node) -> Dictionary:
@@ -1087,7 +1167,7 @@ static func light_of_object(n: Node) -> Dictionary:
 	## dark; one with a source that couldn't be read has no value ("read" false) unless another source is lit.
 	var total := {"read": true, "lit": false, "glow": 0.0, "kinds": [], "reads": []}
 	var unread := false
-	var drawing := false  # a part of it is being drawn: the frame's end tells
+	var under_way := false  # a part of it is being drawn: the frame's end tells
 	var nodes: Array[Node] = [n]
 	nodes.append_array(n.find_children("*", "", true, false))
 	for p in nodes:
@@ -1095,7 +1175,7 @@ static func light_of_object(n: Node) -> Dictionary:
 		if r == null:
 			continue
 		unread = unread or not r["read"]
-		drawing = drawing or r.get("drawing", false)
+		under_way = under_way or r.get("drawing", false)
 		total["lit"] = total["lit"] or r["lit"]
 		if r["lit"]:
 			total["glow"] = null if total["glow"] == null or r["glow"] == null else total["glow"] + r["glow"]
@@ -1104,7 +1184,7 @@ static func light_of_object(n: Node) -> Dictionary:
 				if not total[key].has(word):
 					total[key].append(word)
 	total["read"] = total["lit"] or not unread
-	total["drawing"] = drawing
+	total["drawing"] = under_way
 	return total
 
 
@@ -1113,6 +1193,7 @@ static func light_field(reading: Variant, field: String, row: Dictionary) -> Var
 	## the kinds lit, and glow_read, how it was read
 	if reading == null:
 		return null
+	row.erase("glow_sources")
 	if not reading["kinds"].is_empty():
 		row["glow_sources"] = ",".join(PackedStringArray(reading["kinds"]))
 	if not reading["reads"].is_empty():

@@ -442,6 +442,8 @@ func _process(delta: float) -> void:
 		_step_checked = true
 		if absf(delta - 1.0 / fps) > 1e-4:
 			error("the game isn't run with --fixed-fps %d (a frame took %.4f s of its time): the play's clock is its frames, not the game's own time" % [fps, delta])
+	Find.light_tick()
+	_inputs.warm(elapsed())
 	_inputs.hold(elapsed())
 	if _inputs.waiting:
 		pace(true)  # whatever frame rate the game asked for meanwhile

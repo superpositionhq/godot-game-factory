@@ -3,6 +3,8 @@ extends Node3D
 ## each lamp's material is said in one place.
 
 var _on := false
+var _pulse: ShaderMaterial
+var _age := 0.0
 
 
 func _ready() -> void:
@@ -65,6 +67,78 @@ func _ready() -> void:
 	var hidden := _lamp("HiddenLamp", emissive.duplicate())
 	(hidden.get_node("Shade") as MeshInstance3D).material_override.set("emission_enabled", true)
 	hidden.visible = false
+	# a shell drawn over the mesh (a next pass) that gives the light; a lamp switched by fading its unshaded
+	# material in and out; a light under a hidden holder; and what is there but never drawn
+	var shell := StandardMaterial3D.new()
+	shell.emission = Color(1, 1, 1)
+	var under := StandardMaterial3D.new()
+	under.next_pass = shell
+	_lamp("ShellLamp", under)
+	var fading := StandardMaterial3D.new()
+	fading.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fading.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fading.albedo_color = Color(1, 1, 1, 0)
+	_lamp("FadedLamp", fading)
+	var held := _lamp("HeldLamp", null)
+	var holder := Node3D.new()
+	holder.name = "Holder"
+	holder.visible = false
+	held.add_child(holder)
+	var kept := OmniLight3D.new()
+	kept.name = "Bulb"
+	holder.add_child(kept)
+	var glowing := StandardMaterial3D.new()
+	glowing.emission_enabled = true
+	glowing.emission = Color(1, 1, 1)
+	var quiet := _lamp("QuietLamp", null)
+	var tool_light := OmniLight3D.new()
+	tool_light.name = "ToolLight"
+	tool_light.editor_only = true
+	quiet.add_child(tool_light)
+	var layerless := MeshInstance3D.new()
+	layerless.name = "NoLayer"
+	layerless.mesh = BoxMesh.new()
+	layerless.material_override = glowing
+	layerless.layers = 0
+	quiet.add_child(layerless)
+	var shadow := MeshInstance3D.new()
+	shadow.name = "ShadowOnly"
+	shadow.mesh = BoxMesh.new()
+	shadow.material_override = glowing
+	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	quiet.add_child(shadow)
+	# drawn alone: a shader whose light pulses every frame; a 4 m post with a 10 cm band that glows, and one whose
+	# band stays dark; a mesh of two glowing surfaces under an override that is dark
+	_pulse = ShaderMaterial.new()
+	_pulse.shader = code
+	_lamp("PulseLamp", _pulse)
+	var banded := Shader.new()
+	banded.code = "shader_type spatial;\nuniform float power = 0.0;\nvarying float height;\nvoid vertex() { height = VERTEX.y; }\nvoid fragment() { ALBEDO = vec3(0.5); EMISSION = vec3(power * step(abs(height - 1.0), 0.05)); }\n"
+	for post: String in ["PostLamp", "PostDark"]:
+		var band := ShaderMaterial.new()
+		band.shader = banded
+		var tall := BoxMesh.new()
+		tall.size = Vector3(0.2, 4.0, 0.2)
+		(_lamp(post, band).get_node("Shade") as MeshInstance3D).mesh = tall
+	var two := ArrayMesh.new()
+	for i in 2:
+		two.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, BoxMesh.new().get_mesh_arrays())
+		two.surface_set_material(i, glowing)
+	var covered := ShaderMaterial.new()
+	covered.shader = code
+	(_lamp("OverrideDark", covered).get_node("Shade") as MeshInstance3D).mesh = two
+	# drawn alone, a shader that gives pure blue light: the least luminous colour, well above the floor
+	var blue := Shader.new()
+	blue.code = "shader_type spatial;\nuniform float power = 0.0;\nvoid fragment() { ALBEDO = vec3(0.0); EMISSION = vec3(0.0, 0.0, power); }\n"
+	var deep := ShaderMaterial.new()
+	deep.shader = blue
+	_lamp("BlueLamp", deep)
+	# a player, for a play that goes to a lamp by its light
+	var player := CharacterBody3D.new()
+	player.name = "Player"
+	player.add_to_group("player")
+	player.position = Vector3(0, 0, 30)
+	add_child(player)
 	var flat := Node2D.new()
 	flat.name = "Lamp2D"
 	flat.add_to_group("lamp")
@@ -126,6 +200,19 @@ func _switch(on: bool) -> void:
 	($UnshadedLamp/Shade as MeshInstance3D).material_override.set(
 		"shading_mode", BaseMaterial3D.SHADING_MODE_UNSHADED if on else BaseMaterial3D.SHADING_MODE_PER_PIXEL)
 	($ParticleLamp/Sparks as CPUParticles3D).emitting = on
+	(($ShellLamp/Shade as MeshInstance3D).material_override.next_pass as StandardMaterial3D).emission_enabled = on
+	(($FadedLamp/Shade as MeshInstance3D).material_override as StandardMaterial3D).albedo_color = Color(1, 1, 1, 1.0 if on else 0.0)
+	(($PostLamp/Shade as MeshInstance3D).material_override as ShaderMaterial).set_shader_parameter("power", 2.0 if on else 0.0)
+	(($BlueLamp/Shade as MeshInstance3D).material_override as ShaderMaterial).set_shader_parameter("power", 1.0 if on else 0.0)
+	if not on:
+		_pulse.set_shader_parameter("power", 0.0)
+
+
+func _process(delta: float) -> void:
+	# the pulsing lamp's light changes every frame while it is on, never down to dark
+	_age += delta
+	if _on:
+		_pulse.set_shader_parameter("power", 1.5 + sin(_age * 20.0))
 
 
 func _input(event: InputEvent) -> void:

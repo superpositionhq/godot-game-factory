@@ -26,7 +26,6 @@ func load_query() -> void:
 
 
 func frame(dt: float) -> void:
-	Find.light_tick()
 	_motion.frame()
 	_stops.frame(dt)
 
@@ -34,7 +33,14 @@ func frame(dt: float) -> void:
 func sample(_t: float, sample: Dictionary) -> void:
 	var rows: Array = []
 	_waiting.clear()
-	for n in Find.objects(_select):
+	var asked: int = Find.pending
+	var matched := Find.objects(_select)
+	if Find.pending != asked:
+		# a part the select must know the light of (has.lit) is drawn for the first time: who matches isn't known
+		# in this sample, so it has no rows and says so (the checker reads no value, never a low count)
+		sample["pending"] = true
+		matched = []
+	for n in matched:
 		rows.append(_row(n))
 	_motion.end_sample()
 	_stops.end_sample()
