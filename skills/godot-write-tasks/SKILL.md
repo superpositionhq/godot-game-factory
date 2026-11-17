@@ -448,11 +448,32 @@ probe that names something the start lacks and the reference has. **Test the out
 sees, never the implementation**: another valid fix must
 pass ("the hero stands on ground", "the stone breaks the wall piece it hits", "the lap count shows the lap the boat is
 on", not "spawn_height is 0.92" or "the function was changed"). `describe` says the assertion in plain
-words; it is shown in the grade, never to the agent. Check names are unique and `needs` only names earlier checks;
+words; it is shown in the grade, never to the agent.
+
+**Everything a required probe or its play relies on is in the instruction or exists at the start commit**: node,
+class, group, property and scene names, exact strings and regular expressions, coordinates, input sequences. The
+instruction never names how a build stores things ("Hints, never answers", below), so what the thread creates is read
+by what the player sees:
+
+- **Prefer what the player sees.** On-screen text through `ui` with a loose `match` (any case, any spacing, `\d+`
+  for a number); nodes by a group or class the start has, by what they carry (`has`) or where they are (`near`); a
+  place reached by `teleport_to` or `pin` on a node, never raw coordinates; a control by its name at the start.
+  Never match an exact string the instruction doesn't quote, and never a run of keys that only works on the
+  reference's layout (a menu walked by counting presses).
+- **"Shown" means on screen.** A check that something is shown, or no longer shown, reads `ui`, or `widgets` with
+  `"visible": true`. Without it `widgets` counts hidden widgets too, so a build that hides a widget instead of
+  removing it fails a "no longer shown" check, and a hidden one passes an "is shown" check.
+- **Ask the second-solution question of every check**: would a correct solution that names things otherwise, lays
+  the scene out otherwise, or hides instead of removes still pass? If not, move the check to what the player sees. Check names are unique and `needs` only names earlier checks;
 calibrated probes, `code_judge` and `"reference": true` judges need `seed.reference`.
 
 A task is valid only when it passes the task check: its start fails the task and its reference fix imports, boots and
-passes every required probe, and every required `still_works` probe already passes at the start. Write the probes per
+passes every required probe, and every required `still_works` probe already passes at the start. **Every check is
+run before it is submitted, on both sides, and you read the measurement**: it fails at the start, passes on the
+reference, the play's inputs landed (`inputs_missed` empty, `probe.log`), the probe matched something (its rows),
+and the judge's frames show the moment. A threshold comes from the instruction, from the start or from calibration,
+never a number picked because the reference passes it. **The reference does everything the instruction asks**, in a
+place a play can reach; where it doesn't, the task needs another reference. Write the probes per
 [docs/task-probes.md](../../docs/task-probes.md), then check the game's tasks **together, in one background run** (one
 run prepares a commit several tasks share once, and the person can leave it running and come back). Write and commit
 every task first, then start the check as its own process so it outlives your turn and no tool timeout cuts it short
@@ -538,6 +559,9 @@ no check at all, naming the task and the sentence. Fix what you find in the task
   manager is graded by `level`: its voices are not seen to start. A fade or music is read by `audible`, `volume`
   or `level`, since `started_audible` is judged as the sound starts. What the sound is, how it sounds, is never
   checked. Games import every sound (godot-game-session skill), so every sound has a file name.
+- **Nothing is asked that the grader cannot run.** Saving across sessions can be checked: a play that names the
+  play that saved in `after` starts on its saved data. What a sound sounds like, how an exported build behaves and
+  the frame rate on given hardware cannot: never write them as asks.
 - **An ask that cannot be checked fairly** comes out: rewrite the instruction so it no longer asks for it, rather than
   ship an ask nothing checks. The instruction stays plain prose, never fields.
 
@@ -614,6 +638,10 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | a probe that tests the reference's implementation ("spawn_height = 0.92") | measure the outcome; another valid fix must pass |
 | the brief said "scenario 1" but the task had no `-scenario 1` | `play_args` (and `play_scene` where needed) always set and checked at the seed |
 | a control or class name guessed | read the names from the code and scenes at `seed.commit` |
+| a probe matched an exact on-screen string, or a play walked a menu by counting key presses, that only the reference's layout gives | a loose `match` on what `ui` reads, a click or touch on a control the start names; never a string the instruction doesn't quote |
+| a "no longer shown" check read a widget the build had hidden, not removed | `ui`, or `widgets` with `"visible": true` (section 5) |
+| a check written without running the game: a guessed threshold, a window that missed the event, a judge asked for what the reference never shows | run every check on both sides and read what it measured before submitting (section 5) |
+| an ask the reference never does, or does where no play reaches | the reference does every ask, in a place a play can reach |
 | a probe named a class, group or scene only the reference had, so a fair build that named it otherwise read as absent | select what the thread creates by what it does or where it is; the validator refuses a reference-only name |
 | a run wrote the feature but never ran the game to see it, and the task had no probe of the moment | a play that triggers each piece of feedback, and a probe of what the player sees then |
 | a judge's pictures came from views the game itself lists, so a build could dress only those spots | the task's own tour: scene loads, `teleport_to` what the build made, view turns, named `shot` inputs; never a view list from the game's files |

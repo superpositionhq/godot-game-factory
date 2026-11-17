@@ -62,6 +62,20 @@ units, y down, as `x` and `y` with `z` 0, and its rotation as `roll`.
 - `measure`: what to measure (section 2). Every measure reduces to **one number** (booleans are 0/1).
 - `expect`: the threshold that number is compared with (section 1.2).
 
+What a required probe and its play rely on is either in the instruction or at the start commit: a node, class,
+group, property or scene name, an exact string or regular expression, a coordinate, a run of inputs. A name the
+thread creates, a text the instruction doesn't quote, a point where the reference placed something, keys that only
+work on the reference's layout: a correct solution made another way reads as absent. So read what the player sees:
+
+- on-screen text through `ui` with a loose `match` (`(?i)` for any case, `\s*` between words, `\d+` for a number),
+  never an exact string the instruction doesn't quote;
+- nodes by a group or class the start has, or by what they carry (`has`) or where they are (`near`);
+- a place by `teleport_to` or `pin` on a node, never by raw coordinates of something a build places itself;
+- a control by its name at the start, or a touch on what is drawn there.
+
+Ask of each check: would a correct solution that names things otherwise, lays the scene out otherwise, or hides a
+thing instead of removing it still pass? If not, move the probe to what the player sees.
+
 ### 1.1 Plays
 
 - `"look"`: the checker's idle play of the task's `play_scene`: 20 s, no input, sampled every 0.5 s.
@@ -738,6 +752,9 @@ not the node the `owner` select matched).
   container's view while inside the frame. Never visible: a hidden widget, one under a hidden node or a hidden
   canvas layer, one faded out by `modulate`, one entirely outside the frame. So `count` counts what the game shows
   (a warning bar's shown messages, not the ones it keeps hidden); what is drawn on screen is `ui`'s (section 2.18).
+- **"Shown" in an ask means on screen.** A select without `"visible": true` takes hidden widgets too: a "is shown"
+  check passes on a widget the build keeps hidden, and a "no longer shown" check fails a build that hides it instead
+  of removing it. Check what is shown with `ui`, or here with `"visible": true`.
   A disabled button is visible: whether it can be pressed is `interactable`.
 - `field`: `count`; `visible`; `text` (a `Label`'s, a `Button`'s or a `LinkButton`'s text, a `RichTextLabel`'s with
   its tags stripped, a `LineEdit`'s or `TextEdit`'s what was typed, not its placeholder; a typewriter reveal
@@ -1108,6 +1125,11 @@ Before any agent is given a task, the checker grades the start and the fix with 
   be calibrated fails as a note, never making the task invalid);
 - every required `judge` check, answered by the task's writer from the screenshots the check saves (section 3.2),
   fails on the start and passes on the fix, item by item.
+
+Run every check before the task is submitted, on both sides, and read what it measured: it fails on the start and
+passes on the fix, the play's inputs landed (`inputs_missed` empty, `probe.log`), the select matched something (the
+rows), and a judge's frames show the moment asked about. A threshold comes from the instruction, from the start or
+from calibration (section 1.2), never a number picked because the fix passes it. The fix does everything the instruction asks, in a place a play reaches.
 
 A task with no fix is checked on its start alone: the start builds, fails every required probe outside `still_works`
 (thresholds literal or relative to the start) and passes its still-works probes. Only a draft has no fix: the
