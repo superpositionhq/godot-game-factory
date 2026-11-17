@@ -7,6 +7,7 @@ import io
 import itertools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -328,6 +329,52 @@ class Seeds(unittest.TestCase):
             seeds.add_probe(Path(tmp) / "ok")
             self.assertIn('TaskProbe="*res://addons/task_probe/task_probe.gd"\nScenarios=',
                           (Path(tmp) / "ok" / "project.godot").read_text(encoding="utf-8"))
+
+    def test_the_probes_lines_win_over_any_line_of_the_games(self):
+        """The engine reads a section written twice as one, a later line of a setting winning and the autoloads loading
+        in the order they first appear (Godot 4.7.2, headless: tools/task_check/probe_tests' project holds these lines
+        and its keys play checks the probe loaded first, with the copy's own user data folder)."""
+        company = "TaskProbe.0123456789ab"
+        probe = 'TaskProbe="*res://addons/task_probe/task_probe.gd"'
+        for name, extra in (
+                ("a quoted key in a second [autoload]", '\n[autoload]\n\n"TaskProbe"="*res://game/fake.gd"\n'),
+                ("autoload sections twice", '\n[autoload]\n\nA="*res://a.gd"\n\n[autoload]\n\nTaskProbe = "*res://b.gd"\n'),
+                ("the user folder off in a second [application]",
+                 '\n[application]\n\nconfig/use_custom_user_dir=false\n"config/custom_user_dir_name"="Own"\n'),
+                ("a multi-line value", '\n[input]\n\njump={\n"deadzone": 0.5,\n"events": []\n}\n')):
+            text = seeds.with_probe(PROJECT + extra, company)
+            self.assertEqual(seeds.settings_errors(text, company), [], name)
+            values = seeds.effective(text)
+            self.assertEqual([k for k in values if k.startswith("autoload/")][0], "autoload/TaskProbe", name)
+            self.assertEqual((values["autoload/TaskProbe"], values["application/config/use_custom_user_dir"],
+                              values["application/config/custom_user_dir_name"]),
+                             ('"*res://addons/task_probe/task_probe.gd"', "true", f'"{company}"'), name)
+            self.assertEqual(text.count("TaskProbe="), 1, name)
+            self.assertEqual(seeds.with_probe(text, company), text, f"{name}: added twice is added once")
+        self.assertIn('jump={\n"deadzone": 0.5,\n"events": []\n}', seeds.with_probe(
+            PROJECT + '\n[input]\n\njump={\n"deadzone": 0.5,\n"events": []\n}\n', company), "a value over lines kept whole")
+        self.assertTrue(probe in seeds.with_probe(PROJECT, company))
+        # an autoload set before every section, which the engine loads first, moves in right after the probe's
+        before = PROJECT.replace("config_version=5\n", 'config_version=5\nautoload/Early="*res://early.gd"\n'
+                                 '"autoload/Late one"="*res://late.gd"\n')
+        text = seeds.with_probe(before, company)
+        self.assertEqual(seeds.settings_errors(text, company), [])
+        self.assertIn('[autoload]\n\nTaskProbe="*res://addons/task_probe/task_probe.gd"\nEarly="*res://early.gd"\n'
+                      '"Late one"="*res://late.gd"\nScenarios=', text)
+        self.assertEqual([k for k in seeds.effective(text) if k.startswith("autoload/")],
+                         ["autoload/TaskProbe", "autoload/Early", "autoload/Late one", "autoload/Scenarios"])
+        self.assertEqual(seeds.with_probe(text, company), text)
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "project.godot").write_text(before, encoding="utf-8")
+            seeds.add_probe(tmp)
+            self.assertEqual((Path(tmp) / "project.godot").read_text(encoding="utf-8"),
+                             seeds.with_probe(before, seeds.saves_company(tmp)))
+        # the last guard: what it finds is a bug of the edit, and says so
+        with mock.patch.object(seeds, "with_probe", lambda text, company: text), tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "project.godot").write_text(PROJECT, encoding="utf-8")
+            with self.assertRaisesRegex(seeds.UnsafeSettings, r"didn't win \(a bug of seeds.with_probe\): autoload/TaskProbe is not set"):
+                seeds.add_probe(tmp)
+        self.assertTrue(issubclass(seeds.UnsafeSettings, seeds.WrongEngine), "the task is INVALID, as for an engine")
 
     def test_a_project_without_autoloads_gets_the_section(self):
         bare = 'config_version=5\n\n[application]\n\nconfig/features=PackedStringArray("4.7")\n'

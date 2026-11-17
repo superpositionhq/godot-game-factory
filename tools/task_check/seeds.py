@@ -7,7 +7,9 @@
 - what a task's agent never sees is left out (ANSWERS): Tasks/, History/, Dataset/ and Dataset.zip at the root.
 - add_probe: the task probe addon as addons/task_probe/, and three lines in the copy's project.godot: the addon's
   autoload, first in [autoload] (it runs before the game's own), and a user data folder of the copy's own, so a play
-  never reads or writes the real game's saved data. The only things the checker adds."""
+  never reads or writes the real game's saved data. The only things the checker adds. A project.godot in which a
+  line or a section of the game's own could stand in for those three (settings_errors) is refused: the task is
+  INVALID, as for another engine."""
 
 import hashlib
 import os
@@ -32,6 +34,11 @@ HELD = 10  # seconds remove() waits for a process that was just killed to let go
 
 class WrongEngine(ValueError):
     """A start that isn't a Godot 4.7 project as committed."""
+
+
+class UnsafeSettings(WrongEngine):
+    """A project.godot in which, once the probe's lines are in (with_probe), the engine would still not read them as
+    the probe's (settings_errors): a bug of with_probe, never a shape of the game's."""
 
 
 def _git(repo, *args, data=None):
@@ -182,11 +189,111 @@ def add_probe(project):
     shutil.copytree(PROBE_SOURCE, target, ignore=shutil.ignore_patterns(*PROBE_JUNK))
     settings = project / PROJECT_FILE
     text = settings.read_bytes().decode("utf-8-sig").replace("\r\n", "\n")
-    text = set_setting(text, "autoload", *AUTOLOAD, first=True)
-    text = set_setting(text, "application", "config/use_custom_user_dir", "true")
-    text = set_setting(text, "application", "config/custom_user_dir_name", f'"{saves_company(project)}"')
+    company = saves_company(project)
+    text = with_probe(text, company)
+    errors = settings_errors(text, company)
+    if errors:
+        raise UnsafeSettings(f"the probe's lines in {PROJECT_FILE} didn't win (a bug of seeds.with_probe): "
+                             f"{'; '.join(errors)}")
     settings.write_bytes(text.encode("utf-8"))
     return project
+
+
+# The settings the probe's lines set, by the name the engine gives them (section/key).
+PROBE_SETTINGS = (f"autoload/{AUTOLOAD[0]}", "application/config/use_custom_user_dir",
+                  "application/config/custom_user_dir_name")
+_SECTION = re.compile(r'^[ \t]*\[([^\]]*)\][ \t]*$')
+_KEY = re.compile(r'^[ \t]*("(?:[^"\\]|\\.)*"|[^=\s"\[;#][^=]*?)[ \t]*=[ \t]*(.*?)[ \t]*$')
+
+
+def _open_brackets(value):
+    """How many of `value`'s brackets are still open, strings left out (a value that goes on over the next lines)."""
+    depth, quoted, escaped = 0, False, False
+    for ch in value:
+        if quoted:
+            quoted, escaped = (quoted, False) if escaped else (ch != '"', ch == "\\")
+        elif ch == '"':
+            quoted = True
+        elif ch in "[{(":
+            depth += 1
+        elif ch in "]})":
+            depth -= 1
+    return depth
+
+
+def entries(text):
+    """Each setting of `text` (a project.godot) in the order the engine reads them: (first line, last line, the
+    setting's name, its value as written, its section: "" before every section). A section's keys are named `<section>/<key>`, a key before any section by
+    itself; a key may be quoted; a value whose brackets stay open goes on over the following lines. A section written
+    twice is read as one, the later line of a setting winning."""
+    lines, found, section, at = text.split("\n"), [], "", 0
+    while at < len(lines):
+        line = lines[at]
+        head, key = _SECTION.match(line), _KEY.match(line)
+        if head:
+            section = head.group(1).strip()
+        elif key and not line.lstrip().startswith((";", "#")):
+            name = key.group(1)
+            name = name[1:-1].replace('\\"', '"') if name.startswith('"') else name.strip()
+            value, last = key.group(2), at
+            depth = _open_brackets(value)
+            while depth > 0 and last + 1 < len(lines):
+                last += 1
+                value += "\n" + lines[last]
+                depth += _open_brackets(lines[last])
+            found.append((at, last, f"{section}/{name}" if section else name, value, section))
+            at = last
+        at += 1
+    return found
+
+
+def effective(text):
+    """{setting: value} as the engine reads `text`: a setting's last line wins (dicts keep the order of first
+    appearance, which is the order autoloads load in)."""
+    values = {}
+    for _, _, name, value, _ in entries(text):
+        values[name] = value
+    return values
+
+
+def with_probe(text, company):
+    """`text` (a project.godot) with the probe's lines in, whatever the game wrote: every line of the game's that sets
+    one of PROBE_SETTINGS, in whichever section or form (a quoted key, a section written twice), taken out; the probe's
+    autoload first in the first [autoload] and the copy's own user data folder in the first [application]; and an
+    autoload the game sets before every section (`autoload/<name>=...`, which the engine would load first) moved into
+    that [autoload] right after the probe's line, with its value, in its order. The engine then reads the probe's
+    values and loads the probe first, and every autoload of the game's still loads."""
+    lines, gone, moved = text.split("\n"), set(), []
+    for first, last, name, value, section in entries(text):
+        if name in PROBE_SETTINGS:
+            gone.update(range(first, last + 1))
+        elif not section and name.startswith("autoload/"):
+            gone.update(range(first, last + 1))
+            key = name[len("autoload/"):]
+            plain = all(ch.isalnum() or ch in "_-./" for ch in key) and key
+            moved.append((key if plain else '"' + key.replace('"', '\\"') + '"') + "=" + value)
+    text = "\n".join(line for at, line in enumerate(lines) if at not in gone)
+    text = set_setting(text, "autoload", *AUTOLOAD, first=True)
+    if moved:
+        lines = text.split("\n")
+        at = lines.index(f"{AUTOLOAD[0]}={AUTOLOAD[1]}") + 1
+        lines[at:at] = moved
+        text = "\n".join(lines)
+    text = set_setting(text, "application", "config/use_custom_user_dir", "true")
+    return set_setting(text, "application", "config/custom_user_dir_name", f'"{company}"')
+
+
+def settings_errors(text, company):
+    """Why the engine would read `text`, a project.godot with the probe's lines in (with_probe), otherwise than as the
+    probe's, or []: the probe's autoload with its value and first of the autoloads, and the copy's own user data
+    folder on, under `company`. The last guard of with_probe's result: what it finds is a bug of the edit."""
+    values = effective(text)
+    errors = [f"{name} is {values.get(name, 'not set')}" for name, value in zip(
+        PROBE_SETTINGS, (AUTOLOAD[1], "true", f'"{company}"')) if values.get(name) != value]
+    autoloads = [name for name in values if name.startswith("autoload/")]
+    if autoloads and autoloads[0] != PROBE_SETTINGS[0]:
+        errors.append(f"{autoloads[0]} loads before the probe")
+    return errors
 
 
 SAVES = re.compile(r"TaskProbe\.[0-9a-f]{12}")  # the only names forget_saves ever deletes

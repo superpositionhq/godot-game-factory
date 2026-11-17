@@ -80,8 +80,10 @@ puts the copies elsewhere, `--direct` runs Godot without the machine's job slots
    `Dataset/` or `Dataset.zip`. The task probe is added as `addons/task_probe/`, with three lines in the copy's
    `project.godot`: the probe's autoload (`TaskProbe`, first in `[autoload]`) and a user data folder of the copy's own
    (`config/use_custom_user_dir`, `config/custom_user_dir_name="TaskProbe.<hash>"`), so a play's saved data
-   (`user://`) is never the real game's, nor the other side's. Nothing else is added or changed, and nothing comes
-   from another commit (no patch). Your checkout is never touched.
+   (`user://`) is never the real game's, nor the other side's. A line of the game's own that sets one of those three
+   settings is taken out, and an autoload the game sets before every section moves in after the probe's, so the engine
+   reads the probe's and loads it first; no shape of the file is refused. Nothing else is added or changed, and nothing
+   comes from another commit (no patch). Your checkout is never touched.
 3. Builds the start. There is no player build: a copy is played from source with the editor binary, and its build is
    what makes it ready for that, two headless jobs: the import (`godot --headless --path <copy> --import`, which writes
    the copy's `.godot/`), then a start of the engine that loads every script of the project (the import alone parses

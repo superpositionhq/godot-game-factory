@@ -22,7 +22,6 @@ HERE = Path(__file__).resolve().parent
 ADDON = HERE.parent / "task_probe"
 DESK = HERE.parent / "desk.py"
 SPEC_FORMAT = "godot-probe-play/1"
-AUTOLOAD = 'TaskProbe="*res://addons/task_probe/task_probe.gd"'
 PLAY_FLAGS = ["--fixed-fps", "30", "--disable-vsync", "--audio-driver", "Dummy"]
 SCRIPT_ERROR = r"SCRIPT ERROR|Parse Error|Failed to load script"
 SAVES = re.compile(r"^TaskProbe\.[0-9a-f]{12}$")
@@ -34,7 +33,9 @@ VARIANTS = {
 TIMEOUT = 180
 
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent.parent))
 import tests  # noqa: E402  (the plays and their checks)
+from task_check import seeds  # noqa: E402  (the probe added as the checker adds it)
 
 
 def godot_exe(given):
@@ -61,21 +62,18 @@ def saves_folder(name):
 
 
 def prepare(work, variant):
-    """A fresh copy of the game in <work>/<variant> with the probe added as the checker adds it: the addon as
-    addons/task_probe/, its autoload first, a user data folder of the copy's own."""
+    """A fresh copy of the game in <work>/<variant> with the probe added as the checker adds it (seeds.add_probe):
+    the addon as addons/task_probe/, its autoload first, a user data folder of the copy's own."""
     copy = work / variant
     if copy.exists():
         shutil.rmtree(copy)
     shutil.copytree(HERE / "project", copy)
-    shutil.copytree(ADDON, copy / "addons" / "task_probe", ignore=shutil.ignore_patterns("*.uid", "*.import"))
+    seeds.add_probe(copy)
     how = VARIANTS[variant]
     text = (copy / "project.godot").read_text(encoding="utf-8")
     text = text.replace("viewport_width=1920", f"viewport_width={how['project'][0]}")
     text = text.replace("viewport_height=1080", f"viewport_height={how['project'][1]}")
     text = text.replace('rendering_method="forward_plus"', f'rendering_method="{how["renderer"]}"')
-    text = text.replace("[application]\n", f'[application]\n\nconfig/use_custom_user_dir=true\n'
-                        f'config/custom_user_dir_name="{saves_name(copy)}"', 1)
-    text = text.replace("[display]", f"[autoload]\n\n{AUTOLOAD}\n\n[display]", 1)
     (copy / "project.godot").write_text(text, encoding="utf-8", newline="\n")
     return copy
 

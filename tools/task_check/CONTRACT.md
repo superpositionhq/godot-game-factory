@@ -815,7 +815,14 @@ root's `.task-check` when it is on the repo's drive, else a `.task-check` beside
   `project.godot`: `TaskProbe="*res://addons/task_probe/task_probe.gd"` first in `[autoload]` (so its `_ready` and
   its frame come before the game's own autoloads'), and `config/use_custom_user_dir=true` with
   `config/custom_user_dir_name="TaskProbe.<the first 12 hex digits of the sha256 of the copy's folder, lower-cased>"`
-  in `[application]` (`seeds.saves_company`).
+  in `[application]` (`seeds.saves_company`). The engine reads a section written twice as one, a later line of a
+  setting winning and the autoloads loading in the order they first appear, so every line of the game's that sets one
+  of those three settings, in any section or form (a quoted key, a second `[autoload]` or `[application]`), is taken
+  out first, and an autoload the game sets before every section (`autoload/<name>=...`, which the engine would load
+  first) moves into that `[autoload]` right after the probe's line, with its value and in its order
+  (`seeds.with_probe`): the engine then reads the probe's values and loads the probe first, and every autoload of the
+  game's still loads. No shape of `project.godot` is refused; `seeds.settings_errors` checks the result as the engine
+  reads it, and what it finds (`seeds.UnsafeSettings`) is a bug of the edit.
 - Refused (`seeds.WrongEngine`, the task INVALID) when `project.godot`'s `config/features` doesn't name 4.7.
 - Deleted with what its plays left outside it (`seeds.forget_saves`, names of the form `TaskProbe.<12 hex>` alone):
   the copy's user data folder, `%APPDATA%\TaskProbe.<hash>`.

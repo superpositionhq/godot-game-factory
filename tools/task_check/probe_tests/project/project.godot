@@ -1,5 +1,6 @@
 ; The probe tests' game: one small scene that holds something for every measure and input the task probe has.
 config_version=5
+autoload/Early="*res://game/early.gd"
 
 [application]
 
@@ -7,6 +8,10 @@ config/name="ProbeTests"
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.7")
 config/quit_on_go_back=false
+
+[autoload]
+
+Order="*res://game/order.gd"
 
 [display]
 
@@ -18,3 +23,14 @@ window/stretch/aspect="expand"
 [rendering]
 
 renderer/rendering_method="forward_plus"
+
+; Lines a game may hold that would stand in for the probe's (seeds.with_probe takes them out): a section written
+; twice, a quoted key, the user data folder turned off.
+[application]
+
+config/use_custom_user_dir=false
+"config/custom_user_dir_name"="ProbeTestsOwn"
+
+[autoload]
+
+"TaskProbe"="*res://game/order.gd"

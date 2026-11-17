@@ -2,6 +2,7 @@
 `out` and `size`, each query with an id of its own; its check reads what the play wrote."""
 
 import math
+import re
 import struct
 
 
@@ -86,6 +87,13 @@ def check_keys(c, found):
     if not ended(c, found, 6.5 + (5 / 30 if not found["rendered"] else 0)):
         return
     probe = found["probe"]
+    c.true("the probe loads first and the game keeps its saved data in the copy's own folder, whatever lines of the "
+           "game's project.godot would stand in for the probe's", re.search(
+               r"^ORDER probe_first=true user_dir=.*[/\\]TaskProbe\.[0-9a-f]{12}\s*$", found["log"], re.M),
+           [line for line in found["log"].splitlines() if line.startswith("ORDER")])
+    c.true("an autoload the game sets before every section still loads, after the probe",
+           re.search(r"^EARLY loaded after_probe=true\s*$", found["log"], re.M),
+           [line for line in found["log"].splitlines() if line.startswith("EARLY")])
     c.eq("the player", probe.get("player"), "Player")
     c.eq("the scene", probe.get("scene"), "res://scenes/Main.tscn")
     c.eq("inputs sent", probe.get("inputs_sent"), 20)

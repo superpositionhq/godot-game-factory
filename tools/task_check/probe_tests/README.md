@@ -16,7 +16,12 @@ The engine is `--godot`, else `GODOT_EDITOR`, else the machine's pinned Godot (`
 The run:
 
 1. copies `project/` to `<work folder>/desktop` and adds the probe as the checker adds it (`seeds.add_probe`): the
-   addon as `addons/task_probe/`, its autoload first in `project.godot`, a user data folder of the copy's own;
+   addon as `addons/task_probe/`, its autoload first in `project.godot`, a user data folder of the copy's own. The
+   project's `project.godot` holds lines a game may hold that would stand in for the probe's (a second `[autoload]`
+   with a quoted `"TaskProbe"`, a second `[application]` that turns the user folder off, an autoload set before every
+   section), and game autoloads (`game/order.gd`, `game/early.gd`) that print whether the probe loaded before them and
+   where the game keeps its saved data: `keys` checks that the probe loaded first, the game's autoloads after it, and
+   the copy's own user data folder;
 2. imports the copy (`--headless --import`), which must log no script error;
 3. runs each play as the checker runs one (`--fixed-fps 30 --disable-vsync --audio-driver Dummy`, the spec after
    `-- -taskProbe`), headless;
