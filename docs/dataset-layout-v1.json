@@ -106,7 +106,7 @@
       "kind": "dir",
       "required": true,
       "in_repo_dataset": false,
-      "what": "the Windows release player (x64): <Project>.exe with what the export puts beside it; a mobile game's (manifest platform.kind mobile) also holds its Android APK (arm64, release), <Project>.apk, when the machine that built the release had the Android toolchain",
+      "what": "the Windows release player (x64): <Project>.exe with what the export puts beside it; a mobile game's (manifest platform.kind mobile) also holds its Android APK (arm64, release), <Project>.apk, which a mobile game's release requires",
       "must_contain": [
         "*.exe"
       ],

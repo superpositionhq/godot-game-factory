@@ -9,7 +9,7 @@
   settings.json; Codex hooks.json + trust), skills, root CLAUDE.md / AGENTS.md, and each game repo's post-commit hook
   (the commit recorder). The Android toolchain (machine\get-android.ps1), piece by piece: the JDK, the Android SDK
   packages, the keystores, the editor settings an export reads. A missing piece of it is a WARN, never a FAIL: mobile
-  games are still made, played, recorded and task-checked; only their APK is skipped.
+  games are still made, played, recorded and task-checked; only their APK is skipped, which their release needs.
   Exit code = number of FAILs. -Json writes the report as JSON too (the only thing this script ever writes).
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File machine\check.ps1
@@ -296,8 +296,8 @@ Try-Check 'Game repos record commits' {
 
 # --- the Android toolchain (machine\get-android.ps1) ----------------------------------------------------------------------
 # Every piece is a WARN when missing: a mobile game is made, played, recorded and task-checked without it, and only
-# the APK step is skipped.
-$apkNote = 'mobile games still work without it, except the APK'
+# the APK step is skipped (its release needs the APK).
+$apkNote = 'mobile games still work without it, except the APK their release needs'
 Try-Check 'Android toolchain (mobile games)' {
     # A mobile game's APK: every piece of the toolchain (lib\ggf-root.ps1 Get-GGFAndroid, what
     # tools\godot-pipeline\build.ps1 asks before its APK step). A WARN, never a FAIL: only a mobile game's release
@@ -305,7 +305,7 @@ Try-Check 'Android toolchain (mobile games)' {
     $parts = @(Get-GGFAndroidParts $cfg)
     $gone = @($parts | Where-Object { -not $_.present })
     if (-not $gone.Count) { Add-Result PASS 'Android toolchain (mobile games)' (@($parts | ForEach-Object { $_.name }) -join ', ') }
-    else { Add-Result WARN 'Android toolchain (mobile games)' "missing: $(@($gone | ForEach-Object { "$($_.name) ($($_.detail))" }) -join '; ')" "only for a mobile game's APK (its release build skips the APK without it): machine\get-android.ps1 (docs/new-machine.md, section 3)" }
+    else { Add-Result WARN 'Android toolchain (mobile games)' "missing: $(@($gone | ForEach-Object { "$($_.name) ($($_.detail))" }) -join '; ')" "only for a mobile game's APK, which its release needs (its release build skips the APK without it): machine\get-android.ps1 (docs/new-machine.md, section 3)" }
     $a = Get-GGFAndroid $cfg
     if (-not $a) { return }
     if ($a.godot -ne $eng.version) { Add-Result WARN 'Android toolchain version' "installed for Godot $($a.godot), the factory pins $($eng.version) (its build template may need other SDK packages)" 'machine\get-android.ps1' }

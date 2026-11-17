@@ -96,7 +96,7 @@ videos, README screenshots and the built player:
   Gameplay/<game>_S<n>.mp4       one video per recorded scenario of the release version (one is enough), game audio included; 1920x1080, or 1080x1920 for a portrait mobile game
   Screenshots/                   the README's hero and gallery
   Build/                         the Windows release player; not in the repo Dataset/
-                                 (a mobile game: also its Android APK, when the release was built with the Android toolchain)
+                                 (a mobile game: also its Android APK, which its release requires)
   manifest.json                  a mobile game's says its platform and orientation
 ```
 

@@ -241,7 +241,7 @@ elseif ($haveRepo) {
 }
 
 # The Android toolchain: only with -Android. Without it a mobile game is still made, played, recorded and task-checked;
-# only its APK is skipped.
+# only its APK is skipped (its release needs the APK).
 if ($haveRepo -and $Android) {
     if ($DryRun) {
         if (Get-GGFAndroid) { Item PASS 'Android toolchain' (Get-GGFAndroidHome) } else { Item TODO 'Android toolchain' 'not installed (dry run)' 'machine\get-android.ps1' }
@@ -255,7 +255,7 @@ if ($haveRepo -and $Android) {
     }
 } elseif ($haveRepo) {
     if (Get-GGFAndroid) { Item PASS 'Android toolchain' (Get-GGFAndroidHome) }
-    else { Item INFO 'Android toolchain' 'not installed: mobile games still work, except the APK' 'setup.ps1 -Android (or machine\get-android.ps1)' }
+    else { Item INFO 'Android toolchain' 'not installed: mobile games still work, except the APK their release needs' 'setup.ps1 -Android (or machine\get-android.ps1)' }
 }
 
 # --- 5. what cannot be scripted -------------------------------------------------------------------------------------------

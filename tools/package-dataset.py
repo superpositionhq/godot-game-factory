@@ -38,7 +38,7 @@ READY; --replay names another):
                               manifest.json replay_verification
     Screenshots/              the images the game's README.md shows, else Docs/screenshots/, else the recordings' stills
     Build/                    the Windows release player (Windows/ of the build, <Project>.exe); a mobile game's APK
-                              beside it, Build/<Project>.apk, when its build made one
+                              beside it, Build/<Project>.apk
     README.md, manifest.json
 
 The game's platform comes from the release commit's Platform.json, read by tools/validate-game.py read_platform and by
@@ -48,10 +48,10 @@ are checked at the phone's size (1920x1080; 1080x1920 for portrait).
 
 Status "complete" and Dataset.zip when Gameplay/ holds a video, ReplayScripts/ is there (a FAIL verdict too) and the
 player is there; "pending", listed in the manifest's pending, and Dataset.pending.zip while ReplayScripts/ is
-missing. A mobile game whose build made no APK (a machine without the Android toolchain) ships the Windows player
-alone, with a warning. A game without a gameplay video is rejected at upload: with no valid recording of the release
-commit nothing is packaged. A game without a player, a pipeline build whose leak scan found anything, a player named
-after another project, and a running pipeline job of the game (its lock in <root>/builds/) refuse the package.
+missing. A game without a gameplay video is rejected at upload: with no valid recording of the release commit nothing
+is packaged. A game without a player, a mobile game without its APK (a pipeline build that made one: the machine's
+Android toolchain, machine/get-android.ps1), a pipeline build whose leak scan found anything, a player named after
+another project, and a running pipeline job of the game (its lock in <root>/builds/) refuse the package.
 
 Every text file of the delivery is scrubbed (studio and tool names, agent, model and provider names, the account and
 machine name, e-mail addresses, git identities, the build machine's session folders and ids) and then scanned: a name
@@ -1836,6 +1836,24 @@ def package(args):
         if later:
             warnings.append(f'Build/{player} was built before {len(later)} commit(s) that changed the game (the latest: '
                             f'{later[0][0][:8]} "{later[0][2][:60]}"): build the release commit before packaging')
+    # a mobile game's release ships its APK: the one the pipeline build of the player made (build_info.json apk, read
+    # back there from the APK itself). Without it nothing is packaged.
+    apk_src = None
+    if orientation and player:
+        made = (build_info or {}).get('apk') or {}
+        if made.get('status') == 'ok':
+            apk_src = os.path.join(os.path.dirname(build), str(made.get('file') or '').replace('\\', os.sep))
+            if not os.path.isfile(lp(apk_src)):
+                problems.append(f'error: {apk_src} is missing, the APK build_info.json names: build the release commit again')
+            elif sha256_file(apk_src) != made.get('sha256'):
+                problems.append(f'error: {apk_src} is not the APK build_info.json describes (its sha256 differs): build the '
+                                'release commit again')
+        else:
+            why = (str(made.get('reason')) if made.get('status') == 'skipped' else
+                   'the player is not a pipeline build' if build_info is None else 'its build made none')
+            problems.append(f'error: a mobile game is released with its Android APK, and this build has none ({why}): set up '
+                            'this machine\'s Android toolchain (machine/get-android.ps1), build the release commit again '
+                            f'(tools/godot-pipeline/build.ps1 {game} -Commit {sha[:8]}) and package again')
     ffprobe = find_ffprobe()
     exclude_runs = {s.strip() for s in args.exclude_runs.split(',') if s.strip()}
     runs, skipped_runs = gameplay_runs(root, game, sha, exclude_runs, ffprobe,
@@ -2028,24 +2046,14 @@ def package(args):
             full = os.path.join(d, f)
             copy_file(full, os.path.join(stage, 'Build', os.path.relpath(full, lp(build))))
             n_build += 1
-    # a mobile game's APK, from the pipeline build that made the player (build_info.json apk, read back there from the
-    # APK itself); a build made on a machine without the Android toolchain has none, and the delivery says so
+    # a mobile game's APK, checked above: beside the Windows player
     apk = None
-    if orientation:
-        made = (build_info or {}).get('apk') or {}
-        apk_src = (os.path.join(os.path.dirname(build), str(made.get('file') or '').replace('\\', os.sep))
-                   if made.get('status') == 'ok' else None)
-        if apk_src and os.path.isfile(lp(apk_src)):
-            if sha256_file(apk_src) != made.get('sha256'):
-                raise Refused(f'{apk_src} is not the APK build_info.json describes (its sha256 differs): build the release commit again')
-            apk = {'apk': os.path.basename(apk_src), **{k: made[k] for k in ('package', 'version_code', 'version_name', 'min_sdk', 'target_sdk')}}
-            copy_file(apk_src, os.path.join(stage, 'Build', apk['apk']))
-            n_build += 1
-            step(f'build: the APK {apk["apk"]} ({apk["package"]}, minSdk {apk["min_sdk"]}, targetSdk {apk["target_sdk"]})')
-        else:
-            warnings.append('a mobile game without its APK: ' + (str(made.get('reason')) if made.get('status') == 'skipped' else
-                            'the player is not a pipeline build that made one') + '. Build/ holds the Windows player alone; build the '
-                            'release commit on a machine with the Android toolchain (tools/godot-pipeline/build.ps1) and package again')
+    if apk_src:
+        made = build_info['apk']
+        apk = {'apk': os.path.basename(apk_src), **{k: made[k] for k in ('package', 'version_code', 'version_name', 'min_sdk', 'target_sdk')}}
+        copy_file(apk_src, os.path.join(stage, 'Build', apk['apk']))
+        n_build += 1
+        step(f'build: the APK {apk["apk"]} ({apk["package"]}, minSdk {apk["min_sdk"]}, targetSdk {apk["target_sdk"]})')
 
     # ---- Tasks ----
     step(f'tasks: {len(task_files)} from Tasks/ on {tasks_at[0]} ({tasks_at[1][:12]})')
@@ -2680,9 +2688,7 @@ def dataset_readme(c, repo):
         a.append('- `Gameplay/` — videos of the recorded scenarios, played through with the game audio. *(pending)*')
     if not repo:
         a.append(f'- `Build/` — the Windows release player (`Build/{c["exe"]}`)'
-                 + (f' and the Android APK (`Build/{c["apk"]["apk"]}`, arm64, package `{c["apk"]["package"]}`).' if c.get('apk') else
-                    '; the Android APK is not in this delivery (it was built on a machine without the Android toolchain).'
-                    if c.get('orientation') else '.'))
+                 + (f' and the Android APK (`Build/{c["apk"]["apk"]}`, arm64, package `{c["apk"]["package"]}`).' if c.get('apk') else '.'))
     a += ['- `Screenshots/` — the images in this README.', '- `manifest.json` — path, size and sha256 of every file, and the release metadata.', '',
           'Keep these files and folders together.', '', '## Play the game', '']
     if repo:

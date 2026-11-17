@@ -337,7 +337,7 @@
       "commit equals the last commit in git.log and report.json final_commit",
       "variant full: build is an object; repo-dataset: build is null",
       "platform is absent or {kind desktop} for a desktop game, {kind mobile, orientation landscape or portrait} for an Android phone game, as GodotProject/Platform.json says (full variant; no file is a desktop game)",
-      "a mobile game's build may name its apk, then with package, version_code, version_name, min_sdk (at least 26) and target_sdk (at least 34), the file Build/<apk> in files[] and the package com.<project in lower case>.game; without it the delivery holds the Windows player alone (a warning); a desktop game's build names none of them"
+      "a mobile game's build names its apk with package, version_code, version_name, min_sdk (at least 26) and target_sdk (at least 34), the file Build/<apk> in files[] and the package com.<project in lower case>.game; a mobile game's delivery without its APK is an error; a desktop game's build names none of them"
     ],
     "workflow": [
       "every line is one JSON object matching the row schema",

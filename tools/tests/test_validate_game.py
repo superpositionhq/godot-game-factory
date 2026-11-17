@@ -1751,8 +1751,12 @@ class Mobile(unittest.TestCase):
         held = '{"platform": "mobile", "orientation": "portrait"}'
         self.assertEqual(self.platform(dict(mobile, build=dict(self.APK, exe='Build/KilnRun.exe')), held), ([], []))
         found, warned = self.platform(mobile, held)
-        self.assertEqual(found, [])
-        self.assertIn('without its APK', warned[0])
+        self.assertEqual(warned, [])
+        self.assertEqual(found, ['a mobile game without its APK in Build/: a mobile game is released with its Android APK; '
+                                 "set up the machine's Android toolchain (machine/get-android.ps1, docs/new-machine.md "
+                                 'section 3), build the release commit again (tools/godot-pipeline/build.ps1) and package '
+                                 'again'])
+        self.assertEqual(self.platform(dict(mobile, variant='repo-dataset', build=None), held), ([], []))   # no Build/ there
         self.assertIn('there is no GodotProject/Platform.json', self.platform(mobile)[0][0])
         self.assertIn('says mobile, landscape', self.platform(mobile, held.replace('portrait', 'landscape'))[0][0])
         self.assertIn('says its orientation', self.platform({'platform': {'kind': 'mobile'}}, held)[0][0])
@@ -2016,7 +2020,7 @@ class Dataset(Base):
 
     def test_a_mobile_dataset(self):
         """A mobile game's dataset: Platform.json in GodotProject/, the platform in the manifest, the APK beside the
-        Windows player; without the APK a warning."""
+        Windows player; without the APK the dataset is invalid; a desktop dataset names none."""
         def mobile(m, ds, apk=True):
             write(ds, 'GodotProject/Platform.json', '{"platform":"mobile","orientation":"portrait"}\n')
             m['platform'] = {'kind': 'mobile', 'orientation': 'portrait'}
@@ -2025,10 +2029,9 @@ class Dataset(Base):
                 m['build'].update(apk='KilnRun.apk', package='com.kilnrun.game', version_code=1, version_name='1.0',
                                   min_sdk=26, target_sdk=34)
         self.assertEqual(self.said(mobile), [])
-        rep = vg.Report()
-        vg.check_dataset(rep, self.make_zip(lambda m, ds: mobile(m, ds, apk=False)), 'dataset')
-        self.assertEqual(errors(rep), [])
-        self.assertTrue(any('a mobile game without its APK in Build/' in m for s, a, m in rep.items if s == 'warning'))
+        self.assertEqual([m[:43] for m in self.said(lambda m, ds: mobile(m, ds, apk=False))],
+                         ['a mobile game without its APK in Build/: a '])
+        self.assertEqual(self.said(lambda m, ds: None), [])   # desktop: nothing of an APK
 
     def test_the_manifests_platform_is_the_projects(self):
         def said_desktop(m, ds):

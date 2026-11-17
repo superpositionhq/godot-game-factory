@@ -166,10 +166,9 @@ player as the product, the rule here is the one that applies.
   machine with the toolchain, the APK; it reads the APK back and refuses one that is not arm64 alone, at the SDK
   levels and with the package name above. On a machine without the Android toolchain the APK step is skipped and
   says so: that is not a failure of your game, and everything else (plays, AutoPlay, recordings, the task check)
-  works without it. Never install Android tools yourself or change the preset to get an APK; tell the coordinator
+  works without it; only the release needs the APK, and the packager refuses a mobile game without one. Never install Android tools yourself or change the preset to get an APK; tell the coordinator
   (or the person) that the machine lacks the toolchain.
 - The scenario videos are recorded from the Windows player at the phone's size. The dataset's manifest says
-  `"platform": {"kind": "mobile", "orientation": "..."}`, and its `Build/` holds the Windows player and, when it was
-  built, the APK.
+  `"platform": {"kind": "mobile", "orientation": "..."}`, and its `Build/` holds the Windows player and the APK.
 - `tools/validate-game.py` reads `Platform.json` and holds a mobile game to this skill's project settings (rule
   `mobile`).

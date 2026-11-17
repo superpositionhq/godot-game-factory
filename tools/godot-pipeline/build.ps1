@@ -16,7 +16,8 @@
   on this PC at the phone's size, and its Android APK (arm64, release) in Android\<Project>.apk, exported with the
   game's "Android" preset and read back with the SDK's aapt2. The APK step needs the machine's Android toolchain
   (machine\check.ps1 says whether the machine has it, docs\new-machine.md how to install it); without it the step is
-  skipped, build_info.json says so (apk.status "skipped") and the build is still ok.
+  skipped, build_info.json says so (apk.status "skipped") and the build is still ok: it can be played, recorded and
+  task-checked, but tools/package-dataset.py refuses to release a mobile game from it.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)][string]$Game,
@@ -167,7 +168,7 @@ try {
         if (-not $toolchain) {
             $why = if ($NoAndroid) { '-NoAndroid' } else { 'this machine has no Android toolchain (machine\get-android.ps1 installs it; docs/new-machine.md)' }
             $apk = [ordered]@{ status = 'skipped'; reason = $why }
-            Write-Step "APK: skipped, $why. The Windows player is built and can be recorded; build again on a machine with the Android toolchain for the APK"
+            Write-Step "APK: skipped, $why. The Windows player is built and can be recorded; a release needs the APK: build again on a machine with the Android toolchain before packaging"
         } else {
             New-Item -ItemType Directory -Force $apkDir | Out-Null
             $apkPath = Join-Path $apkDir "$projectName.apk"

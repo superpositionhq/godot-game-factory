@@ -796,42 +796,43 @@ class Mobile(unittest.TestCase):
         vg.check_dataset(rep, os.path.join(inp['repo'], 'Dataset.zip'), 'dataset')
         self.assertEqual(base.errors(rep), [])
 
-    def test_a_build_without_the_android_toolchain_ships_the_player_alone(self):
+    def refused(self, r):
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn('thing(s) missing; nothing was written', r.stdout + r.stderr)
+        self.assertEqual([f for f in os.listdir(self.inp['repo']) if f.startswith('Dataset') and f.endswith('.zip')], [])
+        self.assertFalse(os.path.exists(os.path.join(self.inp['repo'], '.dataset')))
+
+    def test_a_build_without_the_android_toolchain_refuses_the_release(self):
         inp = self.inp = make_inputs(self.tmp, orientation='landscape')
         pipeline_build(inp, inp['head'], apk='skipped')
         replay(inp, inp['head'], passed=True)
-        r = run(inp, '--no-repo-dataset', build=False)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn('a mobile game without its APK: this machine has no Android toolchain. Build/ holds the Windows player '
-                      'alone', r.stdout + r.stderr)
-        mem = self.members('Dataset.zip')   # complete: the APK is never a reason for pending
-        m = json.loads(mem['manifest.json'])
-        self.assertEqual((m['platform'], m['status'], m['pending']), ({'kind': 'mobile', 'orientation': 'landscape'}, 'complete', []))
-        self.assertNotIn('apk', m['build'])
-        self.assertEqual(m['build']['exe'], 'Build/KilnRun.exe')
-        self.assertNotIn('Build/KilnRun.apk', mem)
-        readme = mem['README.md'].decode()
-        self.assertIn('the Android APK is not in this delivery (it was built on a machine without the Android toolchain)', readme)
-        self.assertIn('(1920x1080, 60 fps', readme)
-        self.assertNotIn('adb install', readme)
+        r = run(inp, build=False)
+        self.refused(r)
+        self.assertIn("error: a mobile game is released with its Android APK, and this build has none (this machine has no "
+                      "Android toolchain): set up this machine's Android toolchain (machine/get-android.ps1), build the "
+                      f"release commit again (tools/godot-pipeline/build.ps1 {SLUG} -Commit {inp['head'][:8]}) and package "
+                      'again', r.stdout)
 
-    def test_the_sessions_own_player_has_no_apk(self):
-        # Scripts/godot.ps1 build: a player with no build record, so no APK is named and the warning says why
+    def test_the_sessions_own_player_refuses_the_release(self):
+        # Scripts/godot.ps1 build: a player with no build record, so no APK of the release
         inp = self.inp = make_inputs(self.tmp, orientation='landscape')
-        r = run(inp, '--no-repo-dataset', '--no-zip')
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn('a mobile game without its APK: the player is not a pipeline build that made one', r.stdout + r.stderr)
-        m = json.loads(base.read(os.path.join(inp['repo'], '.dataset', SLUG, 'manifest.json')))
-        self.assertEqual((m['pending'], m['build']['exe']), (['ReplayScripts'], 'Build/KilnRun.exe'))
-        self.assertNotIn('apk', m['build'])
+        r = run(inp, '--no-repo-dataset')
+        self.refused(r)
+        self.assertIn('error: a mobile game is released with its Android APK, and this build has none (the player is not a '
+                      'pipeline build)', r.stdout)
+        self.assertIn('this build has none', run(inp, '--dry-run').stdout)   # a dry run says it too
 
     def test_an_apk_that_is_not_the_builds_refuses(self):
         inp = self.inp = make_inputs(self.tmp, orientation='landscape')
         d = pipeline_build(inp, inp['head'], apk='ok')
         base.write(d, 'Android/KilnRun.apk', APK + b'x')
         r = run(inp, '--no-repo-dataset', '--no-zip', build=False)
-        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.refused(r)
         self.assertIn('is not the APK build_info.json describes (its sha256 differs)', r.stdout + r.stderr)
+        os.remove(os.path.join(d, 'Android', 'KilnRun.apk'))
+        r = run(inp, '--no-repo-dataset', '--no-zip', build=False)
+        self.refused(r)
+        self.assertIn('KilnRun.apk is missing, the APK build_info.json names: build the release commit again', r.stdout)
 
     def test_a_recording_at_another_size_is_not_taken(self):
         inp = self.inp = make_inputs(self.tmp, orientation='portrait', recorded=False)
@@ -845,16 +846,17 @@ class Mobile(unittest.TestCase):
     def test_the_video_is_probed_at_the_phones_size(self):
         # a bundle that says nothing of its video's size: the video itself is measured
         inp = self.inp = make_inputs(self.tmp, orientation='portrait', recorded=False)
+        pipeline_build(inp, inp['head'], apk='ok')   # the release's APK: only the video is wanting
         run_id = bundle(inp, inp['head'], 1, '20990101-000100', held='landscape')
         mp = os.path.join(inp['root'], 'recordings', SLUG, run_id, 'metadata.json')
         meta = json.loads(base.read(mp))
         del meta['video']
         base.write(os.path.dirname(mp), 'metadata.json', json.dumps(meta))
-        r = run(inp, '--dry-run')
+        r = run(inp, '--dry-run', build=False)
         self.assertEqual(r.returncode, 2)
         self.assertIn(f"recording {run_id} not taken: gameplay.mp4 is not the layout's video (video h264 1920x1080)", r.stdout)
         good = bundle(inp, inp['head'], 1, '20990101-000200')
-        r = run(inp, '--dry-run')
+        r = run(inp, '--dry-run', build=False)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn(f'would take Gameplay/{SLUG}_S1.mp4 from {good}', r.stdout)
 

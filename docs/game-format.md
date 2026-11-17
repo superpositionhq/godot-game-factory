@@ -182,7 +182,7 @@ platform from it through one reader, `tools/validate-game.py` (`read_platform`; 
   the Android APK (arm64) where the machine has the Android toolchain; the videos are the phone's size
   ([godot-pipeline.md](godot-pipeline.md)).
 - **the packager** writes `"platform": {"kind": "mobile", "orientation": ...}` in the dataset's manifest, takes
-  videos of the phone's size and puts the APK in `Build/` when the build made one.
+  videos of the phone's size and puts the APK in `Build/`; it refuses a mobile game whose build has no APK.
 
 A file that says anything else is an error, never read as a desktop game. Nothing here changes for a desktop game.
 
@@ -224,14 +224,14 @@ while an entry is missing, see "Complete vs pending" below):
 | `ReplayScripts/` | yes | the creation replayed headless, with `Verification/report.json` (required for complete; its verdict PASS or FAIL is metadata) |
 | `Gameplay/<game>_S<n>.mp4` | yes | at least one scenario video of the release version (one recorded scenario is enough; videos of other scenarios already recorded may be included), 1920x1080 h264 + aac (a mobile game held upright: 1080x1920) |
 | `Screenshots/` | yes | the README's images |
-| `Build/` | no | the Windows release player (x64), `<Project>.exe`; a mobile game's also holds its Android APK (`<Project>.apk`, arm64) when the machine that built the release had the Android toolchain |
+| `Build/` | no | the Windows release player (x64), `<Project>.exe`; a mobile game's also holds its Android APK (`<Project>.apk`, arm64), which its release requires |
 | `manifest.json` | yes | metadata, `history`, `brief`, `tasks`, `build`, a mobile game's `platform`, and path / bytes / sha256 of every file except the content-addressed `History/lfs/objects/` |
 
 `manifest.json` says what a mobile game is: `"platform": {"kind": "mobile", "orientation": "landscape"}` or
 `"portrait"`, which the validator holds equal to `GodotProject/Platform.json`; a manifest without `platform` is a
-desktop game's. `build` names the Windows player (`exe`) and, for a mobile game whose build made one, the APK: `apk`
-(its file name in `Build/`) with `package`, `version_code`, `version_name`, `min_sdk` and `target_sdk`. A mobile game
-delivered without its APK is a warning.
+desktop game's. `build` names the Windows player (`exe`) and, for a mobile game, the APK: `apk` (its file name in
+`Build/`) with `package`, `version_code`, `version_name`, `min_sdk` and `target_sdk`. A mobile game delivered without
+its APK is an error.
 
 **The history is rewritten for delivery** (the game repos are not changed): authors and committers become `dev_NN`,
 agent trailer lines go, the scrub rules apply to every message and text blob. Commit ids therefore differ from the
@@ -296,9 +296,8 @@ history); it sees only the brief and that snapshot. The grader's half never reac
 **Complete vs pending.** `status` is `complete` when every entry is there, `ReplayScripts/` with its
 `Verification/report.json` included; `pending` while an entry is missing and listed in `pending` (the zip is then
 `Dataset.pending.zip`): `ReplayScripts/` while the creation replay is missing. `Build/` is never pending: a mobile
-game whose build machine had no Android toolchain ships its Windows player alone, with a warning
-(`machine/get-android.ps1` installs the toolchain; then `tools/godot-pipeline/build.ps1 <slug> -Force` and package
-again). A game without a gameplay video is rejected at upload: a delivered zip that lists `Gameplay/` as pending is an error, and the
+game is released with its APK, and the packager refuses one whose build has none (`machine/get-android.ps1` installs
+the Android toolchain; then `tools/godot-pipeline/build.ps1 <slug> -Force` and package again). A game without a gameplay video is rejected at upload: a delivered zip that lists `Gameplay/` as pending is an error, and the
 packager refuses a release without a recording. The replay is required but need not pass: a FAIL verdict is metadata,
 like a gameplay run's result: manifest `replay_verification.pass` false (equal to the report's `verdict.pass`) and the
 README says FAIL. The packager writes the complete `Dataset.zip` once the release has a gameplay video, its replay and

@@ -16,7 +16,7 @@
 # user.direction is written as the user's row (params {"direction": "...", "via": "..."}).
 # `build` runs `import` first (a project whose scripts do not parse is never exported), then exports the Windows
 # player to Build/Windows/__PROJECT__.exe (one file) and logs a build.player row. -Android (a mobile game) also exports Build/Android/__PROJECT__.apk when this machine has the Android toolchain
-# (machine\get-android.ps1); without it the APK is skipped by name and the Windows build is the result.
+# (machine\get-android.ps1); without it the APK is skipped by name and the Windows build is the result (a release needs the APK).
 # `play` runs the project from source, rendered, at the game's exact frame size (1920x1080; a portrait mobile game
 # 1080x1920, whatever the window shows), and stops it after -Seconds. -Shots n saves n evenly spaced PNG frames of
 # those seconds to Logs/godot-ps1/<tag>/ and the game then quits by itself.
@@ -451,7 +451,7 @@ switch ($Mode) {
       $toolchain = Set-GGFAndroidEnv   # JAVA_HOME, ANDROID_HOME, GRADLE_USER_HOME and the keystores, for this run only
       if (-not $toolchain) {
         $why = 'this machine has no Android toolchain (missing: ' + ((@(Get-GGFAndroidParts | Where-Object { -not $_.present } | ForEach-Object { $_.name })) -join ', ') + '; machine\get-android.ps1 installs it)'
-        Write-Host "APK skipped: $why. The Windows build is the result."
+        Write-Host "APK skipped: $why. The Windows build is the result; a release needs the APK."
         $p['apk'] = [ordered]@{ status = 'skipped'; reason = $why }
       } else {
         $logA = Join-Path $Logs 'build_android.log'

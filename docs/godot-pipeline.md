@@ -77,7 +77,7 @@ the log to `Logs/godot-ps1/` and prints the lines that matter (script errors, `[
 | `import` | `--headless --import`, then every `.gd` of the project loaded once (`--headless --script`; the import alone parses only the scripts the editor opens); fails on a script that does not parse or compile: this is "the project compiles" | no |
 | `step -Script steps/<x>.gd -Reason "..."` | one committed generator script, headless (`--headless --script`), with its `workflow.jsonl` row (op `editor.step`, the script and the sha256 of its text as it ran) | no |
 | `row -Op <op> -Target <t> -Reason "..." [-Params '<json>'] [-Direction <id>]` | one `workflow.jsonl` row for work done by hand (a scene written, a script edited, a setting changed) | no |
-| `build [-Android] [-Reason "..."]` | `import` first (both passes; a project whose scripts do not parse is never exported), then `--headless --export-release "Windows Desktop" Build/Windows/<Project>.exe`; with `-Android` (a mobile game) also `Build/Android/<Project>.apk` when the machine has the toolchain, else the APK is skipped by name; one `build.player` row | no |
+| `build [-Android] [-Reason "..."]` | `import` first (both passes; a project whose scripts do not parse is never exported), then `--headless --export-release "Windows Desktop" Build/Windows/<Project>.exe`; with `-Android` (a mobile game) also `Build/Android/<Project>.apk` when the machine has the toolchain, else the APK is skipped by name (a release needs it); one `build.player` row | no |
 | `play [-Scenario <n>] [-Seconds 60] [-Shots <n>] [-Extra "..."] [-Tag <name>]` | the project from its source, rendered at the game's exact frame size (`-size`), with `-scenario <n>` when `-Scenario` is given; `-Shots n` saves n evenly spaced PNG frames to `Logs/godot-ps1/<tag>/`; stopped after `-Seconds` | yes |
 | `autoplay [-Scenario <n>] [-MaxSeconds 120] [-Seed 0] [-Skill 1] [-Audible] [-Extra "..."]` | the built player as a recording runs it (the AutoPlay drop-in), in real time and without a movie: the bot plays scenario n for at most `-MaxSeconds`, starting at once, on a Windows desktop of its own (nothing on the screen; muted unless `-Audible`); the run's files go to `Logs/autoplay/<time>_s<n>/`, which `tools/godot-pipeline/validate-run.ps1 <folder>` checks | yes |
 
@@ -199,8 +199,8 @@ Dynamic guards on top of the counts:
    `Android\<Project>.apk!<file>`), then the copy is removed. The APK step needs the machine's Android toolchain
    (`Get-GGFAndroid`; `machine\check.ps1` reports it, [new-machine.md](new-machine.md) says how to install it): on a
    machine without it, or with `-NoAndroid`, the step is skipped with a line that says so, `build_info.json` holds
-   `apk {status: "skipped", reason}` and the build is ok, so the game can still be recorded; build the release
-   commit again on a machine with the toolchain for the APK.
+   `apk {status: "skipped", reason}` and the build is ok, so the game can still be recorded; the packager refuses a
+   mobile game's release from that build, so build the release commit again on a machine with the toolchain.
 8. The AutoPlay drop-in's version (the `VERSION` constant of the game's `addons/autoplay/autoplay.gd`, null without
    one) goes into the row: `record.ps1` refuses a build without it.
 
@@ -450,8 +450,8 @@ of the videos: 1920x1080, or 1080x1920 for a mobile game held portrait.
   refuses the package. The build's `Windows\` folder goes to `Build/`. Without a pipeline build the packager takes
   `<repo>\Build\Windows` (`Scripts\godot.ps1 build`; a warning when a commit after the build changed the game). A game
   without a player refuses the package. A mobile game's APK comes from the same build (`Android\<Project>.apk`, named
-  by `build_info.json` `apk`, its sha256 checked) and goes in as `Build/<Project>.apk`; a build that skipped it (no
-  Android toolchain) gives a delivery without the APK and a warning.
+  by `build_info.json` `apk`, its sha256 checked) and goes in as `Build/<Project>.apk`; a mobile game whose build has no APK (one that skipped it, or
+  `Scripts\godot.ps1 build`'s player) refuses the package.
 - **The videos.** Per scenario, the first valid recording of the release commit ([Bundle](#bundle)):
   `recordings\<slug>\<run>\` with `validation.json` `ok` or `warn`, no `FAILED` or `INVALID`, and `metadata.json`
   `build.commit` the release commit. Its `gameplay.mp4` goes in as `Gameplay/<slug>_S<n>.mp4`, checked with the
@@ -482,7 +482,7 @@ what would go in and what is missing. What it packs:
 | `Gameplay/<slug>_S<n>.mp4` | the videos above |
 | `ReplayScripts/` | the replay above |
 | `Screenshots/` | the images the game's `README.md` shows, else the project's `Docs/screenshots/`, else up to four stills of the recordings taken |
-| `Build/` | the player above; a mobile game's APK beside it, when its build made one |
+| `Build/` | the player above; a mobile game's APK beside it |
 | `README.md`, `manifest.json` | written by the packager (`--version` gives the release version); a mobile game's manifest says `"platform": {"kind": "mobile", "orientation": ...}` (from the release commit's `Platform.json`) and names the APK in `build` (`apk`, `package`, `version_code`, `version_name`, `min_sdk`, `target_sdk`), and its README says what the game is made for |
 
 Every text file of the delivery is scrubbed (the studio and tool names, agent, model and provider names, the account

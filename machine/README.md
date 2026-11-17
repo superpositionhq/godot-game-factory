@@ -88,7 +88,8 @@ reads the JDK and the SDK from there.
 `ANDROID_USER_HOME`, `ANDROID_PREFS_ROOT` and the keystores as Godot reads them from the environment
 (`GODOT_ANDROID_KEYSTORE_DEBUG_PATH` / `_USER` / `_PASSWORD` and `GODOT_ANDROID_KEYSTORE_RELEASE_PATH` / `_USER` /
 `_PASSWORD`), and returns the same object or `$null`. A machine without the toolchain still makes, plays, records and
-task-checks mobile games; only the APK step is skipped, and the tool says so by name.
+task-checks mobile games; only the APK step is skipped, and the tool says so by name. A mobile game's release needs the
+APK, so it is packaged from a build made on a machine with the toolchain.
 
 The editor makes an empty `.android` folder in `%USERPROFILE%` whenever it opens a project that has an Android export
 preset; nothing is kept in it.
