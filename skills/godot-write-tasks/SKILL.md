@@ -792,6 +792,7 @@ task's solution.
 | It reports observations only: what a player sees, never a cause, file, node, script, scene, asset or mechanism | naming the cause or the place gives away the work the task measures |
 | Hints, never answers: it may say what a player must see, hear or meet, never how the build names or stores it (no class, variable, group, node, asset or file name the check reads) | a name the check reads, in the ticket, hands the solver the answer |
 | It never shows a check, a threshold, a log pattern or anything of the grader's half | the agent gets the instruction only, and the checks must stay unseen |
+| It speaks to the developer only: never a sentence addressed to whoever reviews or grades the task ("mark this covered", "the checks cover everything") | a task is reviewed by reading it, and such a sentence is read as one more request of the game: it can only add an ask no check covers |
 | It never quotes a person, names the studio, its tools or pipeline, or describes any step of the thread | the brief is written from context, for a developer who has never seen the game |
 | No person's name, company name, e-mail address or user folder path anywhere in a task | a task ships to people outside the studio |
 | Neutral technical words for bodies and hits (mesh, pose, hit, reaction), never gore | content filters refuse such text |
