@@ -209,12 +209,13 @@ mouse_filter = 2
 text = "FIRE 0"
 
 [node name="MoveStick" type="Control" parent="HUD"]
-anchors_preset = 2
+anchor_left = 0.135
 anchor_top = 1.0
+anchor_right = 0.135
 anchor_bottom = 1.0
-offset_left = 60.0
+offset_left = -100.0
 offset_top = -460.0
-offset_right = 460.0
+offset_right = 100.0
 offset_bottom = -60.0
 mouse_filter = 2
 script = ExtResource("3")

@@ -773,6 +773,7 @@ def check_frame(c, found):
 PLAYS = {
     "keys": {"check": check_keys},
     "touch": {"check": check_touch, "twice": True},
+    "touch_drawn": {"check": check_touch, "spec": "touch", "rendered": True},
     "second": {"check": check_second, "twice": True},
     "captions": {"check": check_captions},
     "contact": {"check": check_contact, "twice": True},
