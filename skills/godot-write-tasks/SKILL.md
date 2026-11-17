@@ -250,7 +250,16 @@ lit lamp looks), and give it its own probe.
 - **feature / change**: a producer's ticket: what and why, how the player uses it (which key, or which touch on a
   mobile game), the behaviours and looks wanted, what must still work. Close with the art bar: the project's own
   assets and engine features, no primitive placeholder shapes, no debug text.
-- Describe the controls the player needs; the harness tells the agent which scene QA plays (`play_scene`).
+- Describe the controls the player needs; the harness tells the agent which scene QA plays (`play_scene`). Where the
+  game starts on a title screen or a menu, say how a player gets in (the start control, by the text it shows), or
+  state the scene QA plays from (section 4).
+- **Say what QA's plays do to the game, where it matters**, in the instruction's note on how QA played it: a play
+  steps the game at a fixed 30 frames a second (`delta` 1/30), faster than real time, but a play that listens for
+  sound, which runs at real time; it may put the player at a spot or set up a contact (a foe held in front, a hit
+  through the game's damage method); it ends by closing the window, as a player does; every play starts with no
+  saved data but one that runs after the plays that saved it. Game logic driven by the wall clock, or state that doesn't follow a
+  player put elsewhere, behaves differently under these: say so where the task touches it, and give the checks
+  windows that allow for it (section 5).
 - Never name the studio, its pipeline or its tools. Never describe the fix or any step of the thread.
 
 ## 4. `play_scene` and `play_args`
@@ -270,6 +279,13 @@ project's main scene (a project path, `"play_scene": "res://scenes/Harbor.tscn"`
   exist there and at `seed.reference`. Every grader play uses them (boots, idle and drive, and a judge's own plays:
   its route, its before and reference plays). What a play does to the game, and the rules for the arguments (their
   form, the flags a task can't set), are in docs/task-probes.md. A play never chooses a renderer or a frame size.
+- **A play does what a player must do to reach the state it probes.** Where the start scene is a title screen or a
+  menu, every play that checks something in the level first gets past it as a player does. A play clicks a control by
+  its node name (a `widget` click, or a touch on `{"widget": ...}`) only when that control exists at `seed.commit`,
+  and then gives the game time to change scene. For a start control the thread creates, whose name only the
+  reference has, the instruction states the scene QA plays (`play_scene`, or the `play_args` that start it): the
+  probe clicks by name or class, not yet by on-screen text. Never a shortcut only the reference has (a flag, a debug
+  key, a scene the fix added).
 - Check in the task check's screenshots and `track` that the reference's plays really start where the issue shows.
 
 The plays also need to know which node is the player (for `player` measures, teleports, a `near` around the
@@ -328,10 +344,11 @@ clearly, fits the style, looks like the thing it is meant to be) gets its own ru
 required `judge` named `looks_as_asked`, with `"before": true` and `"reference": true` when the seed has a reference.
 A judge can misread screenshots, so word each item concretely, decidable from the screenshots alone, so the unchanged
 game scores 0 on it and any solution that meets the brief scores 1. What must still look as it did goes in a required
-judge in `still_works` the same way. A judge is shown screenshots of the idle `look` and the `drive` on the task's
-start scene and nothing else, unless the check names its own plays. When what must be seen appears only after a
-task-specific key, in another scenario or scene, or past a title screen, give the check `plays`: up to 4 task plays
-that reach that state (when a probe's play already does, reuse it under its name, written identically):
+judge in `still_works` the same way. **Every judge names plays of its own** (`plays`: up to 4 task plays) that show
+each of its rubric items at the moment it can be seen: past a title screen, after the task's own key, in its scenario
+or scene (when a probe's play already reaches it, reuse it under its name, written identically); a judge without them
+sees only the idle `look` and the `drive` of the start scene. One subject per judge; no rubric item about "every
+screen" unless its plays open every screen; no empty criterion such as "shows what the ticket asks":
 
 ```json
 {"name": "looks_as_asked", "kind": "judge", "required": true, "needs": ["boots_clean"], "before": true,
@@ -345,7 +362,8 @@ that reach that state (when a probe's play already does, reuse it under its name
 ```
 
 The judge is shown 5 screenshots of each play, at 10, 30, 50, 70 and 90% of its `seconds`: time the inputs so the
-state is on screen at those moments. A play also runs on the task's start (`"before": true`) and on the reference
+state is on screen at those moments. A window or a frame is in play time, which runs faster than the wall clock
+(section 3): time it from what the plays recorded, never from real seconds. A play also runs on the task's start (`"before": true`) and on the reference
 (`"reference": true`), so it must run there too; a key that does nothing at the start is fine
 ([docs/task-probes.md](../../docs/task-probes.md)).
 
@@ -386,6 +404,12 @@ looks up and a positive yaw turns left.
   shows in the reader's checks. Of two writers, one names the other in its own `after`. A writer saves during its
   play, or when the game is closed (`NOTIFICATION_WM_CLOSE_REQUEST`, `_exit_tree`): a play ends that way
   (docs/task-probes.md, 1.1).
+- **A play keeps its own preconditions true.** No input on the frame the game resets a state (a key at a
+  scenario's, a scene's or a shift's start lands while it resets: send it a few seconds in). A teleport moves the
+  player alone: never teleport past what the game moves with the player or holds it to (a carried object, a tether,
+  a signal's range, any limit the instruction gives); walk or drive there instead.
+- **A play never repeats an action that already happened.** A second click on Continue or Retry after the first
+  worked finds no button (it is gone) and is a miss in `inputs_missed`: each click once, while its control is there.
 - **Touches.** `{"t": 2.0, "tap": <spot>, "hold": s, "finger": n}` puts a finger down at the spot and lifts it (after
   `hold` seconds: a long press, a button kept down); `{"t": 2.0, "drag": [<spot>, <spot>, ...], "over": s, "hold": s,
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
@@ -462,10 +486,17 @@ Write probes from the game's own code at `seed.commit`: the real classes, groups
 and `Control` names. **Never a name only the reference has** (a class, group, node, scene or asset the thread itself
 created): another fair build names it otherwise and reads as absent. Select what the thread creates by
 what it does or where it is (`has`, `near`, `ui` with a `rect` or text); `validate-game.py` refuses a required
-probe that names something the start lacks and the reference has. **Test the outcome a player
-sees, never the implementation**: another valid fix must
+probe that names something the start lacks and the reference has. **Select by what the thing is, never by where the
+old one was**: no `near` around the start's place for something the task asks to move (a camera that must stand
+further back leaves the sphere around its old place); `near` only around a place the task doesn't change. **Test the
+outcome a player sees, never the implementation**: another valid fix must
 pass ("the hero stands on ground", "the stone breaks the wall piece it hits", "the lap count shows the lap the boat is
-on", not "spawn_height is 0.92" or "the function was changed"). `describe` says the assertion in plain
+on", not "spawn_height is 0.92" or "the function was changed"). Measure the effect the player sees, never one way of
+building it: not a global (`world` `time_scale` for "the game runs at double speed": a build may speed its own clock;
+read how far or how fast the thing goes), not a node's position relative to its parent (`prop:position` changes when
+a fix re-parents the node; `x`, `y`, `z` are in the world), not the root's turn when a part below it does the moving
+(read the part that moves), and never a count of samples standing in for a count of events (`spawns`,
+`started_audible`, a counter the start shows). `describe` says the assertion in plain
 words; it is shown in the grade, never to the agent.
 
 **Everything a required probe or its play relies on is in the instruction or exists at the start commit**: node,
@@ -529,7 +560,13 @@ sides' scores in the task's notes (its `tasks-workflow.jsonl` row).
 
 Before the game is packaged, read each task you wrote, its instruction against its checks, yourself; no tool or
 reviewer does this for you. Lab reviews every task the same way at submission and sends the game back when an ask has
-no check at all, naming the task and the sentence. Fix what you find in the task before it is packed:
+no check at all, naming the task and the sentence. Lab may repair a check itself, without sending the game back, where
+the instruction already says what the check needs: it restages a play with the steps the instruction gives a player,
+moves a window or a judge's frames to the moment the plays recorded, retargets a select to what the instruction names,
+clicks a control by its on-screen text where the engine's probe can (else waits, or plays from the scene the
+instruction states), reads from the screen a property that came back empty, and removes a click repeated after its
+action already happened. The check's measure and threshold stay as written. Fix
+what you find in the task before it is packed:
 
 - **Go through the instruction sentence by sentence.** The game's description, the controls line and the art line are
   context, and so are a bug report's symptom, cause and steps to reproduce; they ask nothing. What should now be
@@ -547,8 +584,8 @@ no check at all, naming the task and the sentence. Fix what you find in the task
   names, only to set the fight up; `damage` for a hit taken at a known moment, through the game's own
   `take_damage`; `where` to pick the live ones (docs/task-probes.md, section 1.4). Read the result
   deterministically: a state change in a probe one sentence explains (a `prop:` of the node holding health, state
-  or phase, `damage_taken`); a hit stop by `frozen` of the one struck, or by `world` `flow` when the ask is
-  about the whole game (`time_scale` when it says time slows), never a judge (no screenshot shows it) and never
+  or phase, `damage_taken`); a hit stop by `frozen` of the one struck ("the one struck freezes"), by `world` `flow`
+  only when the ticket itself says the whole game holds, and `time_scale` only when it says time slows, never a judge (no screenshot shows it) and never
   paired with `paused` == 0 unless the ask says so (a build may stop by pausing the tree); a stagger, a knock-back
   or an interrupted action by the animation that plays (`clip`, `anim:`), the node unable to move with the move
   key held, then moving again, or its distance from the attacker, never a judge. What
@@ -645,6 +682,11 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | a select by class or group also matched the scene's other nodes, or named the class the reference happened to use | select by what the node carries (`has`), `near` a point, or a property (`where`) |
 | `"of": "first"` over a broad select read another node on the reference (the scene was edited) | matches come in tree order, which a scene edit can change: select by name, group or `near` |
 | a value read with the default `of` came back as a count | a measure that reads a value (a position, a `prop:`, a text match, a percent) needs `"of": "first"` or another value reducer |
+| every play probed the level while the game sat on its title screen, its start control never clicked | a play clicks the start control the instruction names and waits, or the instruction states the scene QA plays (section 4) |
+| a check read one way of building the effect (a global time scale for "double speed", a child's position against its parent, the root's turn while a child moved, samples counted for events) and failed a correct fix | measure the effect the player sees (section 5) |
+| a `near` sphere around the start's camera missed the camera the fix moved back | select by what the thing is; `near` only around a place the task doesn't change |
+| a key sent on the frame a shift reset, or a teleport that left a carried crate behind | inputs a few seconds after a reset; no teleport past what moves with the player or a limit the instruction gives |
+| a second click on Continue after the first worked: the button was gone and the click a miss | each action once, while its control is there |
 | a menu that runs on real time never reached its later pages in a play | a task-play input `{"t": ..., "wait": seconds}`: the play's clock holds while the game runs on in real time |
 | a main scene set up what the play needed, and the play opened `play_scene` instead | start such a game through its own `play_args` with `play_scene` null (section 4) |
 | a template game's task named the scenario's scene in `play_scene` and the scene loaded twice | `play_args` alone, `play_scene` null: the `Scenarios` autoload loads the scene |

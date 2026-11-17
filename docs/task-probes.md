@@ -137,7 +137,8 @@ thing instead of removing it still pass? If not, move the probe to what the play
     `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventScreenTouch`, `InputEventScreenDrag`), so the
     game's `_input` and `_unhandled_input`, its Controls and its input actions (`Input.is_action_pressed`) take them
     as a player's. One sent at `t` is delivered in the frame of `t`, before the game's `_process` of that frame; its
-    `_physics_process` reads it from the next frame.
+    `_physics_process` reads it from the next frame. One sent on the frame the game resets a state (a scenario's, a
+    scene's or a shift's start) may be lost in the reset: send it a few seconds in.
     - a key: `{"t": 1.0, "key": "<Keyboard>/w", "press": true}` and later `"press": false`. `key` is a control path,
       `^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$`, written as the other factories' plays write it, so a route
       reads alike across engines: a key of `<Keyboard>/` by its Input System name (`w`, `space`, `enter`, `leftShift`,
@@ -160,7 +161,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
       centre, the left button goes down and, a frame later, up. They are real mouse events, so a Control drawn over
       it takes them instead, as it would a player's. The play's `probe.log` names what it clicked and its class:
       `clicked RetryButton (Button)`. No match, or a button that didn't press: nothing else happens, and the click is
-      listed in `probe.json` `inputs_missed`;
+      listed in `probe.json` `inputs_missed`. A button whose action already happened is usually gone: click once;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
     - a mouse move: `{"t": 1.0, "move": [300, -40], "over": 1.5}` moves the mouse by [dx, dy] pixels of the frame
@@ -172,7 +173,9 @@ thing instead of removing it still pass? If not, move the probe to what the play
       point (m), facing `yaw` (degrees; 0 when left out: a teleport always turns a 3D player), at once: the game's
       scripts of that frame already find the player there. It is the way to reach a test spot. The probe doesn't
       move it to the ground or out of a body afterwards: take the point from where the player stands in a play (the
-      `track` of its `probe.json`). A 2D player goes to `x`, `y` and isn't turned;
+      `track` of its `probe.json`). A 2D player goes to `x`, `y` and isn't turned. It moves the player alone: what the
+      game moves with it (a carried object, a tether) stays behind, and a limit it keeps (a range) may break, so walk
+      or drive there where that matters;
     - a teleport next to an object: `{"t": 0.2, "teleport_to": <object select>, "distance": 2.0, "offset": [x, y, z],
       "face": <Point>}` places the player `distance` m (default 2; 0 to 1000) from the object the select matches
       nearest to the player, position to position (the player and the nodes below it left out; of two as near, the
@@ -530,7 +533,8 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     their full name: a node added at run time beside others of its name is named by the engine (`Coin2`,
     `@Node3D@12`), so a name the code doesn't set itself is no name to select by.
   - `near`: its position (its origin) within `radius` m of a point. `{"player": true}`: the player;
-    `"player": false`: anything but the player and the nodes below it (the foes among every `CharacterBody3D`).
+    `"player": false`: anything but the player and the nodes below it (the foes among every `CharacterBody3D`). Never
+    `near` the old place of something the task asks to move: select it by what it is.
   - `where`: `[{"prop": "<path>", "op": "==", "value": v}, ...]` (1 to 4): a property of the node, the path a `prop:`
     field reads, compared with a number, a boolean or a string (a string takes `==` and `!=`); every condition must
     hold, and a node whose property doesn't resolve doesn't match. Only foes not dead, a bay's own crates:
@@ -1261,8 +1265,9 @@ The start is then never played, so nothing in the task may need it played: **no 
 
 A `judge` check asks a question, rubric item by rubric item, over screenshots the grader takes itself. Left alone it
 is shown the two plays every task shares, the idle `look` and the `drive` of `play_scene`: they never press a task's
-own keys, open another scene or leave a title screen. When what the rubric asks about shows only after one of those,
-the check names up to 4 task plays (section 1.1) in `plays`, and its screenshots are taken in those plays instead:
+own keys, open another scene or leave a title screen. So a judge names up to 4 task plays (section 1.1) in `plays`
+that show each of its rubric items at the moment it can be seen, and its screenshots are taken in those plays instead.
+One subject per judge; a rubric item about "every screen" only with plays that open every screen:
 
 ```json
 {"name": "upgrade_menu_reads", "kind": "judge", "required": false, "needs": ["boots_clean"], "before": true,
@@ -1353,7 +1358,9 @@ task is void.
 - **Check that a play really reaches the situation.** A probe of a moment the play never reaches measures nothing
   useful. Teleport to the spot (`teleport` input), use a scenario (`scene`/`args`) that starts there, and check on
   the fix that the play gets there before trusting its threshold: the fix's `probe.json` holds the player's `track`
-  and its `inputs_missed`, and its `probe.log` names what each `teleport_to` reached.
+  and its `inputs_missed`, and its `probe.log` names what each `teleport_to` reached. A game that starts on a title
+  screen or a menu is played through it as a player does: a click on the start control the instruction names, by its
+  node name at the start, and time for the scene to change; never a shortcut only the reference has.
 - **The main scene doesn't run before `play_scene`.** A play that opens another scene never loads the project's main
   scene (section 1.1): what a boot scene sets up is missing there, though the autoloads run. Such a game is started
   through its own `play_args` with `play_scene` null.
@@ -1371,7 +1378,9 @@ task is void.
 - **Value-reading measures need a reducer.** `of` defaults to `count`; to read an object's or a widget's value write
   `"of": "first"` (or `min`, `max`, `mean`, ...).
 - **Test the outcome a player sees, never the implementation.** "The hero stands on ground", not "spawn_height is
-  0.92"; another valid fix must pass.
+  0.92"; another valid fix must pass. Never one way of building the effect: not a global (`time_scale` for "double
+  speed"), not a position relative to a parent (`prop:position`; `x`, `y`, `z` are in the world), not the root's turn
+  when a part below it moves, not a count of samples for a count of events.
 - **Read names from the game.** Classes, script names, groups, node and Control names and scene paths come from the
   code and scenes at `seed.commit` and `seed.reference`, never guessed. A wildcard takes in every name it fits
   (`Coin*` matches `CoinSpawner` too), and a node the code adds without naming it gets a name of the engine's:
