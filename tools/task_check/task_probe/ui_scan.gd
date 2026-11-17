@@ -193,14 +193,87 @@ static func usable(c: Control) -> Variant:
 
 static func named(want: String) -> Control:
 	## the first Control a player can press (reachable) of some size whose name (a wildcard) matches, else the first
-	## whose class does: where a touch on that widget lands
+	## whose class does, else the first button whose shown text reads `want` (by_caption): where a touch on that widget
+	## lands
+	var found: Array = spot_widget(want)
+	return found[0] if not found.is_empty() else null
+
+
+static func spot_widget(want: String) -> Array:
+	## [the Control a touch on `want` lands on, how it was found ("name", "class" or 'caption "<text>"'), and the note
+	## of a caption several buttons read], or [] (named)
 	if want == "":
-		return null
+		return []
 	for by_class in [false, true]:
 		for c in controls():
 			if (Find.is_a(c, want) if by_class else String(c.name).matchn(want)) and reachable(c) and rect(c) != null:
-				return c
-	return null
+				return [c, "class" if by_class else "name", ""]
+	return by_caption(want, false)
+
+
+static func label_key(text: String) -> String:
+	## a name or a caption as a click compares them, as the other engines' probes do: lower case, each run of anything
+	## but letters and digits one "_", none at either end ("New expedition", "new_expedition", "NEW  EXPEDITION!")
+	var out := ""
+	var gap := false
+	for ch in text.to_lower():
+		if ch.is_valid_int() or ch.to_upper() != ch.to_lower():
+			if gap and out != "":
+				out += "_"
+			out += ch
+			gap = false
+		else:
+			gap = true
+	return out
+
+
+static func captions(c: Control) -> Array[String]:
+	## the text a player reads on a button, shown: its own (a Button's, a LinkButton's), each Label or RichTextLabel
+	## drawn below it, alone, and all of those together in order. Text that isn't shown (the button drawn see-through,
+	## a hidden label) and a TextureButton's tooltip are no caption.
+	var found: Array[String] = []
+	var own: Variant = own_text(c) if visible(c) and (c is Button or c is LinkButton) else null
+	if own != null and own != "":
+		found.append(own)
+	var below: Array[String] = []
+	for n: Node in c.find_children("*", "Control", true, false):
+		if (n is Label or n is RichTextLabel) and drawn(n as Control):
+			var shown: Variant = own_text(n as Control)
+			if shown != null and shown != "":
+				below.append(shown)
+	found.append_array(below)
+	if below.size() > 1:
+		found.append(" ".join(below))
+	return found
+
+
+static func by_caption(want: String, click: bool) -> Array:
+	## [the first button in reading order (top to bottom, then left to right) a player can press whose caption reads
+	## `want` (label_key alike), 'caption "<text>"', a note when more than one reads it], or []. `click`: only one that
+	## takes a click (enabled, not ignoring the mouse), as a widget click asks.
+	var key := label_key(want)
+	if key == "":
+		return []
+	var matched: Array = []
+	for c in controls():
+		if not (c is BaseButton) or not reachable(c) or rect(c) == null:
+			continue
+		if click and (usable(c) == 0.0 or c.mouse_filter == Control.MOUSE_FILTER_IGNORE):
+			continue
+		for caption in captions(c):
+			if label_key(caption) == key:
+				matched.append([c, caption])
+				break
+	if matched.is_empty():
+		return []
+	matched.sort_custom(func(a: Array, b: Array) -> bool:
+		var ra := box(a[0] as Control)
+		var rb := box(b[0] as Control)
+		return ra.position.y < rb.position.y or (ra.position.y == rb.position.y and ra.position.x < rb.position.x))
+	var note := ""
+	if matched.size() > 1:
+		note = "%d buttons read '%s'; took the first in reading order" % [matched.size(), want]
+	return [matched[0][0], 'caption "%s"' % matched[0][1], note]
 
 
 static func to_window(at: Vector2) -> Vector2:

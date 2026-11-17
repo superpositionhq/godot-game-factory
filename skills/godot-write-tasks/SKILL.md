@@ -280,12 +280,12 @@ project's main scene (a project path, `"play_scene": "res://scenes/Harbor.tscn"`
   its route, its before and reference plays). What a play does to the game, and the rules for the arguments (their
   form, the flags a task can't set), are in docs/task-probes.md. A play never chooses a renderer or a frame size.
 - **A play does what a player must do to reach the state it probes.** Where the start scene is a title screen or a
-  menu, every play that checks something in the level first gets past it as a player does. A play clicks a control by
-  its node name (a `widget` click, or a touch on `{"widget": ...}`) only when that control exists at `seed.commit`,
-  and then gives the game time to change scene. For a start control the thread creates, whose name only the
-  reference has, the instruction states the scene QA plays (`play_scene`, or the `play_args` that start it): the
-  probe clicks by name or class, not yet by on-screen text. Never a shortcut only the reference has (a flag, a debug
-  key, a scene the fix added).
+  menu, every play that checks something in the level first gets past it as a player does: it clicks the start
+  control by the text the instruction quotes (`{"t": 0.5, "widget": "begin_run", "click": true}` clicks a button
+  reading "Begin Run", whatever its node is called; a touch on `{"widget": "begin_run"}` on a mobile game) and gives
+  the game time to change scene. A control's node name serves too when the control exists at `seed.commit`, never a
+  name only the reference has. Or the instruction states the scene QA plays (`play_scene`, or the `play_args` that
+  start it). Never a shortcut only the reference has (a flag, a debug key, a scene the fix added).
 - Check in the task check's screenshots and `track` that the reference's plays really start where the issue shows.
 
 The plays also need to know which node is the player (for `player` measures, teleports, a `near` around the
@@ -414,7 +414,8 @@ looks up and a positive yaw turns left.
   `hold` seconds: a long press, a button kept down); `{"t": 2.0, "drag": [<spot>, <spot>, ...], "over": s, "hold": s,
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
   slider, a virtual stick pushed over and held). A spot is a point of the screen `[fx, fy]` in fractions from its top
-  left, or `{"widget": "<node name>"}`: the centre of the first visible `Control` of that name (a wildcard) or class.
+  left, or `{"widget": "<node name>"}`: the centre of the first visible `Control` of that name (a wildcard) or class,
+  else of the button whose shown text reads it (`{"widget": "tap_me"}` for a button reading "Tap Me").
   Name the control where you can: its place differs between landscape and portrait, its name does not. Touches of
   different fingers may overlap; one finger's touches are at least 0.1 s apart and over by the play's end (the
   validator refuses otherwise); a touch whose control isn't on screen is a miss the play reports, and nothing is
@@ -506,7 +507,8 @@ by what the player sees:
 
 - **Prefer what the player sees.** On-screen text through `ui` with a loose `match` (any case, any spacing, `\d+`
   for a number); nodes by a group or class the start has, by what they carry (`has`) or where they are (`near`); a
-  place reached by `teleport_to` or `pin` on a node, never raw coordinates; a control by its name at the start.
+  place reached by `teleport_to` or `pin` on a node, never raw coordinates; a control by the text it shows (a caption
+  the instruction quotes) or by its name at the start.
   Never match an exact string the instruction doesn't quote, and never a run of keys that only works on the
   reference's layout (a menu walked by counting presses).
 - **"Shown" means on screen.** `ui` and `widgets` read what is on screen, so a check that something is shown, or no
@@ -563,8 +565,8 @@ reviewer does this for you. Lab reviews every task the same way at submission an
 no check at all, naming the task and the sentence. Lab may repair a check itself, without sending the game back, where
 the instruction already says what the check needs: it restages a play with the steps the instruction gives a player,
 moves a window or a judge's frames to the moment the plays recorded, retargets a select to what the instruction names,
-clicks a control by its on-screen text where the engine's probe can (else waits, or plays from the scene the
-instruction states), reads from the screen a property that came back empty, and removes a click repeated after its
+clicks the start control by the text the instruction quotes (or waits, or plays from the scene the instruction
+states), reads from the screen a property that came back empty, and removes a click repeated after its
 action already happened. The check's measure and threshold stay as written. Fix
 what you find in the task before it is packed:
 
@@ -682,7 +684,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | a select by class or group also matched the scene's other nodes, or named the class the reference happened to use | select by what the node carries (`has`), `near` a point, or a property (`where`) |
 | `"of": "first"` over a broad select read another node on the reference (the scene was edited) | matches come in tree order, which a scene edit can change: select by name, group or `near` |
 | a value read with the default `of` came back as a count | a measure that reads a value (a position, a `prop:`, a text match, a percent) needs `"of": "first"` or another value reducer |
-| every play probed the level while the game sat on its title screen, its start control never clicked | a play clicks the start control the instruction names and waits, or the instruction states the scene QA plays (section 4) |
+| every play probed the level while the game sat on its title screen, its start control never clicked | a play clicks the start control by the text the instruction quotes and waits, or the instruction states the scene QA plays (section 4) |
 | a check read one way of building the effect (a global time scale for "double speed", a child's position against its parent, the root's turn while a child moved, samples counted for events) and failed a correct fix | measure the effect the player sees (section 5) |
 | a `near` sphere around the start's camera missed the camera the fix moved back | select by what the thing is; `near` only around a place the task doesn't change |
 | a key sent on the frame a shift reset, or a teleport that left a carried crate behind | inputs a few seconds after a reset; no teleport past what moves with the player or a limit the instruction gives |

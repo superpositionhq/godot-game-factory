@@ -157,11 +157,18 @@ thing instead of removing it still pass? If not, move the probe to what the play
       to 1) until set again, and a stick's y is up-positive (see the lessons on mouse axes in section 5);
     - a widget click: `{"t": 6.0, "widget": "RetryButton", "click": true}` clicks the first visible (as the `widgets`
       field reads it, so a fully transparent button counts) Control that takes a click (not disabled, not ignoring
-      the mouse) whose name (a wildcard) or class matches, as a player's click presses it: the mouse moves to its
+      the mouse) whose name (a wildcard) or class matches, else the button whose shown text reads `widget`: case,
+      spacing and punctuation aside, as the other engines' probes compare them (each run of anything but letters and
+      digits one `_`), so `{"widget": "begin_run", "click": true}` clicks a button reading "Begin Run" whatever its
+      node is called. A caption is text a player reads on the button: its own text, or a label drawn on it; never a
+      tooltip, nor text drawn see-through (an invisible hit area is still clicked by its name). A name or a class wins
+      over a caption; of several buttons that read it, the first in reading order (top to bottom, then left to
+      right). It clicks as a player's click presses it: the mouse moves to its
       centre, the left button goes down and, a frame later, up. They are real mouse events, so a Control drawn over
-      it takes them instead, as it would a player's. The play's `probe.log` names what it clicked and its class:
-      `clicked RetryButton (Button)`. No match, or a button that didn't press: nothing else happens, and the click is
-      listed in `probe.json` `inputs_missed`. A button whose action already happened is usually gone: click once;
+      it takes them instead, as it would a player's. The play's `probe.log` names what it clicked, its class and how
+      it was found: `clicked RetryButton (Button) by name`, `clicked Button2 (Button) by its caption "Begin Run"`.
+      No match, or a button that didn't press: nothing else happens, and the click is listed in `probe.json`
+      `inputs_missed`. A button whose action already happened is usually gone: click once;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
     - a mouse move: `{"t": 1.0, "move": [300, -40], "over": 1.5}` moves the mouse by [dx, dy] pixels of the frame
@@ -318,7 +325,9 @@ A task play may touch the screen as a phone's player does. Two inputs, each with
 A spot is a point of the screen `[fx, fy]` in fractions 0-1 from its top left, or `{"widget": "MoveStick"}`: the centre
 of the first visible, laid-out widget of that name (a wildcard) or type, whatever its kind (a button, a stick, a
 panel): a `Control` node, found as a `widgets` select finds one (section 2.6), by its node name first, then by its
-class. Name the widget where you can: its place differs between landscape and portrait, its name does not. A
+class, then by the caption a button shows, as a widget click finds one (section 1.1: `{"widget": "tap_me"}` touches a
+button reading "Tap Me"). Name the widget where you can: its place differs between landscape and portrait, its name
+and its caption do not. A
 widget's spot is where it is when the finger goes down.
 
 Touches of different fingers may overlap in time (a stick held while a button is tapped, two fingers pinching). One

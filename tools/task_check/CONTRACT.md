@@ -575,10 +575,17 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   the other factories write it (the engine's `JOY_AXIS_LEFT_Y` gets the value negated).
 - widget click: `{"t", "widget": "RetryButton", "click": true}`: the first Control in tree order that is visible (the
   `widgets` state), of some size, not disabled and not ignoring the mouse, whose name (a wildcard) or class matches.
-  The mouse moves to its centre, the left button goes down, and up in the next frame: real events, so a Control drawn
+  Failing a name and a class, the shown caption of a button (`UiScan.by_caption`): a `BaseButton` a player can press
+  of some size whose shown text (a `Button`'s or `LinkButton`'s own text while it is drawn, each `Label` or
+  `RichTextLabel` drawn below it, alone and all together in order; never a tooltip, nor text drawn see-through) reads
+  the same as `widget`, both compared as the other engines' probes compare them (`UiScan.label_key`: lower case, each
+  run of anything but letters and digits one `_`, none at either end, so `begin_run` reads "Begin Run"). Of several,
+  the first in reading order (top to bottom, then left to right), and `probe.log` notes how many read it. A name or a
+  class wins over a caption. The mouse moves to its centre, the left button goes down, and up in the next frame: real events, so a Control drawn
   over it takes them instead. For a `BaseButton` the probe listens for its `pressed` signal: when it hasn't fired two
-  frames after the release, the click is a row of `inputs_missed`. `probe.log` names the widget clicked and its class
-  (`clicked PushButton (Button)`).
+  frames after the release, the click is a row of `inputs_missed`, as is a click nothing matches. `probe.log` names the
+  widget clicked, its class and how it was found (`clicked PushButton (Button) by name`, `by class`, `by its caption
+  "Begin Run"`).
 - cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
@@ -593,7 +600,9 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   "MoveStick"}, [0.2, 0.6]], "finger": 0, "over": 0.3, "hold": 2.0}` (the checker writes `finger`, 0 when unset;
   `hold` and `over` only when set; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
   point `[fx, fy]` (fractions of the frame, y down), or `{"widget": name}`, the centre of the first visible Control
-  of some size whose name (a wildcard) matches, else the first whose class does (`UiScan.named`). The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
+  of some size whose name (a wildcard) matches, else the first whose class does, else the first button in reading order
+  whose shown caption reads it, as a widget click's (`UiScan.named`, `UiScan.by_caption`; it needn't be enabled).
+  `probe.log` says what the finger went down on and how it was found. The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
   `InputEventScreenDrag` events (a drag's path walked evenly over `over` seconds, at once without it), and lifts once
   its path and its `hold` are over, never in the frame it went down. Fingers 0 to 9 may be down together. With
   `input_devices/pointing/emulate_mouse_from_touch` on (the engine's default, and a mobile game's setting) the engine

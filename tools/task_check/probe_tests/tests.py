@@ -242,6 +242,29 @@ def check_touch(c, found):
           "inputs: the tap at 4.20 s missed: finger 2 is still down from an earlier touch"])
 
 
+def check_captions(c, found):
+    if not ended(c, found, 5.5):
+        return
+    probe = found["probe"]
+    game_log = found["log"][:len(found["log"]) - len(found["output"])]  # the log file alone (its output echoes it)
+    pressed = re.findall(r"^PRESSED (\w+)", game_log, re.M)
+    note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
+    c.eq("each control the play named by its shown text is pressed once, in the order sent", pressed,
+         ["Button2", "Start", "AgainHigh", "PlayNow", "Button4"])
+    c.true("a click by a caption, whatever its case and spacing: probe.log says how it was found",
+           'clicked Button2 (Button) by its caption "Begin Run"' in note, note[-1500:])
+    c.true("a name wins over another button's caption", "clicked Start (Button) by name" in note, note[-1500:])
+    c.true("of two that read it, the first in reading order, noted",
+           "click: 2 buttons read 'Again'; took the first in reading order" in note
+           and 'clicked AgainHigh (Button) by its caption "  AGAIN!"' in note, note[-1500:])
+    c.true("a label on a button with no text of its own is its caption",
+           'clicked PlayNow (TextureButton) by its caption "Play  Now"' in note, note[-1500:])
+    c.true("a tap by a caption", 'finger 0 goes down on Button4 (Button) by its caption "Tap Me"' in note, note[-1500:])
+    c.eq("text that isn't shown, and no match, are misses", [(m["t"], m["kind"], m["target"])
+                                                              for m in probe.get("inputs_missed", [])],
+         [(2.5, "click", "hidden_word"), (3.0, "click", "nothing_here")])
+
+
 def check_second(c, found):
     if not ended(c, found, 5.5):
         return
@@ -751,6 +774,7 @@ PLAYS = {
     "keys": {"check": check_keys},
     "touch": {"check": check_touch, "twice": True},
     "second": {"check": check_second, "twice": True},
+    "captions": {"check": check_captions},
     "contact": {"check": check_contact, "twice": True},
     "sounds": {"check": check_sounds, "twice": True, "same": sound_totals},
     "lamps": {"check": check_lamps, "twice": True},

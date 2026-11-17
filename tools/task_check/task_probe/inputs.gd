@@ -429,15 +429,26 @@ func _control(path: String, value: float, is_axis: bool) -> void:
 
 func _click(row: Dictionary, _elapsed: float) -> void:
 	## a click on a widget: the mouse moved to its centre, the left button pressed, and let go in the next frame
+	## (`widget`: a Control's name or class, else the shown caption of a button, UiScan.by_caption: a name or a class
+	## wins over a caption)
 	var want := Find.text(row, "widget")
 	var found: Control = null
+	var how := ""
 	for c in UiScan.controls():
 		if (String(c.name).matchn(want) or Find.is_a(c, want)) and UiScan.reachable(c) and UiScan.rect(c) != null \
 				and UiScan.usable(c) != 0.0 and c.mouse_filter != Control.MOUSE_FILTER_IGNORE:
 			found = c
+			how = "by name" if String(c.name).matchn(want) else "by class"
 			break
 	if found == null:
-		_miss(row, "click", want, "no visible control that takes a click matches it")
+		var read: Array = UiScan.by_caption(want, true)
+		if not read.is_empty():
+			found = read[0]
+			how = "by its " + read[1]
+			if read[2] != "":
+				probe.note("click: " + read[2])
+	if found == null:
+		_miss(row, "click", want, "no visible control that takes a click matches it, by name, class or caption")
 		return
 	var label := "%s (%s)" % [found.name, Find.class_of(found)]
 	var taken := [false]
@@ -448,7 +459,7 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 	_move_cursor(UiScan.centre(found), Vector2.ZERO)
 	_button(MOUSE_BUTTON_LEFT, true)
 	_clicks.append({"row": row, "label": label, "frames": 0, "watched": watched, "taken": taken})
-	probe.note("clicked " + label)
+	probe.note("clicked %s %s" % [label, how])
 
 
 # ---------------------------------------------------------------- touches
@@ -480,10 +491,15 @@ func _miss_touch(row: Dictionary, kind: String, target: String, why: String) -> 
 
 
 static func _spot_label(value: Variant) -> String:
-	## what a finger goes down on, for probe.log: the point, or the widget found and its class
+	## what a finger goes down on, for probe.log: the point, or the widget found, its class and how it was found (by
+	## name, class or caption, and a caption several buttons read)
 	if value is Dictionary:
-		var found := UiScan.named(Find.text(value, "widget"))
-		return "%s (%s)" % [found.name, found.get_class()] if found != null else Find.text(value, "widget")
+		var found: Array = UiScan.spot_widget(Find.text(value, "widget"))
+		if found.is_empty():
+			return Find.text(value, "widget")
+		var c: Control = found[0]
+		return "%s (%s) by %s%s" % [c.name, c.get_class(), "its " + found[1] if found[1].begins_with("caption") else found[1],
+			"; " + found[2] if found[2] != "" else ""]
 	return "(%s)" % _spot_name(value)
 
 
