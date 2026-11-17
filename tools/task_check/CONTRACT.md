@@ -293,18 +293,24 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   it: lit when one is, glow their sum (null when a lit one has none), no value when a source is unread and none is
   lit. A row holds `glow_sources` (the kinds lit, joined by commas) and `glow_read` (`props`, `drawn`, `bound`,
   `unread`) when it has any. `has.lit` keeps a part whose `light_of` is lit.
-- **widgets** (`queries/widgets.gd`, `ui_scan.gd`): every `Control` of the game's window (`UiScan.controls`: a
-  `Control` in a `SubViewport` is not the window's), hidden ones included. `component` is the Control's class; with a
+- **widgets** (`queries/widgets.gd`, `ui_scan.gd`): the `Control`s of the game's window (`UiScan.controls`: a
+  `Control` in a `SubViewport` is not the window's) that are on screen (`UiScan.visible`), every one when the select
+  says `"visible": false`. The checker leaves `"visible": true` out of a select (the default: one query with the
+  select that says nothing) and gives a measure of the `visible` field whose select says nothing `"visible": false`,
+  so it reads hidden widgets as 0 (`probes.widget_select`). `component` is the Control's class; with a
   `name`, the class of a Control above it matches too (the row keeps its own class). A rectangle is the Control's
   `size` through `get_global_transform_with_canvas()` (its canvas layer and the 2D camera applied), over the frame's
   own size (`Viewport.get_visible_rect`), so it is in fractions of the frame whatever stretches the frame to the
-  window. `visible` (`UiScan.visible`): `is_visible_in_tree()`, the `modulate` alphas down to it above 0.004
-  (`Find.ALPHA_FLOOR`), and inside the frame (a Control of no size counts as inside). How text is read:
-  task-probes.md 2.6.
+  window. `visible` (`UiScan.visible`): `is_visible_in_tree()` (a hidden canvas layer included), its own
+  `self_modulate` alpha times the `modulate` alphas down to it above 0.004 (`Find.ALPHA_FLOOR`, `UiScan.alpha`),
+  inside the frame, and not wholly outside a `clip_contents` Control above it; a Control of no size counts as on
+  screen, and another Control covering it is not looked at. A widget click and a touch on a widget find their
+  Control by `UiScan.reachable` instead: shown and the `modulate` alphas above the floor, inside the frame (a
+  Control of no size counts), its own `self_modulate` and clipping not counted, so an invisible hit area a player
+  presses is pressed. How text is read: task-probes.md 2.6.
 - **ui** (`queries/ui.gd`, `ui_scan.gd`): the elements on screen at the sample, a row for each thing a drawn Control
-  draws (`UiScan.kinds`, in this order: `box`, `image`, `text`). Drawn (`UiScan.drawn`): visible as above, its own
-  `self_modulate` alpha counted too, of some size, inside the frame, and inside every Control above it that clips its
-  contents. Rows carry `source` (`control`) and `kind`. What a script draws itself (`_draw`, a `draw_string`) is no
+  draws (`UiScan.kinds`, in this order: `box`, `image`, `text`). Drawn (`UiScan.drawn`): visible as above and of
+  some size. Rows carry `source` (`control`) and `kind`. What a script draws itself (`_draw`, a `draw_string`) is no
   element: the engine keeps no list of it. `signature`, `number` and `clock` are computed by the checker from the rows
   (`probes.ui_signature`, `ui_number`, `ui_clock`).
 - **screen** (`queries/screen.gd`): the frame as displayed, read back once it is drawn (`RenderingServer`'s

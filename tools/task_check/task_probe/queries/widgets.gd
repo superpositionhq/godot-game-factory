@@ -1,9 +1,9 @@
 extends "../query.gd"
-## widgets: the UI's own nodes and their state (contract section 3): every Control of the game's window, hidden ones
-## included.
+## widgets: the UI's own nodes and their state (contract section 3): the Controls of the game's window on screen (the
+## visible field reads 1), every one with "visible": false in the select.
 ## "rows": [{"name", "class", <field>: value}] for every Control the select matches (select: component, a class of
 ## the Control, and with a name one above it too; name, a wildcard on its name; text, a regular expression its text
-## must match; visible: true, only the widgets the visible field reads 1 for).
+## must match; visible: false, hidden ones too).
 
 const UiScan := preload("../ui_scan.gd")
 const KNOWN := ["count", "visible", "text", "percent", "value", "interactable", "has_brush", "brush", "x", "y", "w", "h"]
@@ -11,7 +11,7 @@ const KNOWN := ["count", "visible", "text", "percent", "value", "interactable", 
 var _type := ""
 var _name := ""
 var _text: RegEx
-var _visible_only := false
+var _hidden_too := false
 var _bad := false
 
 
@@ -28,7 +28,7 @@ func load_query() -> void:
 		if _text.compile(pattern, false) != OK:
 			_bad = true  # matches nothing
 			probe.error("widgets %s: the text regex %s doesn't compile" % [id, pattern])
-	_visible_only = Find.flag(select, "visible")
+	_hidden_too = select.get("visible") is bool and not select["visible"]
 
 
 func sample(_t: float, sample: Dictionary) -> void:
@@ -39,7 +39,7 @@ func sample(_t: float, sample: Dictionary) -> void:
 				continue
 			if _type != "" and not UiScan.is_a(c, _type, _name != ""):
 				continue
-			if _visible_only and not UiScan.visible(c):
+			if not _hidden_too and not UiScan.visible(c):
 				continue
 			var shown: Variant = UiScan.text(c)
 			if _text != null and (shown == null or _text.search(shown) == null):

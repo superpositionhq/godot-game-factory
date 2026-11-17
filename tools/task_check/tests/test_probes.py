@@ -454,8 +454,7 @@ class MoreFairReadings(unittest.TestCase):
                     {"probe": "ground", "box": [0, 0, 1, 1], "field": "height"},
                     {"probe": "ground", "box": [5, 0, 1, 1], "field": "max"},
                     {"probe": "ground", "box": [0, 0, 1, 1], "grid": 64, "field": "max"},
-                    {"probe": "ground", "xy": [0, 0], "field": "height"},
-                    {"probe": "widgets", "select": {"name": "Warn*", "visible": False}, "field": "count"}):
+                    {"probe": "ground", "xy": [0, 0], "field": "height"}):
             with self.assertRaises(ValueError, msg=json.dumps(bad)):
                 task_with(probe(measure=bad))
 
@@ -470,13 +469,24 @@ class MoreFairReadings(unittest.TestCase):
         self.assertEqual(probes.query_id(probes.needs(bright)[0]), probes.query_id(query), "one query, both fields")
         self.assertEqual(probes.reduce(bright, play), 5.0)
 
-    def test_a_visible_widget_select_is_its_own_query(self):
+    def test_widgets_read_what_is_on_screen_unless_the_select_says_visible_false(self):
         shown = m(probe="widgets", select={"name": "Warn*", "visible": True}, field="count")
         every = m(probe="widgets", select={"name": "Warn*"}, field="count")
-        self.assertEqual(probes.needs(shown)[0]["select"], {"name": "Warn*", "visible": True})
-        self.assertEqual(probes.needs(every)[0]["select"], {"name": "Warn*"}, "a select without it is as it was")
-        self.assertNotEqual(probes.query_id(probes.needs(shown)[0]), probes.query_id(probes.needs(every)[0]))
-        self.assertEqual(probes.reduce(shown, objects_play(shown, [[{"name": "WarnVisible"}]])), 1)
+        kept = m(probe="widgets", select={"name": "Warn*", "visible": False}, field="count")
+        self.assertEqual(probes.needs(every)[0]["select"], {"name": "Warn*"}, "on screen is the default")
+        self.assertEqual(probes.query_id(probes.needs(shown)[0]), probes.query_id(probes.needs(every)[0]),
+                         "visible true is the default: one query")
+        self.assertEqual(probes.needs(kept)[0]["select"], {"name": "Warn*", "visible": False}, "hidden ones too")
+        self.assertNotEqual(probes.query_id(probes.needs(kept)[0]), probes.query_id(probes.needs(every)[0]))
+        self.assertEqual(probes.reduce(every, objects_play(every, [[{"name": "WarnVisible"}]])), 1)
+        task_with(probe(measure=kept))  # a valid measure
+
+    def test_the_visible_field_reads_hidden_widgets_unless_the_select_says(self):
+        field = m(probe="widgets", select={"name": "Warn*"}, field="visible", of="first")
+        self.assertEqual(probes.needs(field)[0]["select"], {"name": "Warn*", "visible": False},
+                         "a field that can read 0 matches a widget shown or not")
+        on_screen = m(probe="widgets", select={"name": "Warn*", "visible": True}, field="visible", of="first")
+        self.assertEqual(probes.needs(on_screen)[0]["select"], {"name": "Warn*"}, "the select says: on screen")
 
     def test_what_the_player_hears_reduces_from_the_audio_samples(self):
         jungle = m(probe="audio", select={"sound_class": "Jungle*", "owner": {"tag": "Zone2"}}, field="volume",

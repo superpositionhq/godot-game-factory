@@ -52,8 +52,29 @@ static func in_frame(c: Control) -> bool:
 
 
 static func visible(c: Control) -> bool:
-	## the widget's state: shown (itself and everything above it), not transparent, inside the frame. Its colour, its
-	## size and clipping don't count.
+	## on screen, as a widget: shown (itself and everything above it, its canvas layer too), drawn with an opacity above
+	## the floor (its own self_modulate and the modulate of it and every canvas item above it), inside the frame, and
+	## not wholly outside a Control above it that clips what it holds. One of no size counts as shown (a container
+	## that only holds others); one covered by another Control does too.
+	if not c.is_visible_in_tree() or alpha(c) <= Find.ALPHA_FLOOR:
+		return false
+	var r := box(c)
+	if r.size.x <= 0.0 or r.size.y <= 0.0:
+		return true
+	if not in_frame(c):
+		return false
+	var at := c.get_parent()
+	while at is Control:
+		if (at as Control).clip_contents and not box(at as Control).intersects(r):
+			return false
+		at = at.get_parent()
+	return true
+
+
+static func reachable(c: Control) -> bool:
+	## where an input may land, as a player presses it: shown (itself and everything above it, its canvas layer too),
+	## the modulate of it and every canvas item above it above the floor, inside the frame (one of no size counts).
+	## Its own self_modulate and clipping don't count: an invisible hit area over art is pressed like any button.
 	if not c.is_visible_in_tree():
 		return false
 	var above := 1.0
@@ -70,19 +91,9 @@ static func visible(c: Control) -> bool:
 
 
 static func drawn(c: Control) -> bool:
-	## on screen: visible, of some size, of an opacity above the floor, and not cut away by a Control above that clips
-	## what it holds
-	if not visible(c) or alpha(c) <= Find.ALPHA_FLOOR:
-		return false
+	## on screen and of some size: what ui reads
 	var r := box(c)
-	if r.size.x <= 0.0 or r.size.y <= 0.0 or not in_frame(c):
-		return false
-	var at := c.get_parent()
-	while at is Control:
-		if (at as Control).clip_contents and not box(at as Control).intersects(r):
-			return false
-		at = at.get_parent()
-	return true
+	return r.size.x > 0.0 and r.size.y > 0.0 and visible(c)
 
 
 static func own_text(c: Control) -> Variant:
@@ -181,13 +192,13 @@ static func usable(c: Control) -> Variant:
 
 
 static func named(want: String) -> Control:
-	## the first visible Control of some size whose name (a wildcard) matches, else the first whose class does: where
-	## a touch or a click on that widget lands
+	## the first Control a player can press (reachable) of some size whose name (a wildcard) matches, else the first
+	## whose class does: where a touch on that widget lands
 	if want == "":
 		return null
 	for by_class in [false, true]:
 		for c in controls():
-			if (Find.is_a(c, want) if by_class else String(c.name).matchn(want)) and visible(c) and rect(c) != null:
+			if (Find.is_a(c, want) if by_class else String(c.name).matchn(want)) and reachable(c) and rect(c) != null:
 				return c
 	return null
 

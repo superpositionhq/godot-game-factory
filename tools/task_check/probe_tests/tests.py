@@ -88,7 +88,7 @@ def check_keys(c, found):
     probe = found["probe"]
     c.eq("the player", probe.get("player"), "Player")
     c.eq("the scene", probe.get("scene"), "res://scenes/Main.tscn")
-    c.eq("inputs sent", probe.get("inputs_sent"), 19)
+    c.eq("inputs sent", probe.get("inputs_sent"), 20)
     c.near("the first sample is the clock's first frame", probe["track"][0][0], 1 / 30, 1e-9)
     c.eq("samples every 0.5 s to the end", len(probe["track"]), 14)
     # W held from 1 s to 3 s at 4 m a second: forward is -z
@@ -174,6 +174,12 @@ def check_keys(c, found):
     c.true("a gamepad button", "PAD 0" in texts(found, "texts", 5.0), texts(found, "texts", 5.0))
     c.true("the saved data is cleared before a play", "VISITS 1" in texts(found, "texts", 1.0), texts(found, "texts", 1.0))
     c.eq("a hidden widget", (row(found, "secret", 3.5).get("visible"), row(found, "secret", 4.5).get("visible")), (0, 1))
+    c.eq("a button drawn fully transparent is not on screen to widgets, and exists with visible false",
+         (rows(found, "ghost_shown", 1.0), row(found, "ghost", 1.0).get("visible")), ([], 0))
+    c.eq("a click still reaches it, as a player's does", (row(found, "ghost", 5.0).get("text"),
+                                                          row(found, "ghost", 6.0).get("text")), ("GHOST", "PRESSED"))
+    c.true("probe.log says it was clicked", "clicked GhostButton (Button)" in found["files"].get("probe.log", b"").decode(
+        "utf-8", "replace"))
     c.true("hidden text is not on screen", "SECRET 42" not in texts(found, "texts", 3.5))
     c.true("shown text is", "SECRET 42" in texts(found, "texts", 4.5))
     c.eq("boxes on screen", sorted(r["name"] for r in rows(found, "boxes", 1.0)), ["FireButton", "Health", "TapButton"])

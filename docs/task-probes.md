@@ -734,27 +734,30 @@ not the node the `owner` select matched).
 `{"probe": "widgets", "select": {"component": "Label", "name": "AmmoText"}, "field": "text", "match":
 "AMMO\\s*\\d+", "of": "any"}`.
 
-- What is searched: every `Control` node of the game's window, hidden ones included (a Control drawn into a
-  `SubViewport` is not the window's). A row's `class` is the node's, as an object's.
+- What is searched: the `Control` nodes of the game's window that are on screen (below; a Control drawn into a
+  `SubViewport` is not the window's), every one with `"visible": false` in the select. A row's `class` is the
+  node's, as an object's.
 - `select`: `component` (the Control's class: `Button`, `Label`, `ProgressBar`, `TextureRect`, a game's own script;
   the classes it inherits match, so `BaseButton` takes every kind of button and `Range` every bar and slider; with a
   `name`, the class of a Control above it matches too: `{"component": "PauseMenu", "name": "Resume*"}` finds the
   Resume button inside the node whose script is `PauseMenu`, and the row keeps its own class), `name` (a wildcard on
-  the node's name), `text` (a regular expression its text must match), `visible`. A `component` no node can have
+  the node's name), `text` (a regular expression its text must match), `visible` (below). A `component` no node can have
   matches nothing, and the play's `query_errors` says `widgets <id>: no component type <T>`.
 - **To check what a HUD shows, use `ui` (section 2.18).** `widgets` reads a named widget's own state, so it sees a
   HUD only when a build made it with that node; a HUD another build made of other nodes, or drew itself, reads as
   absent.
-- `"visible": true` in the select keeps only the widgets the `visible` field reads 1 for. `visible` is the widget's
-  state: shown (itself and everything above it, its canvas layer too), its `modulate` and that of the nodes above it
-  not transparent (an alpha above 0.004), and inside the frame. Its own colour, its size and clipping don't count: a
-  shown panel that draws nothing reads visible like its children, and so does an item scrolled out of a scroll
-  container's view while inside the frame. Never visible: a hidden widget, one under a hidden node or a hidden
-  canvas layer, one faded out by `modulate`, one entirely outside the frame. So `count` counts what the game shows
-  (a warning bar's shown messages, not the ones it keeps hidden); what is drawn on screen is `ui`'s (section 2.18).
-- **"Shown" in an ask means on screen.** A select without `"visible": true` takes hidden widgets too: a "is shown"
-  check passes on a widget the build keeps hidden, and a "no longer shown" check fails a build that hides it instead
-  of removing it. Check what is shown with `ui`, or here with `"visible": true`.
+- **A select reads the widgets on screen**: those the `visible` field reads 1 for. On screen is shown (itself and
+  everything above it, its canvas layer too), not transparent (its own `self_modulate` and the `modulate` of it and
+  of the nodes above it, an alpha above 0.004), inside the frame, and not wholly outside a Control above it that
+  clips what it holds (an item scrolled out of a scroll container's view). A Control of no size counts as on screen
+  (a container that only holds others), and so does one another Control covers. So `count` counts what the game
+  shows (a warning bar's shown messages, not the ones it keeps hidden), and a "no longer shown" check passes on a
+  widget a build hides as on one it removes. A fully transparent Control (an invisible hit area over art, its
+  `self_modulate` alpha 0) reads as not shown here, while a click or a touch still reaches it (section 1.1): inputs
+  land on what a player can press.
+- `"visible": false` in the select keeps the hidden widgets too: the widget exists, shown or not. Write it only when
+  the check means that. `"visible": true` is the default. A measure of the `visible` field whose select says neither
+  takes hidden widgets too, so `visible` can read 0 (`"of": "first"`, `== 0`: the widget is there and hidden).
   A disabled button is visible: whether it can be pressed is `interactable`.
 - `field`: `count`; `visible`; `text` (a `Label`'s, a `Button`'s or a `LinkButton`'s text, a `RichTextLabel`'s with
   its tags stripped, a `LineEdit`'s or `TextEdit`'s what was typed, not its placeholder; a typewriter reveal

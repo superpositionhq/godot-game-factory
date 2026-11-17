@@ -414,7 +414,7 @@ looks up and a positive yaw turns left.
     `render` budget (the probe may draw a part alone to read it);
   - `components`: the nodes of a class wherever they sit (lights, particle effects, mesh instances, audio players),
     by what they are rather than by a name;
-  - `widgets`: a `Control`'s own state (visible, text, a bar's percent, a slider's value);
+  - `widgets`: a `Control`'s own state on screen (visible, text, a bar's percent, a slider's value);
   - `ui`: what the UI shows on screen, element by element (the text, pictures and boxes that are drawn, their count
     and place; `match` for a text);
   - `screen`: the frame's mean luminance, never a literal threshold;
@@ -460,9 +460,9 @@ by what the player sees:
   place reached by `teleport_to` or `pin` on a node, never raw coordinates; a control by its name at the start.
   Never match an exact string the instruction doesn't quote, and never a run of keys that only works on the
   reference's layout (a menu walked by counting presses).
-- **"Shown" means on screen.** A check that something is shown, or no longer shown, reads `ui`, or `widgets` with
-  `"visible": true`. Without it `widgets` counts hidden widgets too, so a build that hides a widget instead of
-  removing it fails a "no longer shown" check, and a hidden one passes an "is shown" check.
+- **"Shown" means on screen.** `ui` and `widgets` read what is on screen, so a check that something is shown, or no
+  longer shown, passes the same on a build that hides a widget as on one that removes it. Write `"visible": false` in
+  a widgets select only when the check means the widget exists while hidden.
 - **Ask the second-solution question of every check**: would a correct solution that names things otherwise, lays
   the scene out otherwise, or hides instead of removes still pass? If not, move the check to what the player sees. Check names are unique and `needs` only names earlier checks;
 calibrated probes, `code_judge` and `"reference": true` judges need `seed.reference`.
@@ -619,7 +619,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | five stills couldn't show whether a move eased or feet slid | a number: a probe sampled every 0.1 s with `agg` `step`; only seen: a `looks_as_asked` item with a short play and `shots` (section 5) |
 | a fix made only in a scene or a resource failed a code review | the cause is checked by its measured effect (a probe), never by reading the diff |
 | a pixel threshold moved between GPUs | the frame's luminance (`screen`) only calibrated or relative to the start, never a literal |
-| a hidden panel still counted as shown | a hidden node (or one under a hidden node) matches no select unless it says `"inactive": true`; `ui` reads only what is drawn on screen, `widgets` a control's own state with `"visible": true` |
+| a hidden panel still counted as shown | a hidden node (or one under a hidden node) matches no select unless it says `"inactive": true`; `ui` and `widgets` read only what is on screen (`"visible": false` in a widgets select takes hidden ones too) |
 | a sound judged by its player node existing, not by what the player hears | `audio`: the players playing at their volume at the listener, and the mix's `level`; volumes and level calibrated or relative to the start |
 | a play that reads a save ran on clean saved data and read nothing (a later level not yet unlocked, an empty profile) | the reading play names its writers in `after`; every other play starts clean (docs/task-probes.md, 1.1) |
 | a teleport to fixed coordinates missed what each build placed itself | `teleport_to` an object select (nearest match), facing it or a point |
@@ -639,7 +639,7 @@ the reference fixes). The grader's half (`milestones`: probes, rubrics, question
 | the brief said "scenario 1" but the task had no `-scenario 1` | `play_args` (and `play_scene` where needed) always set and checked at the seed |
 | a control or class name guessed | read the names from the code and scenes at `seed.commit` |
 | a probe matched an exact on-screen string, or a play walked a menu by counting key presses, that only the reference's layout gives | a loose `match` on what `ui` reads, a click or touch on a control the start names; never a string the instruction doesn't quote |
-| a "no longer shown" check read a widget the build had hidden, not removed | `ui`, or `widgets` with `"visible": true` (section 5) |
+| a "no longer shown" check read a widget the build had hidden, not removed | `ui` and `widgets` read what is on screen; `"visible": false` only when the check means "exists while hidden" (section 5) |
 | a check written without running the game: a guessed threshold, a window that missed the event, a judge asked for what the reference never shows | run every check on both sides and read what it measured before submitting (section 5) |
 | an ask the reference never does, or does where no play reaches | the reference does every ask, in a place a play can reach |
 | a probe named a class, group or scene only the reference had, so a fair build that named it otherwise read as absent | select what the thread creates by what it does or where it is; the validator refuses a reference-only name |

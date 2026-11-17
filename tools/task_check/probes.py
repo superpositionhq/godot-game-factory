@@ -42,7 +42,10 @@ def needs(measure):
         return []
     if probe == "camera":
         return [{"kind": "camera", "fields": [field]}] if field in ("occluded", "player_on_screen") else []
-    if probe in ("objects", "widgets", "components"):
+    if probe == "widgets":
+        return [{"kind": probe, "select": widget_select(measure["select"], field),
+                 "fields": [] if field == "count" else [field]}]
+    if probe in ("objects", "components"):
         return [{"kind": probe, "select": measure["select"], "fields": [] if field == "count" else [field]}]
     if probe == "screen":
         return [{"kind": "screen", "rect": measure["rect"]}]
@@ -65,6 +68,16 @@ def hears(queries):
     to real time (sound plays in real time); every other play runs as fast as the machine renders."""
     found = queries.get("queries") if isinstance(queries, dict) else queries
     return any(isinstance(q, dict) and q.get("kind") == "audio" for q in found or [])
+
+
+def widget_select(select, field):
+    """A widgets select as the probe takes it: on screen unless it says `"visible": false` (`"visible": true` is the
+    default, left out, so both read one query); a measure of the `visible` field whose select doesn't say takes the
+    hidden widgets too, so it can read 0."""
+    out = {k: v for k, v in select.items() if not (k == "visible" and v is not False)}
+    if field == "visible" and "visible" not in select:
+        out["visible"] = False
+    return out
 
 
 def query_id(query):

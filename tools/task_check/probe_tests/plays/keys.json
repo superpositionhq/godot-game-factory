@@ -20,6 +20,7 @@
     {"t": 5.0, "shot": "end_view"},
     {"t": 5.2, "key": "<Keyboard>/nokey", "press": true},
     {"t": 5.3, "teleport_to": {"name": "Crate1"}, "distance": 2.0, "offset": [0.0, 0.0, 0.0]},
+    {"t": 5.4, "widget": "GhostButton", "click": true},
     {"t": 5.5, "widget": "NoSuchButton", "click": true},
     {"t": 5.6, "view": [-10.0, 45.0]}
   ],
@@ -40,7 +41,7 @@
     {"id": "health", "kind": "widgets", "select": {"name": "Health"}, "fields": ["percent", "value", "visible", "w"]},
     {"id": "count", "kind": "widgets", "select": {"component": "Label", "name": "CountLabel"}, "fields": ["text"]},
     {"id": "button", "kind": "widgets", "select": {"component": "Button"}, "fields": ["h", "interactable", "text", "w", "x", "y"]},
-    {"id": "secret", "kind": "widgets", "select": {"name": "SecretText"}, "fields": ["visible"]},
+    {"id": "secret", "kind": "widgets", "select": {"name": "SecretText", "visible": false}, "fields": ["visible"]},
     {"id": "texts", "kind": "ui", "select": {"kind": "text"}, "fields": ["h", "text", "w", "x", "y"]},
     {"id": "boxes", "kind": "ui", "select": {"kind": "box"}, "fields": []},
     {"id": "top_left", "kind": "ui", "select": {"kind": "text", "rect": [0.0, 0.0, 0.3, 0.1]}, "fields": ["text"]},
@@ -54,6 +55,8 @@
     {"id": "boxes_by_mesh", "kind": "components", "select": {"component": "MeshInstance3D", "mesh": "crate*"}, "fields": []},
     {"id": "many", "kind": "objects", "select": {"tag": "many"}, "fields": ["x"]},
     {"id": "parts", "kind": "objects", "select": {"name": "Main"}, "fields": ["forward:Camera.y", "rel_yaw:Camera", "world_pitch:Camera3D", "world_yaw:Spinner"]},
+    {"id": "ghost", "kind": "widgets", "select": {"name": "GhostButton", "visible": false}, "fields": ["text", "visible"]},
+    {"id": "ghost_shown", "kind": "widgets", "select": {"name": "GhostButton"}, "fields": []},
     {"id": "pictures", "kind": "widgets", "select": {"name": "TapButton"}, "fields": ["has_brush", "value"]}
   ]
 }

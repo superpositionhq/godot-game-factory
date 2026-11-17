@@ -404,7 +404,7 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 	var want := Find.text(row, "widget")
 	var found: Control = null
 	for c in UiScan.controls():
-		if (String(c.name).matchn(want) or Find.is_a(c, want)) and UiScan.visible(c) and UiScan.rect(c) != null \
+		if (String(c.name).matchn(want) or Find.is_a(c, want)) and UiScan.reachable(c) and UiScan.rect(c) != null \
 				and UiScan.usable(c) != 0.0 and c.mouse_filter != Control.MOUSE_FILTER_IGNORE:
 			found = c
 			break

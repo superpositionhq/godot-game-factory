@@ -3531,7 +3531,7 @@
     },
     "WidgetSelect": {
       "additionalProperties": false,
-      "description": "Widgets: the Control nodes of the game's window, by their class (`component`: Button, Label, ProgressBar,\nTextureRect, a game's own script) and/or name (a wildcard on the node's name); `text`: a regular expression\nthe widget's text must match; `visible`: only the widgets shown (as the `visible` field reads them: never a\nhidden or transparent one, nor one under such a parent), so a select counts what is on screen.",
+      "description": "Widgets: the Control nodes of the game's window on screen, by their class (`component`: Button, Label,\nProgressBar, TextureRect, a game's own script) and/or name (a wildcard on the node's name); `text`: a regular\nexpression the widget's text must match. On screen is what the `visible` field reads 1 for: never a hidden or\ntransparent one, one under such a parent, one outside the frame or wholly clipped away. `visible` false keeps\nthe hidden ones too (the widget exists, shown or not); true is the default. A measure of the `visible` field\nwhose select doesn't say takes them too (docs/task-probes.md, section 2.6).",
       "properties": {
         "component": {
           "anyOf": [
@@ -3576,7 +3576,6 @@
         "visible": {
           "anyOf": [
             {
-              "const": true,
               "type": "boolean"
             },
             {

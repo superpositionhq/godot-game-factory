@@ -14,6 +14,7 @@ var _age := 0.0
 
 func _ready() -> void:
 	$HUD/TapButton.pressed.connect(_tapped)
+	$HUD/GhostButton.pressed.connect(func() -> void: $HUD/GhostButton.text = "PRESSED")
 	var loop: AudioStreamWAV = $Music.stream.duplicate()
 	loop.loop_mode = AudioStreamWAV.LOOP_FORWARD
 	loop.loop_end = 2205

@@ -68,6 +68,7 @@ pause (P) and a stop of the game's time (O).
 | `HUD/CountLabel`, `ZoomLabel`, `BackLabel`, `KeyLabel`, `VisitsLabel` | what a tap, the wheel, the back button, a key or a gamepad button did; how many times the game started on its saved data |
 | `HUD/Health`, `HUD/Secret` | a bar at 75%; a hidden panel Escape shows |
 | `HUD/TapButton` | a `Button`: it counts presses (the mouse, or the first finger) |
+| `HUD/GhostButton` | a `Button` drawn fully transparent (`self_modulate` alpha 0): not on screen to `widgets`, pressed by a click all the same |
 | `HUD/FireButton` (`game/fire.gd`) | a panel that reads touch events itself: it counts any finger |
 | `HUD/MoveStick` (`game/stick.gd`) | a virtual stick |
 
