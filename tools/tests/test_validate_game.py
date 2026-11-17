@@ -567,16 +567,27 @@ class TaskRules(Base):
         ms[2]['checks'][2]['expect'] = {'op': '>', 'value': 3}
         errs = self.tasks(milestones=ms)
         self.assertTrue(any("objects measure's spin depends on what a build chose" in e for e in errs), errs)
-        for probe, field in (('audio', 'level'), ('components', 'intensity'), ('components', 'extent_y')):
+        for probe, field in (('audio', 'level'), ('components', 'intensity'), ('components', 'extent_y'),
+                             ('objects', 'spread'), ('objects', 'bounds_change'), ('objects', 'pose_change')):
             m = {'probe': probe, 'field': field}
             if probe == 'components':
                 m['select'] = {'component': 'Light3D'}
+            if probe == 'objects':
+                m.update(select={'tag': 'crate'}, of='max')
             c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'measure': m,
                  'expect': {'op': '>', 'value': 0.1}}
             self.assertEqual(list(vg.check_schema(c, vg.SCHEMAS['game-task']['$defs']['Probe'],
                                                   vg.SCHEMAS['game-task'])), [], field)
             self.assertTrue(any('never a literal' in e for e in vg.probe_errors(c, {}, 'r', {})), field)
 
+
+    def test_changed_takes_a_literal(self):
+        """objects `changed` is a fact (the object differs from its first sample): a literal threshold is valid."""
+        c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look',
+             'measure': {'probe': 'objects', 'select': {'tag': 'crate'}, 'field': 'changed', 'of': 'all'},
+             'expect': {'op': '==', 'value': 1}}
+        self.assertEqual(list(vg.check_schema(c, vg.SCHEMAS['game-task']['$defs']['Probe'], vg.SCHEMAS['game-task'])), [])
+        self.assertFalse([e for e in vg.probe_errors(c, {}, 'r', {}) if 'never a literal' in e])
     def test_every_never_literal_field_is_a_field_of_its_kind(self):
         """A field named in NEVER_LITERAL is one the schema has for that kind (a rule for a field that is gone would
         never be checked)."""

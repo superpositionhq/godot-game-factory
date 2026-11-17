@@ -796,10 +796,12 @@ def denied_play_args(args):
             yield mm.group(1)
 
 
-# fields whose threshold is never a literal: how bright a light, how big a component's bounds, how loud a sound and
-# how fast a part spins depend on what a build chose (docs/task-probes.md)
+# fields whose threshold is never a literal: how bright a light, how big a component's bounds, how far an object's
+# parts lie apart or moved, how loud a sound and how fast a part spins depend on what a build chose
+# (docs/task-probes.md)
 NEVER_LITERAL = {'components': ('intensity', 'extent_x', 'extent_y', 'extent_z', 'glow', 'spin'),
-                 'objects': ('glow', 'spin'), 'audio': ('volume', 'max_volume', 'level')}
+                 'objects': ('spread', 'bounds_change', 'pose_change', 'glow', 'spin'),
+                 'audio': ('volume', 'max_volume', 'level')}
 AUDIO_NAMED = ('sounds', 'repeats')   # read from the names of the streams that started, over the whole window
 UI_SIGNATURE_AGGS = ('changes', 'any', 'all', 'count')  # a ui signature's value means nothing; whether it changes does
 WAITS = 300   # seconds of real time a task play's waits add at most

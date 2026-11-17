@@ -492,6 +492,34 @@ def check_lamps_reach(c, found):
     c.near("it stands 2 m from it", math.dist(track(found, 3.0)[1:4], [8.0, 0.0, 0.0]), 2.0, 0.05)
 
 
+def check_crates(c, found):
+    """A crate broken by hiding its whole mesh and showing its pieces, one broken by an animation of its lid and a
+    bone of its rig, one left alone: changed, bounds_change, pose_change and spread."""
+    if not ended(c, found, 4.5):
+        return
+
+    def crate(t, name, field):
+        return row(found, "crates", t, name).get(field)
+
+    names = ("HideCrate", "AnimCrate", "StillCrate")
+    c.eq("the crates", [r["name"] for r in rows(found, "crates", 1.0)], list(names))
+    c.eq("whole: none changed", [crate(t, n, "changed") for t in (1 / 30, 1.0) for n in names], [0] * 6)
+    c.eq("whole: no part moved; a mesh with nothing below it has no pose",
+         [(crate(1.0, n, "bounds_change"), crate(1.0, n, "pose_change")) for n in names], [(0, 0), (0, 0), (0, None)])
+    c.eq("broken: hidden for pieces and played as an animation both read changed; the one left alone doesn't",
+         [crate(3.0, n, "changed") for n in names], [1, 1, 0])
+    c.near("the pieces flew 0.75 m apart: the furthest face of a part moved that far", crate(3.0, "HideCrate", "bounds_change"),
+           0.75, 1e-4)
+    c.near("the lid lifted 1 m", crate(3.0, "AnimCrate", "bounds_change"), 1.0, 1e-4)
+    c.near("its pose: the lid's place in the crate and the rig's bone, 1 m each", crate(3.0, "AnimCrate", "pose_change"),
+           2.0, 1e-4)
+    c.near("the pieces' places in the crate", crate(3.0, "HideCrate", "pose_change"), 4 * 0.75 * math.sqrt(2), 1e-3)
+    c.eq("spread whole: one drawn part, two, one", [crate(1.0, n, "spread") for n in names], [0, 0.5, 0])
+    c.near("spread broken: the pieces' centres 2 m apart each way", crate(3.0, "HideCrate", "spread"), math.sqrt(8), 1e-4)
+    c.near("and the lid 1.5 m above the body", crate(3.0, "AnimCrate", "spread"), 1.5, 1e-4)
+    c.eq("no error", errors(found), [])
+
+
 def check_errors(c, found):
     if not ended(c, found, 1.5):
         return
@@ -594,6 +622,7 @@ PLAYS = {
     "contact": {"check": check_contact, "twice": True},
     "sounds": {"check": check_sounds, "twice": True, "same": sound_totals},
     "lamps": {"check": check_lamps, "twice": True},
+    "crates": {"check": check_crates, "twice": True},
     "lamps_drawn": {"check": check_lamps, "spec": "lamps", "rendered": True, "twice": True, "same": lamps_lit},
     "lamps_reach": {"check": check_lamps_reach, "rendered": True},
     "errors": {"check": check_errors},

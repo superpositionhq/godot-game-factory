@@ -5,9 +5,10 @@ extends "../query.gd"
 
 const Motion := preload("../motion.gd")
 const Stops := preload("../stops.gd")
+const Changes := preload("../changes.gd")
 const PLAIN := [
 	"count", "x", "y", "z", "yaw", "pitch", "roll", "scale", "extent_x", "extent_y", "extent_z", "active", "hidden",
-	"collision", "speed", "spin", "simulating", "facing_vs_velocity", "clip", "frozen", "damage_taken", "lit", "glow",
+	"collision", "speed", "spin", "simulating", "spread", "changed", "bounds_change", "pose_change", "facing_vs_velocity", "clip", "frozen", "damage_taken", "lit", "glow",
 ]
 const PREFIXES := ["prop:", "anim:", "forward:", "rel_yaw:", "world_yaw:", "world_pitch:", "world_roll:"]
 const MAX_SPIN_PARTS := 64
@@ -17,12 +18,16 @@ var _motion := Motion.new()
 var _waiting: Array = []  # [row, node]: rows whose lit waits for a part being drawn alone (the frame's end tells)
 var _rows: Array = []
 var _stops := Stops.new()
+var _changes := Changes.new()
+var _change := false  # a changed, bounds_change or pose_change field is asked
 
 
 func load_query() -> void:
 	known_fields(PLAIN, PREFIXES)
 	_select = Find.obj(def, "select")
 	Find.check(_select, "%s %s" % [kind, id])
+	for f in fields:
+		_change = _change or Changes.is_field(f)
 
 
 func frame(dt: float) -> void:
@@ -44,6 +49,7 @@ func sample(_t: float, sample: Dictionary) -> void:
 		rows.append(_row(n))
 	_motion.end_sample()
 	_stops.end_sample()
+	_changes.end_sample()
 	_rows = rows
 	write_rows(rows, sample)
 
@@ -52,6 +58,10 @@ func _row(n: Node) -> Dictionary:
 	var row := {"name": String(n.name), "class": Find.class_of(n)}
 	var dt: float = 1.0 / probe.fps
 	var light: Variant = null
+	var list: Array[Node] = []
+	if _change or "spread" in fields:
+		list = Changes.parts(n)
+	var change: Dictionary = _changes.read(n, list) if _change else {}
 	for f in fields:
 		var v: Variant = null
 		if f == "speed" or f == "facing_vs_velocity":
@@ -60,6 +70,10 @@ func _row(n: Node) -> Dictionary:
 				v = (velocity as Vector3).length()
 			elif velocity != null and (velocity as Vector3).length() >= 0.1 and Find.forward(n) != null:
 				v = rad_to_deg((Find.forward(n) as Vector3).angle_to(velocity))
+		elif Changes.is_field(f):
+			v = change[f]
+		elif f == "spread":
+			v = Changes.spread(list)
 		elif f == "lit" or f == "glow":
 			if light == null:
 				light = Find.light_of_object(n)

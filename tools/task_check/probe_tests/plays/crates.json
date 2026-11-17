@@ -1,0 +1,13 @@
+{
+  "seconds": 4,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/Crates.tscn",
+  "inputs": [
+    {"t": 2.0, "key": "<Keyboard>/b", "press": true},
+    {"t": 2.1, "key": "<Keyboard>/b", "press": false}
+  ],
+  "queries": [
+    {"id": "crates", "kind": "objects", "select": {"tag": "crate"}, "fields": ["bounds_change", "changed", "pose_change", "spread"]}
+  ]
+}

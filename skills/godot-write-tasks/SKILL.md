@@ -403,9 +403,12 @@ looks up and a positive yaw turns left.
     `class_name` or its file name), `near` a point, `where` (a property's value) or `has` (what it carries): how
     many, where, shown or hidden, and a variable of the node's own by `prop:` (`prop:health`, `prop:position.y`;
     `prop:<Class>.<member>` reads it on a node of that class below the matched one); after a staged contact, its
-    own short stop (`frozen`) and what a staged hit did (`damage_taken`); whether it gives light (`lit`) and how
-    much (`glow`, never a literal threshold), whatever lights it: a light node, an emissive or an unshaded
-    material, a shader of the game's own, a particle effect. Gate "the lamp is on" with `lit`, never by counting
+    own short stop (`frozen`) and what a staged hit did (`damage_taken`); whether it broke: `changed` (1 when
+    anything about it differs from the start, so a crate broken by hiding its mesh and showing pieces, by an
+    animation or by physics reads the same; never `count`, which still sees every piece) and how far its pieces lie
+    apart or moved (`spread`, `bounds_change`, `pose_change`, never a literal threshold); whether it gives light
+    (`lit`) and how much (`glow`, never a literal threshold), whatever lights it: a light node, an emissive or an
+    unshaded material, a shader of the game's own, a particle effect. Gate "the lamp is on" with `lit`, never by counting
     its light nodes: another build lights it without one. Read `glow` only where the ask is about how bright: it
     has no value for a lamp an effect, a texture or a shader of the game's own lights. In a game drawn unshaded
     every mesh reads lit, on or off: gate on the property that switches the lamp there. Read a count or `"of":

@@ -130,7 +130,8 @@ The validator's rules beyond the schema include:
   `from`, `on`), as in its measure (`probe_names`).
 
 Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's `NEVER_LITERAL`):
-objects `glow`, `spin`; components `intensity`, `extent_*`, `glow`, `spin`; `screen` (all); audio `volume`,
+objects `spread`, `bounds_change`, `pose_change`, `glow`, `spin`; components `intensity`, `extent_*`, `glow`, `spin`;
+`screen` (all); audio `volume`,
 `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its own.
 
 Six of the task check's rules, each closing a case that would otherwise read wrongly:
@@ -231,6 +232,22 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
     after a frame of motion, ended by one, of `LONGEST` (0.5 s) at most, is a stop; the sample has the longest that
     ended since the previous sample, 0 when none, and no value the first time the node is read. The pose is
     compared before the game's scripts of a frame, so a frame's motion counts in the next;
+  - `spread`, `changed`, `bounds_change`, `pose_change` (`changes.gd`): the object's parts are the nodes in it,
+    itself or below it, shown or hidden (`Find.parts` with `inactive`, `MAX_PARTS` 256), that are a
+    `GeometryInstance3D` whose `get_aabb()` isn't empty or a 2D node (not a collision object or shape) with an
+    `own_box`, never a particle node; drawn (`Changes.drawn`): `Find.shown`, `layers` not 0, `transparency` below 1,
+    not `SHADOW_CASTING_SETTING_SHADOWS_ONLY`, a multimesh with `instance_count` and `visible_instance_count` not 0.
+    A part's box is `Find.own_box`. `spread`: the diagonal of the `AABB` around the centres of the drawn parts' boxes,
+    a skinned `MeshInstance3D` (a `skin`) whose `skeleton` holds two shown `PhysicalBone3D`s or more counted by
+    their global positions instead. The other three: each object against the query's first sample of it (kept by
+    instance id, forgotten once the object is freed): a part's state is whether it is drawn and its world box; the
+    pose is each `Skeleton3D` in it (its bones' `get_bone_global_pose` origins, `MAX_BONES` 256) and each part other
+    than the object itself (its global position in the object's own space, 3D or 2D). `changed`: a part's drawn
+    state differs, a part drawn then is gone or a part not there then is drawn, a part's box moved more than
+    `BOUNDS` (0.01 m: the largest move of any face), a skeleton's bone count differs, or the pose's summed distance
+    is above `POSE` (0.05 m); the first sample reads 0. `bounds_change`: the largest face move over the parts
+    compared (0 on the first sample, no value without a part); `pose_change`: the summed distance (no value without
+    a skeleton or a part below the object);
   - `damage_taken` (`inputs.gd` `damage_taken`): the sum of what `take_damage` returned for the play's `damage`
     stages on the node or on a node below it; no value when none struck it, or when a call returned no number.
 - **components** (`queries/components.gd`): the nodes of the class, or with `effect` alone every particle node
@@ -739,6 +756,7 @@ stops its processing.
 | `ui_scan.gd` | the UI as widgets, ui, a widget click and a touch read it |
 | `motion.gd` | speed and spin between samples |
 | `stops.gd` | an object's short stops between samples (`frozen`) |
+| `changes.gd` | an object's parts against its first sample (`changed`, `bounds_change`, `pose_change`) and their `spread` |
 | `query.gd` | a query's base and the rows of a sample |
 | `queries/objects.gd` | `objects` |
 | `queries/components.gd` | `components` |
