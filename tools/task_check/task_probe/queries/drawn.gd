@@ -1,12 +1,14 @@
 extends "../query.gd"
 ## drawn: what is drawn in a place, whatever draws it (contract section 3). The place is a box: near a point, the box
 ## around its sphere cut to its height band; along a line, the square tube of `radius` around the segment. Every 3D
-## part drawn in the game whose world box reaches the place (but one enclosing the whole place and 20 times its size: a
-## sky dome, a room seen from inside) is put on render layer 20 for one frame, and the probe's own cameras, in
-## SubViewports that share the game's 3D world and see layer 20 alone, draw it orthographic, each view's frustum
+## part the game's camera draws whose world box reaches the place gets render layer 32 (above the 20 the editor
+## shows, in no default camera, decal or reflection probe mask) for one frame, and the probe's own cameras, in
+## SubViewports that share the game's 3D world and see layer 32 alone, draw it orthographic, each view's frustum
 ## exactly the place: near a point from above, below, +X and +Z (64 pixels across); along a line from two sides square
-## to it (128 pixels along it). So every pixel drawn is in the place, and nothing outside it is drawn. The images are
-## read when the frame is drawn (frame_drawn), the layers given back.
+## to it (at least 16 pixels across the tube). So every pixel drawn is in the place, and nothing outside it is drawn.
+## A light's masks hold every layer by default: for that frame layer 32 is taken out of each light that has it, so
+## no light reaches a part it didn't. The images are read when the frame is drawn (frame_drawn), the layers and
+## masks given back.
 ## "value" near a point: {"drawn", "motion", "base_r", "base_g", "base_b", "base_change", "pixels", "primitives"};
 ## along a line: {"drawn", "reach", "length", "pixels", "primitives"}; null when the place doesn't resolve or nothing
 ## can be drawn (headless, a 2D game).
@@ -14,9 +16,10 @@ extends "../query.gd"
 const NEAR_SIZE := 64  ## pixels across each view of a place near a point
 const LINE_SIZE := 128  ## pixels along each view of a line
 const LINE_BINS := 128  ## the line's length read in at most this many steps, none finer than a pixel
-const ENCLOSING := 20.0  ## a part around the whole place and this many times its size is left out
-const CAP := 1024  ## parts one place draws at most: the first in tree order
-const LAYER := 1 << 19  ## render layer 20: the parts in the place for the probe's cameras
+const LINE_ACROSS := 16  ## pixels across a line's tube at least
+const LINE_MAX := 4096  ## pixels along a line's view at most
+const CAP := 1024  ## parts one place draws at most: past that the reading has no value
+const LAYER := 1 << 31  ## render layer 32: the parts in the place for the probe's cameras
 const BACK := 0.05  ## m a camera stands back from the place's face
 const NEAR_FIELDS := ["drawn", "motion", "base_r", "base_g", "base_b", "base_change", "pixels", "primitives"]
 const LINE_FIELDS := ["drawn", "reach", "length", "pixels", "primitives"]
@@ -26,7 +29,8 @@ var _line: Dictionary = {}
 var _want_base := false
 var _views: Array[Dictionary] = []  # {lit: SubViewport, dark: SubViewport or null, camera(s), map}
 var _rig: Node
-var _tagged: Array = []  # [weakref, layers before]: the parts put on layer 20 for this frame
+var _tagged: Array = []  # [weakref, had it]: the parts given layer 32 for this frame (cleared after unless they had it)
+var _lights: Array = []  # [weakref, cull had it, caster had it]: lights whose masks lost layer 32 for this frame
 var _shown := 0
 var _pending: Dictionary = {}  # the sample whose value the frame completes
 var _kind := ""  # "near", "line", "" (nothing to read)
@@ -62,24 +66,33 @@ func sample(_t: float, sample: Dictionary) -> void:
 	if DisplayServer.get_name() == "headless":
 		probe.error("drawn %s: this play draws nothing (headless): drawn has no value" % id)
 		return
-	var cam: Node = probe.view()
-	if not (cam is Camera3D):
+	var cam := _game_camera()
+	if cam == null:
 		probe.error("drawn %s: the game shows no 3D camera (a 2D game): drawn reads the 3D world only" % id)
 		return
 	var started := Time.get_ticks_usec()
-	var world := (cam as Camera3D).get_world_3d()
+	var world := cam.get_world_3d()
 	var place: Variant = _place_near() if _kind == "near" else _place_line()
 	if place == null:
 		return
 	_place = place
-	var parts := _gather(place)
+	var parts: Variant = _gather(place, cam.cull_mask)
+	if parts == null:
+		probe.error("drawn %s: more than %d parts reach the place: no value (keep the place tighter)" % [id, CAP])
+		return
 	_build(world)
 	_aim(place)
 	for part in parts:
 		var g := part as GeometryInstance3D
-		_tagged.append([weakref(g), g.layers])
+		_tagged.append([weakref(g), g.layers & LAYER != 0])
 		g.layers = g.layers | LAYER
-	_shown = parts.size()
+	for n in Find.all_nodes():
+		if n is Light3D:
+			var light := n as Light3D
+			_lights.append([weakref(light), light.light_cull_mask & LAYER != 0, light.shadow_caster_mask & LAYER != 0])
+			light.light_cull_mask = light.light_cull_mask & ~LAYER
+			light.shadow_caster_mask = light.shadow_caster_mask & ~LAYER
+	_shown = (parts as Array).size()
 	for v: Dictionary in _views:
 		(v["lit"] as SubViewport).render_target_update_mode = SubViewport.UPDATE_ONCE
 		if v["dark"] != null:
@@ -96,9 +109,17 @@ func frame_drawn(_image: Image, sample: Dictionary) -> void:
 	var started := Time.get_ticks_usec()
 	for tagged: Array in _tagged:
 		var g: Object = (tagged[0] as WeakRef).get_ref()
-		if g != null:
-			(g as GeometryInstance3D).layers = tagged[1]
+		if g != null and not tagged[1]:
+			(g as GeometryInstance3D).layers = (g as GeometryInstance3D).layers & ~LAYER
 	_tagged.clear()
+	for lit: Array in _lights:
+		var light: Object = (lit[0] as WeakRef).get_ref()
+		if light != null:
+			if lit[1]:
+				(light as Light3D).light_cull_mask = (light as Light3D).light_cull_mask | LAYER
+			if lit[2]:
+				(light as Light3D).shadow_caster_mask = (light as Light3D).shadow_caster_mask | LAYER
+	_lights.clear()
 	if _pending.is_empty():
 		return
 	sample["value"] = _read_near() if _kind == "near" else _read_line()
@@ -164,7 +185,8 @@ func _place_line() -> Variant:
 	for look: Vector3 in [side, other]:
 		var up := other if look == side else -side
 		# the camera looks along -Z of its basis: Z is -look, X along the line, Y square to both (right-handed)
-		views.append(_view(mid - look * (r + BACK), Basis(d, up, -look), length + 2.0 * r, 2.0 * r, 2.0 * r, LINE_SIZE))
+		var along := clampi(maxi(LINE_SIZE, ceili(LINE_ACROSS * (length + 2.0 * r) / (2.0 * r))), LINE_SIZE, LINE_MAX)
+		views.append(_view(mid - look * (r + BACK), Basis(d, up, -look), length + 2.0 * r, 2.0 * r, 2.0 * r, along))
 	var box := AABB(a, Vector3.ZERO).expand(b).grow(r)
 	return {"box": box, "a": a, "d": d, "length": length, "r": r, "views": views}
 
@@ -177,17 +199,30 @@ static func _view(origin: Vector3, basis: Basis, width: float, height: float, de
 		"far": BACK + depth, "size": Vector2i(w, h)}
 
 
-func _gather(place: Dictionary) -> Array:
-	## the 3D parts drawn in the game whose world box reaches the place, but one around the whole place and many times
-	## its size; past CAP, the first in tree order
+func _game_camera() -> Camera3D:
+	## the camera the game is seen through: the window's Camera3D, else the current Camera3D of a SubViewport of the
+	## game's own that is shown (a 3D game drawn inside a SubViewport); null for a 2D game
+	var view: Node = probe.view()
+	if view is Camera3D:
+		return view
+	for n in Find.all_nodes():
+		if n is Camera3D and not Find.is_own(n) and (n as Camera3D).is_current():
+			var holder := (n as Camera3D).get_viewport()
+			if holder is SubViewport and (holder as SubViewport).render_target_update_mode != SubViewport.UPDATE_DISABLED:
+				return n
+	return null
+
+
+func _gather(place: Dictionary, seen: int) -> Variant:
+	## the 3D parts the game's camera draws (a layer in its cull mask `seen`) whose world box reaches the place; null
+	## when more than CAP do
 	var box: AABB = place["box"]
-	var big := maxf(box.size.x, maxf(box.size.y, box.size.z))
 	var found: Array = []
 	for n in Find.all_nodes():
 		if not (n is GeometryInstance3D) or Find.is_own(n):
 			continue
 		var g := n as GeometryInstance3D
-		if not Find.shown(g) or g.layers == 0 or g.transparency >= 1.0 \
+		if not Find.shown(g) or g.layers & seen == 0 or g.transparency >= 1.0 \
 				or g.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
 			continue
 		var around: Variant = world_box(g)
@@ -198,11 +233,9 @@ func _gather(place: Dictionary) -> Array:
 			continue
 		if _kind == "line" and not _crosses(world, place):
 			continue
-		if world.encloses(box) and minf(world.size.x, minf(world.size.y, world.size.z)) >= ENCLOSING * maxf(big, 0.01):
-			continue
 		found.append(g)
-		if found.size() >= CAP:
-			break
+		if found.size() > CAP:
+			return null
 	return found
 
 
@@ -213,10 +246,18 @@ static func world_box(g: GeometryInstance3D) -> Variant:
 	if g is GPUParticles3D:
 		local = (g as GPUParticles3D).visibility_aabb
 	elif g is CPUParticles3D:
-		var now: AABB = (g as CPUParticles3D).capture_aabb()
-		if now.size == Vector3.ZERO:
+		# where its particles are now (a single one: a point), grown by what each draws
+		var cpu := g as CPUParticles3D
+		var now: AABB = cpu.capture_aabb()
+		if now.size == Vector3.ZERO:  # one particle, or none yet: where it starts
+			now = AABB(Vector3.ZERO if cpu.local_coords else cpu.global_position, Vector3.ZERO)
+		var each := cpu.mesh.get_aabb() if cpu.mesh != null else AABB()
+		if cpu.get_param_max(CPUParticles3D.PARAM_SCALE) > 1.0:
+			each = AABB(each.position * cpu.get_param_max(CPUParticles3D.PARAM_SCALE), each.size * cpu.get_param_max(CPUParticles3D.PARAM_SCALE))
+		if each.size == Vector3.ZERO and now.size == Vector3.ZERO:
 			return null
-		return now if not (g as CPUParticles3D).local_coords else g.global_transform * now
+		var grown := AABB(now.position + each.position, now.size + each.size)
+		return grown if not cpu.local_coords else g.global_transform * grown
 	if local.size == Vector3.ZERO:
 		return null
 	return g.global_transform * local
@@ -273,6 +314,8 @@ func _viewport(world: World3D, ambient: Color) -> SubViewport:
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
 	camera.cull_mask = LAYER
 	camera.environment = light
+	camera.attributes = CameraAttributesPractical.new()  # the world's exposure, auto-exposure and depth of field left out
+	camera.compositor = Compositor.new()  # and its compositor effects
 	view.add_child(camera)
 	_rig.add_child(view)
 	camera.current = true
@@ -379,7 +422,8 @@ func _read_line() -> Variant:
 	var length: float = _place["length"]
 	var r: float = _place["r"]
 	var width := length + 2.0 * r
-	var steps := clampi(int(floor(length / maxf(length / LINE_BINS, width / LINE_SIZE))), 1, LINE_BINS)
+	var along: int = (views[0]["size"] as Vector2i).x
+	var steps := clampi(int(floor(length / maxf(length / LINE_BINS, width / along))), 1, LINE_BINS)
 	var bins := PackedByteArray()
 	bins.resize(steps)
 	var reach := -1.0

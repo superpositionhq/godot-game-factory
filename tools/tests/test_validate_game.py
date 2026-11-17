@@ -608,6 +608,12 @@ class TaskRules(Base):
                      'measure': {'probe': 'objects', 'select': {'tag': 'crate'}, 'field': field, 'of': 'max'}}
                 errs = [e for e in vg.probe_errors(c, {}, 'r', {}) if 'calibrate it' in e]
                 self.assertEqual(bool(errs), bad, (field, expect, errs))
+        near = {'point': {'xyz': [0, 1, 0]}, 'radius': 2}
+        for expect, bad in (({'op': '>', 'start_plus': 0.1}, True), ({'op': '>', 'calibrate': 0.5}, False)):
+            c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'expect': expect,
+                 'measure': {'probe': 'drawn', 'near': near, 'field': 'base_change'}}
+            self.assertEqual(bool([e for e in vg.probe_errors(c, {}, 'r', {}) if 'calibrate it' in e]), bad,
+                             ('base_change', expect))
         c = {'name': 'x', 'kind': 'probe', 'describe': 'x', 'play': 'look', 'expect': {'op': '>', 'start_plus': 5},
              'measure': {'probe': 'objects', 'select': {'tag': 'crate'}, 'field': 'spin', 'of': 'max'}}
         self.assertFalse([e for e in vg.probe_errors(c, {}, 'r', {}) if 'calibrate it' in e], 'spin may be relative')

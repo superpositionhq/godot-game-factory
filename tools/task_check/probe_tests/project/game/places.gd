@@ -1,13 +1,18 @@
 extends Node3D
 ## The places scene, for what is drawn in a place: a red box that spins, a blue box that glows green, an empty place
 ## with a wall just outside it, a particle effect, a grey box that stays still, and a beam 4 m long; around them all a
-## sky dome, a sun and a yellow ambient light the probe's views must not take. Built in code.
+## sky dome, a sun, a yellow ambient light and an exposure the probe's views must not take. Also: a black wall on a
+## layer the camera leaves out, a still box under a flickering light, a beam 5 cm thick and 20 m long, 1100 small
+## boxes in one place, a CPU particle effect of one particle.
+
+var _torch: OmniLight3D
 
 
 func _ready() -> void:
 	var camera := Camera3D.new()
 	camera.position = Vector3(0, 4, 16)
 	camera.rotation_degrees = Vector3(-15, 0, 0)
+	camera.cull_mask = camera.cull_mask & ~2  # it leaves out layer 2
 	add_child(camera)
 	var sun := DirectionalLight3D.new()
 	sun.light_energy = 0.5
@@ -18,6 +23,10 @@ func _ready() -> void:
 	world.environment = Environment.new()
 	world.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	world.environment.ambient_light_color = Color(1, 1, 0)
+	var exposure := CameraAttributesPractical.new()
+	exposure.exposure_multiplier = 4.0
+	exposure.auto_exposure_enabled = true
+	world.camera_attributes = exposure
 	add_child(world)
 	# a red box that spins; a blue box that glows green (its glow is no base colour)
 	var spinner := _box("Spinner", Vector3(-6, 0, 0), Vector3.ONE, _colour(Color(0.6, 0.05, 0.05)))
@@ -67,6 +76,51 @@ func _ready() -> void:
 	dome.mesh = sphere
 	dome.material_override = _colour(Color(0.2, 0.3, 0.6))
 	add_child(dome)
+	# a black wall filling the view, on a layer the camera leaves out: never seen (the frame would go black), never drawn
+	var black := StandardMaterial3D.new()
+	black.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	black.albedo_color = Color.BLACK
+	var unseen := _box("Unseen", Vector3(0, 2, 12), Vector3(40, 40, 0.1), black)
+	unseen.layers = 2
+	# a still box under a light that flickers every frame
+	_box("Lit", Vector3(9, 0, 0), Vector3.ONE, _colour(Color(0.5, 0.5, 0.5)))
+	_torch = OmniLight3D.new()
+	_torch.position = Vector3(9, 1.2, 0.8)
+	_torch.omni_range = 3.0
+	add_child(_torch)
+	# a beam 5 cm thick from x 0 to 20 at z 20
+	_box("Thin", Vector3(10, 0, 20), Vector3(20, 0.05, 0.05), _colour(Color(1, 1, 1)))
+	# 1100 small boxes in one place
+	var crowd := Node3D.new()
+	crowd.name = "Crowd"
+	crowd.position = Vector3(12, 0, 0)
+	add_child(crowd)
+	var small := BoxMesh.new()
+	small.size = Vector3.ONE * 0.05
+	for i in 1100:
+		var one := MeshInstance3D.new()
+		one.mesh = small
+		one.position = Vector3((i % 10) * 0.1 - 0.45, (i / 10 % 10) * 0.1 - 0.45, (i / 100) * 0.08 - 0.4)
+		crowd.add_child(one)
+	# one CPU particle that stays where it starts
+	var single := CPUParticles3D.new()
+	single.name = "Single"
+	single.position = Vector3(15, 0, 0)
+	single.amount = 1
+	single.lifetime = 10.0
+	single.gravity = Vector3.ZERO
+	single.initial_velocity_min = 0.0
+	single.initial_velocity_max = 0.0
+	single.spread = 0.0
+	var dot := QuadMesh.new()
+	dot.size = Vector2(0.3, 0.3)
+	dot.material = spark
+	single.mesh = dot
+	add_child(single)
+
+
+func _process(_delta: float) -> void:
+	_torch.light_energy = randf_range(0.0, 4.0)
 
 
 static func _colour(c: Color) -> StandardMaterial3D:

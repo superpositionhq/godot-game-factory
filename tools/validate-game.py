@@ -807,7 +807,7 @@ DRAWN_NEAR = ('drawn', 'motion', 'base_r', 'base_g', 'base_b', 'base_change')  #
 DRAWN_LINE = ('drawn', 'reach', 'length')    # a drawn measure along a line
 # fields that read 0 at the start in the usual case (an object whole and at rest), so a threshold relative to the start
 # says nothing (start_times gives 0, start_plus is a literal): calibrated only
-CALIBRATE_ONLY = {'objects': ('spread', 'bounds_change', 'pose_change')}
+CALIBRATE_ONLY = {'objects': ('spread', 'bounds_change', 'pose_change'), 'drawn': ('base_change',)}
 AUDIO_NAMED = ('sounds', 'repeats')   # read from the names of the streams that started, over the whole window
 UI_SIGNATURE_AGGS = ('changes', 'any', 'all', 'count')  # a ui signature's value means nothing; whether it changes does
 WAITS = 300   # seconds of real time a task play's waits add at most

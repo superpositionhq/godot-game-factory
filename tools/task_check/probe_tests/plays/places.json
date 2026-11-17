@@ -5,12 +5,20 @@
   "scene": "res://scenes/Places.tscn",
   "inputs": [],
   "queries": [
+    {"id": "layers", "kind": "objects", "select": {"name": "Spinner"}, "fields": ["prop:layers"]},
+    {"id": "frame", "kind": "screen", "rect": [0.0, 0.0, 1.0, 1.0]},
     {"id": "spinner", "kind": "drawn", "near": {"point": {"xyz": [-6, 0, 0]}, "radius": 1}, "fields": ["base_b", "base_change", "base_g", "base_r", "drawn", "motion"]},
     {"id": "glowing", "kind": "drawn", "near": {"point": {"xyz": [-3, 0, 0]}, "radius": 1}, "fields": ["base_b", "base_g", "base_r", "drawn"]},
     {"id": "empty", "kind": "drawn", "near": {"point": {"xyz": [0, 0, 0]}, "radius": 1}, "fields": ["drawn", "motion"]},
     {"id": "sparks", "kind": "drawn", "near": {"point": {"xyz": [3, 0, 0]}, "radius": 1}, "fields": ["drawn", "motion"]},
     {"id": "still", "kind": "drawn", "near": {"point": {"xyz": [6, 0, 0]}, "radius": 1}, "fields": ["drawn", "motion"]},
     {"id": "band", "kind": "drawn", "near": {"point": {"xyz": [6, 0, 0]}, "radius": 1, "y_min": 0.6}, "fields": ["drawn"]},
-    {"id": "beam", "kind": "drawn", "line": {"from": {"xyz": [-1, 0, 10]}, "to": {"xyz": [9, 0, 10]}, "radius": 0.3}, "fields": ["drawn", "length", "reach"]}
+    {"id": "beam", "kind": "drawn", "line": {"from": {"xyz": [-1, 0, 10]}, "to": {"xyz": [9, 0, 10]}, "radius": 0.3}, "fields": ["drawn", "length", "reach"]},
+    {"id": "around", "kind": "drawn", "near": {"point": {"xyz": [-6, 0.2, 0]}, "radius": 1.2}, "fields": ["drawn"]},
+    {"id": "unseen", "kind": "drawn", "near": {"point": {"xyz": [0, 2, 12]}, "radius": 1}, "fields": ["drawn"]},
+    {"id": "torch", "kind": "drawn", "near": {"point": {"xyz": [9, 0, 0]}, "radius": 1}, "fields": ["base_change", "drawn", "motion"]},
+    {"id": "thin", "kind": "drawn", "line": {"from": {"xyz": [-1, 0, 20]}, "to": {"xyz": [29, 0, 20]}, "radius": 0.4}, "fields": ["drawn", "length", "reach"]},
+    {"id": "crowd", "kind": "drawn", "near": {"point": {"xyz": [12, 0, 0]}, "radius": 1}, "fields": ["drawn"]},
+    {"id": "single", "kind": "drawn", "near": {"point": {"xyz": [15, 0, 0]}, "radius": 0.5}, "fields": ["drawn"]}
   ]
 }

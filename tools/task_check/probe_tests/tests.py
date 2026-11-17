@@ -533,7 +533,8 @@ def check_crates(c, found):
     c.eq("no error", errors(found), [])
 
 
-PLACES = ("spinner", "glowing", "empty", "sparks", "still", "band", "beam")
+PLACES = ("spinner", "glowing", "empty", "sparks", "still", "band", "beam", "around", "unseen", "torch", "thin", "crowd",
+          "single")
 
 
 def check_places(c, found):
@@ -543,13 +544,25 @@ def check_places(c, found):
     drawn = found["rendered"]
     if not drawn:
         c.eq("a play that draws nothing has no value", [value(found, q, 1.0) for q in PLACES], [{}] * len(PLACES))
-        c.eq("and says why, once a place", sorted(e.split(": ", 1)[1] for e in errors(found)),
+        c.eq("and says why, once a place", sorted(e.split(": ", 1)[1] for e in errors(found) if e.startswith("drawn ")),
              ["this play draws nothing (headless): drawn has no value"] * len(PLACES))
         return
-    c.eq("no error", errors(found), [])
+    c.eq("only the crowded place says why it has no value", errors(found),
+         ["drawn crowd: more than 1024 parts reach the place: no value (keep the place tighter)"])
     at = {q: value(found, q, 2.0) for q in PLACES}
     c.eq("drawn in each place: a box, a box, nothing (a wall outside it, a sky dome around all), particles, a box, "
-         "nothing above the still box's top, a beam", [at[q].get("drawn") for q in PLACES], [1, 1, 0, 1, 1, 0, 1])
+         "nothing above the still box's top, a beam, a box again, nothing the camera leaves out, a lit box, a thin "
+         "beam, no value past 1024 parts, one CPU particle", [at[q].get("drawn") for q in PLACES],
+         [1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, None, 1])
+    c.eq("two places over one part give its layers back as they were", sorted({r.get("prop:layers") for s in
+                                                                               samples(found, "layers") for r in s.get("rows") or []}), [1])
+    c.true("a wall the camera leaves out never shows in the frame (%s)" % value(found, "frame", 2.0).get("luminance"),
+           (value(found, "frame", 2.0).get("luminance") or 0) > 0.02)
+    c.eq("a still box under a light that flickers every frame: no motion, no base change",
+         [(value(found, "torch", t).get("motion"), value(found, "torch", t).get("base_change")) for t in (1.0, 2.0, 3.0)],
+         [(0, 0)] * 3)
+    c.near("a beam 5 cm thick reaches 21 m along a 30 m line", at["thin"].get("reach"), 21.0, 0.1)
+    c.near("a world exposure and auto-exposure leave the base colour as it is", at["spinner"].get("base_r"), 0.3186, 0.01)
     c.eq("the first sample has no motion", value(found, "spinner", 1 / 30).get("motion", "absent"), None)
     c.true("a box that spins moves (%s), one that stays still doesn't (%s)" % (at["spinner"].get("motion"),
                                                                                at["still"].get("motion")),
@@ -566,6 +579,12 @@ def check_places(c, found):
     c.near("and 4 m of it is drawn", at["beam"].get("length"), 4.0, 0.4)
     c.true("probe.log says what a place costs", "ms a sample" in found["files"].get("probe.log", b"").decode(
         "utf-8", "replace"))
+
+
+def places_same(found):
+    """What two drawn plays of the places must agree on: a thin beam's reach, and what each place holds."""
+    return [value(found, "thin", t).get("reach") for t in (1.0, 2.0, 3.0)] + \
+        [value(found, q, 2.0).get("drawn") for q in PLACES]
 
 
 def check_errors(c, found):
@@ -672,7 +691,7 @@ PLAYS = {
     "lamps": {"check": check_lamps, "twice": True},
     "crates": {"check": check_crates, "twice": True},
     "places": {"check": check_places},
-    "places_drawn": {"check": check_places, "spec": "places", "rendered": True},
+    "places_drawn": {"check": check_places, "spec": "places", "rendered": True, "twice": True, "same": places_same},
     "lamps_drawn": {"check": check_lamps, "spec": "lamps", "rendered": True, "twice": True, "same": lamps_lit},
     "lamps_reach": {"check": check_lamps_reach, "rendered": True},
     "errors": {"check": check_errors},

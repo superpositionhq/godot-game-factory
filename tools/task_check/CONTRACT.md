@@ -133,8 +133,8 @@ The validator's rules beyond the schema include:
 Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's `NEVER_LITERAL`):
 objects `spread`, `bounds_change`, `pose_change`, `glow`, `spin`; components `intensity`, `extent_*`, `glow`, `spin`;
 drawn (all but `drawn`); `screen` (all); audio `volume`, `max_volume`, `level`. A `render` field takes a literal: a budget is a number of its
-own. Objects `spread`, `bounds_change` and `pose_change` are calibrated only, never relative to the start
-(`CALIBRATE_ONLY`): they read 0 at the start in the usual case.
+own. Objects `spread`, `bounds_change` and `pose_change` and drawn `base_change` are calibrated only, never relative
+to the start (`CALIBRATE_ONLY`): they read 0 at the start in the usual case.
 
 Six of the task check's rules, each closing a case that would otherwise read wrongly:
 
@@ -384,33 +384,45 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   every play with `--audio-driver Dummy`, under which the engine still mixes.
 - **drawn** (`queries/drawn.gd`): the place is a box: near a point, the `AABB` around its sphere cut to its height
   band (`Find.point`, `y_min`, `y_max`, `y_relative`); along a line, the square tube of `radius` around the segment.
-  The parts: every `GeometryInstance3D` of the game (`Find.all_nodes`, not the probe's own) that is `Find.shown`, has
-  `layers` not 0, `transparency` below 1 and isn't `SHADOW_CASTING_SETTING_SHADOWS_ONLY`, whose world box
-  (`world_box`: `get_aabb()` in the world; a `GPUParticles3D`'s `visibility_aabb`, a `CPUParticles3D`'s
-  `capture_aabb()`) intersects the place (along a line, grown by the radius, also holds an end of the segment or meets
-  it), but one that encloses the place and whose smallest side is `ENCLOSING` (20) times the place's largest; `CAP`
-  (1024) at most, in tree order. In the sample those parts get render layer 20 (`LAYER`, bit 19) added to their
-  `layers`, and the query's SubViewports (`world_3d` the game camera's world, `transparent_bg`, no MSAA, screen-space
-  AA or TAA) render once (`UPDATE_ONCE`) through a `Camera3D` each, orthographic, `keep_aspect` `KEEP_WIDTH`,
-  `cull_mask` layer 20 alone, its `environment` a clear background, a white ambient colour (energy 1; for the second,
-  `base_` view, black and 0), reflected light off, a linear tonemapper. Each camera's frustum is exactly the place:
-  near a point 4 views (from above, below, +X, +Z), `NEAR_SIZE` (64) pixels across; along a line 2 views square to it,
-  `LINE_SIZE` (128) pixels along it; the camera stands `BACK` (0.05 m) before the place's face, `near` `BACK` and
-  `far` `BACK` plus its depth. When the frame is drawn (`frame_drawn`) the layers are given back and each view's
-  image read as RGBA8: a pixel is drawn where its alpha is above 0. `motion`: of the pixels drawn now or at the
-  previous sample, the share whose drawn state or a channel byte changed by more than 1; `base_r|g|b`: over the
-  pixels of alpha 255, the white-lit view's colour less the unlit one's, made linear (`srgb_to_linear`), averaged;
-  `base_change`: its distance from the first base colour the query read. Along a line, a drawn pixel's column is
-  its distance along the line (`t` from `from`); `reach` the largest `t` within the segment, `length` the steps of
-  the segment (`LINE_BINS` at most, none finer than a column) that hold one. `pixels` and `primitives` are always in
-  the value. No value: a place that doesn't resolve, `--headless`, a window with no `Camera3D` (`probe.view()`),
-  each said once in `query_errors` as `drawn <id>: ...`. `probe.log` notes the time a sample takes on the CPU (the
-  first sample and every tenth). Measured on the factory PC, on Forward+ and on the Mobile renderer alike: a red
-  box (albedo 0.6, 0.05, 0.05) under a sun and a yellow ambient light reads base 0.3186, 0.0040, 0.0040 (its
-  albedo made linear), a blue box glowing green reads green 0, an empty place with a wall just outside its box and
-  a sky dome around it reads 0 pixels, a still box motion 0, a turning box 0.30 and particles 0.36 to 0.40, a beam
-  from 1 m to 5 m along a line reach 4.96 and length 4.0; 2.5 ms a sample near a point, 5 ms with `base_`, 0.7 ms
-  along a line. The Compatibility renderer is not measured.
+  The game's camera (`_game_camera`): `probe.view()` when it is a `Camera3D`, else the current `Camera3D` of a
+  `SubViewport` of the game's own that updates. The parts: every `GeometryInstance3D` of the game (`Find.all_nodes`,
+  not the probe's own) that is `Find.shown`, has `layers` meeting the camera's `cull_mask`, `transparency` below 1 and
+  isn't `SHADOW_CASTING_SETTING_SHADOWS_ONLY`, whose world box (`world_box`: `get_aabb()` in the world; a
+  `GPUParticles3D`'s `visibility_aabb`; a `CPUParticles3D`'s `capture_aabb()`, its emitter's place when that is
+  empty, grown by its mesh's box) intersects the place (along a line, grown by the radius, also holds an end of the
+  segment or meets it). More than `CAP` (1024): no value, said once in `query_errors`. In the sample each part gets
+  render layer 32 (`LAYER`, bit 31) added to its `layers` (remembered: whether it had the bit), and every `Light3D`
+  has bit 31 taken out of its `light_cull_mask` and `shadow_caster_mask` (remembered the same way); when the frame is
+  drawn (`frame_drawn`) the bit is cleared from a part that hadn't it and put back in a light that had it, so two
+  places over one part, or two samples before one frame, leave every mask as it was. On 4.7.2 the bit is kept
+  (`layers` holds 32 bits), a `Camera3D`'s, a `Decal`'s and a `ReflectionProbe`'s default masks are 0xFFFFF (20
+  bits), a light's `light_cull_mask` and `shadow_caster_mask` 0xFFFFFFFF. The query's SubViewports (`world_3d` the
+  game camera's world, `transparent_bg`, no MSAA, screen-space AA or TAA) render once (`UPDATE_ONCE`) through a
+  `Camera3D` each, orthographic, `keep_aspect` `KEEP_WIDTH`, `cull_mask` layer 32 alone, its `environment` a clear
+  background, a white ambient colour (energy 1; for the second, `base_` view, black and 0), reflected light off, a
+  linear tonemapper, its `attributes` a new `CameraAttributesPractical` (exposure 1, no auto-exposure, no depth of
+  field) and its `compositor` an empty `Compositor`, so the world's own are left out. The game's lights don't reach
+  these views: a camera's `cull_mask` culls lights by their `layers` (measured with an `OmniLight3D` whose energy
+  changes every frame: `motion` 0). Each camera's frustum is exactly the place: near a point 4 views (from above,
+  below, +X, +Z), `NEAR_SIZE` (64) pixels across; along a line 2 views square to it, `LINE_ACROSS` (16) pixels across
+  the tube at least, `LINE_SIZE` (128) to `LINE_MAX` (4096) along it; the camera stands `BACK` (0.05 m) before the
+  place's face, `near` `BACK` and `far` `BACK` plus its depth. Each view's image is read as RGBA8: a pixel is drawn
+  where its alpha is above 0. `motion`: of the pixels drawn now or at the previous sample, the share whose drawn
+  state or a channel byte changed by more than 1; `base_r|g|b`: over the pixels of alpha 255, the white-lit view's
+  colour less the unlit one's, made linear (`srgb_to_linear`), averaged; `base_change`: its distance from the first
+  base colour the query read. Along a line, a drawn pixel's column is its distance along the line (`t` from `from`);
+  `reach` the largest `t` within the segment, `length` the steps of the segment (`LINE_BINS` at most, none finer
+  than a column) that hold one. `pixels` and `primitives` are always in the value. No value: a place that doesn't
+  resolve, `--headless`, no 3D camera, more than `CAP` parts, each said once in `query_errors` as `drawn <id>: ...`.
+  `probe.log` notes the time a sample takes on the CPU (the first sample and every tenth). Measured on the factory
+  PC, on Forward+ and on the Mobile renderer alike, under a sun, a yellow ambient light and a world exposure of 4
+  with auto-exposure: a red box (albedo 0.6, 0.05, 0.05) reads base 0.3186, 0.0040, 0.0040 (its albedo made
+  linear), a blue box glowing green reads green 0, an empty place with a wall just outside its box and a sky dome
+  around it reads 0 pixels, a still box motion 0 (under a flickering light too), a turning box 0.30, particles 0.36
+  to 0.41, a beam from 1 m to 5 m along a line reach 4.96 and length 3.98, a beam 5 cm thick along a 30 m line reach
+  20.975 in two plays, a black wall on a layer the camera leaves out drawn 0 and nowhere in the frame, a place of
+  1100 parts no value, one CPU particle drawn; 2.5 ms a sample near a point, 5 ms with `base_`, 0.7 ms along a line.
+  The Compatibility renderer is not measured.
 - **render** (`queries/render.gd`): `RenderingServer.get_rendering_info` read every frame for the frame drawn before
   it, `RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME` and `RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME`, the highest since
   the previous sample kept (null before any frame); `RENDERING_INFO_TEXTURE_MEM_USED` at the sample, in MiB.
