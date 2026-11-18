@@ -5,9 +5,7 @@ with their defaults filled in (tasks.measure). Units are metres, Y is up.
 - `plan(task)`: each play's probe queries (game-probe-queries/1), every measure of the task's probes merged per play
   under stable ids (a query's id is the hash of what it selects, its fields the union of what the probes read).
 - `measured(measure, probe, log)`: one number from a play's probe.json (`measures`, and the `track` and `camera` rows
-  for the player's and the camera's own fields) or its log, following since/window/at/of/agg/match, and why there is
-  none. A measure's `since` is an event read from the same samples (event_time); a shot's `when` is read by the probe
-  itself, every frame (probe_inputs)."""
+  for the player's and the camera's own fields) or its log, following window/at/of/agg/match, and why there is none."""
 
 import hashlib
 import json
@@ -73,32 +71,6 @@ def needs(measure):
     return []  # log
 
 
-def all_needs(measure):
-    """The probe queries a runtime measure needs (needs) and those of its `since` event's measure: the play samples
-    both at its rate."""
-    since = measure.get("since")
-    return needs(measure) + (needs(since["measure"]) if since else [])
-
-
-def probe_inputs(inputs):
-    """A play's inputs (tasks.inputs form) as the play spec hands them to the probe: a shot's `when` as the probe reads
-    it every frame, {"query": the one query its measure needs (needs, with its id), "field", "of", "match", "op",
-    "value", "within"} (`within` only when set). A `when` as a task writes it is taken too (its defaults filled in)."""
-    out = []
-    for row in inputs or []:
-        if isinstance(row, dict) and isinstance(row.get("when"), dict) and "query" not in row["when"]:
-            found = tasks.event(row["when"])
-            inner = found["measure"]
-            (query,) = needs(inner)
-            when = {"query": {"id": query_id(query), **query}, "field": inner["field"], "of": inner.get("of") or "count",
-                    "match": inner.get("match"), "op": found["expect"]["op"], "value": found["expect"]["value"]}
-            if found["within"] is not None:
-                when["within"] = found["within"]
-            row = {**row, "when": when}
-        out.append(row)
-    return out
-
-
 def hears(queries):
     """Whether a play's queries (a list, or a query file) measure audio: the play spec's `sound`, which paces the play
     to real time (sound plays in real time); every other play runs as fast as the machine renders."""
@@ -128,7 +100,7 @@ def plan(task):
     out = {}
     for check in probes(task):
         merged = out.setdefault(tasks.play_name(check), {})
-        for query in all_needs(check["measure"]):
+        for query in needs(check["measure"]):
             qid = query_id(query)
             found = merged.setdefault(qid, {"id": qid, **{k: v for k, v in query.items() if k != "fields"}})
             if "fields" in query:
@@ -349,51 +321,23 @@ def angled(measure, value):
     return abs(normal(value - to_angle)) if to_angle is not None else normal(value)
 
 
-def pick(series, measure, since=None):
-    """The samples [(t, value)] (in time order) that `window` or `at` picks; all of them by default. `since`: the play
-    time of the measure's event (event_time), from which `window` and `at` count; by default then the samples from it
-    on, and `at` "end" the last sample only when it is not before it."""
+def pick(series, measure):
+    """The samples [(t, value)] (in time order) that `window` or `at` picks; all of them by default."""
     series = sorted(series, key=lambda s: s[0])
-    base = since or 0.0
     if measure.get("window") is not None:
         t0, t1 = measure["window"]
-        return [s for s in series if base + t0 - 1e-6 <= s[0] <= base + t1 + 1e-6]
+        return [s for s in series if t0 - 1e-6 <= s[0] <= t1 + 1e-6]
     at = measure.get("at")
     if at == "end":
-        return [s for s in series[-1:] if since is None or s[0] >= since - 1e-6]
+        return series[-1:]
     if at is not None:
         picked = []
         for t in at:
-            found = _nearest(series, base + t)
+            found = _nearest(series, t)
             if found is not None:
                 picked.append(found)
         return picked
-    return series if since is None else [s for s in series if s[0] >= since - 1e-6]
-
-
-NEVER = "its event never happened"  # why a measure whose `since` event never came has no value (the probe's words too)
-
-
-def holds(value, op, limit):
-    """Whether `value` meets an expect's `op` and literal `limit` (== and != within 1e-9)."""
-    if op in ("==", "!="):
-        same = math.isclose(value, limit, rel_tol=1e-9, abs_tol=1e-9)
-        return same if op == "==" else not same
-    return {">": value > limit, ">=": value >= limit, "<": value < limit, "<=": value <= limit}[op]
-
-
-def event_time(event, probe):
-    """(the play time of a measure's `since` event (tasks.event form), None) or (None, why none): the first sample of
-    its measure, no later than `within` s into the play when it says, whose value meets its expect. The samples are the
-    play's (its `every`): the event is known to that precision."""
-    inner, expect, within = event["measure"], event["expect"], event.get("within")
-    for t, value in sorted(series(inner, probe), key=lambda s: s[0]):
-        if within is not None and t > within + 1e-6:
-            break
-        if value is not None and holds(value, expect["op"], expect["value"]):
-            return t, None
-    said = f" in the play's first {fmt(within)} s" if within is not None else ""
-    return None, f"{NEVER} (its {inner['probe']} {inner['field']} never read {expect['op']} {fmt(expect['value'])}{said})"
+    return series
 
 
 def _nearest(rows, t, key=lambda r: r[0]):
@@ -536,12 +480,12 @@ def default_agg(measure):
     return measure.get("agg") or ("sum" if counted else "last")
 
 
-def _heard_names(measure, probe, since=None):
+def _heard_names(measure, probe):
     """(audio `sounds` or `repeats` over the samples `measure` picks, or None; why none): the names of the streams
     that started in those samples' intervals, in the order they started (each sample's `starts` rows: the probe lists
     at most 64 a sample and says how many there were)."""
     (query,) = needs(measure)
-    picked = pick([(s["t"], s.get("value")) for s in _samples(probe, query_id(query))], measure, since)
+    picked = pick([(s["t"], s.get("value")) for s in _samples(probe, query_id(query))], measure)
     if not picked:
         return None, f"no samples in the window (the play ended at {fmt(ended(probe))} s)"
     rows = []
@@ -566,13 +510,13 @@ VOICES = ("a player it selects plays voices of its own (a polyphonic or a genera
           "seen, read `level`")
 
 
-def _unseen_voices(measure, probe, since=None):
+def _unseen_voices(measure, probe):
     """A note for a reading of the sounds that start, or None: a sample the measure picks says a matching player's
     stream plays voices of its own, which the probe can't see start."""
     if measure["probe"] != "audio" or measure.get("field") not in tasks.AUDIO_STARTED + tasks.AUDIO_NAMED:
         return None
     (query,) = needs(measure)
-    picked = pick([(s["t"], s.get("value")) for s in _samples(probe, query_id(query))], measure, since)
+    picked = pick([(s["t"], s.get("value")) for s in _samples(probe, query_id(query))], measure)
     return VOICES if any(isinstance(v, dict) and v.get("voices_unseen") is True for _, v in picked) else None
 
 
@@ -606,8 +550,7 @@ def unstaged(probe):
 def measured(measure, probe, log=""):
     """(a runtime measure of one play as one number, or None; why none). A play that ended early (quit, crashed,
     never reached the window) has no samples there: "no samples in the window (the play ended at X s)". A play one
-    of whose contact stages landed on nothing measures nothing (unstaged). A measure with `since` whose event never
-    came measures nothing: "its event never happened (...)" (event_time)."""
+    of whose contact stages landed on nothing measures nothing (unstaged)."""
     missed = unstaged(probe)
     if missed:
         return None, missed
@@ -615,19 +558,14 @@ def measured(measure, probe, log=""):
         return float(sum(1 for line in (log or "").splitlines() if re.search(measure["pattern"], line))), None
     if probe is None:
         return None, "no samples in the window (the play wrote no probe file)"
-    since = None
-    if measure.get("since") is not None:
-        since, why = event_time(measure["since"], probe)
-        if since is None:
-            return None, why
     if measure["probe"] == "audio" and measure.get("field") in tasks.AUDIO_NAMED:
-        return _heard_names(measure, probe, since)
-    picked = pick(series(measure, probe), measure, since)
+        return _heard_names(measure, probe)
+    picked = pick(series(measure, probe), measure)
     if not picked:
         return None, f"no samples in the window (the play ended at {fmt(ended(probe))} s)"
     value = aggregate([v for _, v in picked], default_agg(measure))
     if value is not None:
-        return value, _unseen_voices(measure, probe, since)
+        return value, _unseen_voices(measure, probe)
     errors = _own_errors(measure, probe)
     said = f"; the probe said: {errors[0][:300]}" if errors else ""
     return None, f"no value in the window (nothing it selects was measured){said}"

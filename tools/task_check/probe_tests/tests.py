@@ -253,25 +253,9 @@ def check_captions(c, found):
     game_log = found["log"][:len(found["log"]) - len(found["output"])]  # the log file alone (its output echoes it)
     pressed = re.findall(r"^PRESSED (\w+)", game_log, re.M)
     note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
-    c.eq("each control the play named by its shown text is pressed once, in the order sent, and each control of the "
-         "scrolled list it names, scrolled into view first when it is out of it, but the disabled one", pressed,
-         ["Button2", "Start", "AgainLow", "AgainHigh", "PlayNow", "Button4", "ListTop", "PanelTop", "ListBottom",
-          "PanelBottom", "Zh", "ZhLoose", "ZhTap", "ListEdge", "ListEdge", "ListBottom", "ListBottom", "ListBottom"])
-    scrolled = re.findall(r"scrolled (.+?) to show (\w+) \((\w+)\) for the (click|tap) on '([^']+)'", note)
-    c.eq("a click on a control out of the list's view scrolls the list to it first, the least way: one wholly out of "
-         "view below or above (found off the frame too), one partly in view whose centre is out of it, a disabled "
-         "button, a caption read on a button partly in view; one in view scrolls nothing",
-         scrolled, [("List (ScrollContainer)", "ListBottom", "Button", "click", "ListBottom"),
-                    ("List (ScrollContainer)", "PanelBottom", "Panel", "click", "PanelBottom"),
-                    ("List (ScrollContainer)", "ListEdge", "Button", "click", "ListEdge"),
-                    ("List (ScrollContainer)", "ListBottom", "Button", "click", "ListBottom"),
-                    ("List (ScrollContainer)", "Bolted", "Button", "click", "Bolted"),
-                    ("List (ScrollContainer)", "ListBottom", "Button", "click", "Bottom Row")])
-    c.true("then the click lands on it, and a tap on a control the list shows scrolls nothing",
-           "clicked ListBottom (Button) by name" in note and "clicked PanelBottom (Panel) by name" in note
-           and "clicked ListEdge (Button) by name" in note and 'clicked ListEdge (Button) by its caption "Edge Row"' in note
-           and 'clicked ListBottom (Button) by its caption "Bottom Row"' in note
-           and "tap: finger 1 goes down on ListBottom (Button) by name" in note, note[-3000:])
+    c.eq("each control the play named by its shown text is pressed once, in the order sent", pressed,
+         ["Button2", "Start", "AgainLow", "AgainHigh", "PlayNow", "Button4", "ListTop", "PanelTop", "Zh", "ZhLoose",
+          "ZhTap"])
     c.true("a click by a caption, whatever its case and spacing: probe.log says how it was found",
            'clicked Button2 (Button) by its caption "Begin Run"' in note, note[-1500:])
     c.true("a name wins over another button's caption", "clicked Start (Button) by name" in note, note[-1500:])
@@ -292,119 +276,29 @@ def check_captions(c, found):
     c.true("a tap by a Chinese caption", 'finger 0 goes down on ZhTap (Button) by its caption "确定"' in note,
            note[-1500:])
     nothing = "no visible control that takes a click matches it, by name, class or caption"
-    c.eq("text that isn't shown, no match and an optional click with no match (the probe sends it as any; the checker "
-         "leaves its miss out) are misses of no control; a click on a button shown but disabled, marked `disabled` or "
-         "not, is a miss that says so (the checker reads the marked one as landed), the list's one once it is scrolled "
-         "to; none of them presses anything",
+
+    def out(name, cls="Button", by="name"):
+        return (f"a control matches it ({name} ({cls}) by {by}), scrolled out of its container's view: a press at its "
+                "centre lands outside the view")
+
+    c.eq("text that isn't shown, no match, and an optional click with no match (the probe sends it as any; the checker "
+         "leaves its miss out) are misses of no control, as is an optional click by the caption of a button wholly out "
+         "of the list's view (it shows no caption); a click on a button shown but disabled, marked `disabled` or not, is "
+         "a miss that says so (the checker reads the marked one as landed); a click or a tap on a control whose centre "
+         "is out of the list's view (wholly out, or partly in view) is a miss that says it is scrolled out, whatever "
+         "its marks, and is never passed on to another match; none of them presses anything",
          [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])],
          [(2.5, "click", "hidden_word", nothing), (3.0, "click", "nothing_here", nothing),
+          (4.1, "click", "ListBottom", out("ListBottom")), (4.3, "click", "PanelBottom", out("PanelBottom", "Panel")),
           (4.5, "click", "maybe_later", nothing),
           (5.4, "click", "Locked Door", 'a button matches it (Locked (Button) by its caption "Locked Door"), shown but '
                                        "disabled: the click does nothing"),
           (5.7, "click", "Sealed", "a button matches it (Sealed (Button) by name), shown but disabled: the click does "
                                    "nothing"),
-          (6.5, "click", "Bolted", "a button matches it (Bolted (Button) by name), shown but disabled: the click does "
-                                   "nothing")])
-    c.eq("inputs sent (a scrolled click counts once)", probe.get("inputs_sent"), 24)
-
-
-SCROLLED_OUT = "scrolled out of its container's view: a press at its centre lands outside the view"
-COVERED = "covered by another control"
-NEVER = "its event never happened"
-# the scrolls scene's buttons on screen once "Far Away" is scrolled to, and whether a press at the centre of each goes
-# to something else (the widgets field `covered`)
-COVERS = {"FarButton": 0.0, "Under": 1.0, "Veiled": 0.0, "Behind": 1.0, "Through": 1.0, "Free": 0.0, "Shut": 1.0,
-          "Low": 1.0}
-
-
-def covers(found, t):
-    return {r["name"]: r.get("covered") for r in rows(found, "covers", t)}
-
-
-def check_scrolls(c, found):
-    if not ended(c, found, 8.5):
-        return
-    probe = found["probe"]
-    game_log = found["log"][:len(found["log"]) - len(found["output"])]
-    pressed = re.findall(r"^PRESSED (\w+)", game_log, re.M)
-    took = re.findall(r"^TOOK (\w+)", game_log, re.M)
-    note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
-    c.eq("pressed, in order: a button in a list inside a list (both scrolled to it), a tap's button scrolled out of the "
-         "outer list's view, a button found by a caption the screen didn't show yet, a button under a see-through "
-         "Control that takes no press (by the probe, then by a raw click), and a button once the dialog is gone",
-         pressed, ["DeepButton", "OuterTop", "FarButton", "Veiled", "Veiled", "Free"])
-    c.eq("a raw click at the centre of each button the probe found covered goes to what is over it (the engine's GUI "
-         "agrees), and one while the exclusive dialog is up reaches nothing", took, ["Lid", "Glass", "Mesh", "Banner"])
-    c.true("both lists scroll, the innermost first, to a button below the frame",
-           "scrolled Inner (ScrollContainer), Outer (ScrollContainer) to show DeepButton (Button) for the click on "
-           "'DeepButton'" in note and "clicked DeepButton (Button) by name" in note, note[-4000:])
-    c.true("a tap scrolls the outer list back to its top button",
-           "scrolled Outer (ScrollContainer) to show OuterTop (Button) for the tap on 'OuterTop'" in note
-           and "tap: finger 0 goes down on OuterTop (Button) by name" in note, note[-4000:])
-    c.true("a click by a caption the screen doesn't show yet scrolls to the button that shows it",
-           "scrolled Outer (ScrollContainer) to show FarButton (Button) for the click on 'Far Away'" in note
-           and 'clicked FarButton (Button) by its caption "Far Away"' in note, note[-4000:])
-    c.eq("nothing else scrolls: not for a drag, nor behind a Control that only clips (alone, or round a list that could "
-         "scroll to the button but not into it)", len(re.findall(r"^\S+ \[[^]]*\] scrolled ", note, re.M)), 3)
-    for name, over, verb in (("Under", "Scrolls/Lid (Panel)", "clicked"), ("Behind", "Scrolls/Glass (Control)", "clicked"),
-                             ("Through", "Scrolls/Mesh (Control)", "clicked"), ("Low", "Top/Banner (Panel)", "clicked"),
-                             ("Free", "Scrolls/Modal (AcceptDialog)", "clicked"),
-                             ("Behind", "Scrolls/Glass (Control)", "tapped")):
-        c.true(f"probe.log names what is over {name} ({verb})",
-               f"{name} (Button) matches '{name}', but {over} is over it: not {verb}" in note, note[-4000:])
-    c.true("a disabled button something is over is covered, not shown but disabled",
-           "Shut (Button) matches 'Shut', shown but disabled, and Scrolls/Shutter (Panel) is over it: not clicked" in note,
-           note[-4000:])
-
-    def out(name):
-        return f"a control matches it ({name} (Button) by name), {SCROLLED_OUT}"
-
-    c.eq("the misses: a drag on a control out of its list's view (a drag scrolls nothing), clicks and a tap on covered "
-         "controls (an optional click, and a disabled click on a disabled button, too), clicks on controls a Control "
-         "that only clips hides, and a click while an exclusive dialog is up",
-         [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])],
-         [(1.0, "drag", "OuterTop", out("OuterTop")), (2.5, "click", "Under", COVERED),
-          (2.6, "click", "Under", COVERED), (3.0, "click", "Behind", COVERED), (3.2, "click", "Through", COVERED),
-          (3.4, "click", "Low", COVERED), (3.6, "click", "Clipped", out("Clipped")),
-          (3.8, "click", "Boxed", out("Boxed")), (4.0, "tap", "Behind", COVERED), (5.3, "click", "Free", COVERED),
-          (7.0, "click", "Shut", COVERED)])
-    c.eq("a touch's miss is a line of the play's errors, a click's isn't", errors(found),
-         [f"inputs: the drag at 1.00 s missed: {out('OuterTop')}", f"inputs: the tap at 4.00 s missed: {COVERED}"])
-    c.eq("inputs sent (a scrolled click or tap counts once)", probe.get("inputs_sent"), 36)
-    c.eq("covered: 1 under a panel, a Control that draws nothing, one that passes the press on, a higher canvas "
-         "layer's panel (a disabled button too); 0 under one that takes no press and with nothing over it",
-         covers(found, 4.5), COVERS)
-    c.eq("covered while the exclusive dialog is up: every button", covers(found, 5.5), {n: 1.0 for n in COVERS})
-    c.eq("and once it is gone, as before", covers(found, 6.5), COVERS)
-
-
-def check_events(c, found):
-    if not ended(c, found, 4.5 + 5 / 30):  # headless: the shots wait for a drawn frame that never comes
-        return
-    probe = found["probe"]
-    note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
-    # Space at 1.0 s (frame 30): the banner shows 20 frames on (frame 49), the score counts from the frame after
-    seen = next((s["t"] for s in samples(found, "banner") if s.get("rows")), None)
-    c.true("the samples show the banner first in the sample at or after 1.63 s, no later than one sampling step "
-           f"({seen})", isinstance(seen, float) and 49 / 30 - 1e-6 <= seen < 49 / 30 + 0.1 + 1e-6)
-    later = row(found, "score", (seen or 0) + 0.2).get("prop:score")
-    c.near("the score 0.2 s after that sample (what a since window [0.2, ...] reads first)", later, 6, 1)
-    for shot, at, said in (("win", "1.63", "count reads 1"), ("five", "1.80", "text reads 1"),
-                           ("ten", "1.97", "prop:score reads 10"), ("already", "2.50", "visible reads 1")):
-        c.true(f"the shot {shot} is taken in the frame its event comes ({at} s)",
-               f"the shot {shot}'s event: {said}" in note and f"screenshot shot_{shot}.png at {at} s" in note,
-               note[-3000:])
-    c.true("no shot is taken for an event that never comes",
-           "screenshot shot_lost.png" not in note and "screenshot shot_late.png" not in note, note[-3000:])
-    c.eq("an event that never comes is a miss: once its `within` is over, or at the play's end",
-         [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])],
-         [(0.5, "shot_when", "lost", NEVER), (2.0, "shot_when", "late", NEVER)])
-    c.true("the miss of the one with `within` comes when it is over (1.5 s), not at the play's end",
-           re.search(r"^1\.53 \[[^]]*\] missed: shot_when lost at 0\.50 s", note, re.M), note[-3000:])
-    c.eq("inputs sent", probe.get("inputs_sent"), 8)
-    c.eq("no error but the headless frame's", [e for e in errors(found)
-                                              if not e.startswith("the play's last frames weren't drawn")], [])
-
+          (6.2, "click", "ListEdge", out("ListEdge")),
+          (6.3, "click", "Edge Row", out("ListEdge", by='its caption "Edge Row"')),
+          (6.4, "click", "ListBottom", out("ListBottom")), (6.5, "click", "Bolted", out("Bolted")),
+          (6.6, "click", "Bottom Row", nothing), (6.8, "tap", "ListBottom", out("ListBottom"))])
 
 def check_second(c, found):
     if not ended(c, found, 5.5):
@@ -892,15 +786,7 @@ def check_frame(c, found):
         return
     probe = found["probe"]
     width, height = found["size"]
-    c.eq("screenshots: one taken when its event came (the tap's count shown), the evenly spaced ones, a named one",
-         probe.get("screenshots"), ["shot_tapped.png", "shot_00.png", "shot_01.png", "shot_moved.png"])
-    note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
-    c.true("the shot that waits for its event is taken in the frame the tap's count shows",
-           re.search(r"the shot tapped's event: text reads 1\n.*screenshot shot_tapped\.png at 0\.[56]\d s", note),
-           note[-2000:])
-    c.eq("one whose event doesn't come within its time is a miss",
-         [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])],
-         [(2.6, "shot_when", "never", NEVER)])
+    c.eq("screenshots", probe.get("screenshots"), ["shot_00.png", "shot_01.png", "shot_moved.png"])
     for name in probe.get("screenshots", []):
         c.eq(f"{name} is exactly the frame's size, without alpha", png_size(found["files"].get(name, b"")), (width, height, 2))
     c.eq("no error", errors(found), [])
@@ -925,8 +811,6 @@ PLAYS = {
     "touch_drawn": {"check": check_touch, "spec": "touch", "rendered": True},
     "second": {"check": check_second, "twice": True},
     "captions": {"check": check_captions},
-    "scrolls": {"check": check_scrolls},
-    "events": {"check": check_events},
     "contact": {"check": check_contact, "twice": True},
     "sounds": {"check": check_sounds, "twice": True, "same": sound_totals},
     "lamps": {"check": check_lamps, "twice": True},

@@ -72,14 +72,7 @@ Plays and inputs:
   `widget` is a wildcard on a name, a class name, or a button's caption as the screen shows it, in any language,
   spaces and punctuation included: any text of 1 to 120 characters without a control character
   (`^[^\x00-\x1f\x7f]{1,120}$`); a touch's spot is `[fx, fy]` or `{"widget": "<text>"}` (the same pattern); a widget
-  click's `optional` and `disabled` are true or left out; `teleport_to`'s `distance` defaults to 2 m; a `shot` may
-  say `when`, an event (below).
-- Events (`Event`: `{"measure", "expect", "within"}`): a sampled measure's `since` and a shot's `when`. The measure is
-  one the probe samples (never `log` or `seen`, nor `audio` `sounds` or `repeats`), with no `window`, `at`, `agg` or
-  `since` of its own, under every rule of a measure; `expect` is a literal (`Value`); `within` is above 0, up to
-  120 s. A shot's `when` reads `ui` `count` or `text` (no select `rect`), `widgets` `count` or `visible`, or `objects`
-  `count`, `x`, `y`, `z`, `active`, `hidden` or a `prop:` member, with no `to_angle` or `to_axis` and no `has.lit`
-  anywhere (the validator's `event_errors`, `WHEN_FIELDS`).
+  click's `optional` and `disabled` are true or left out; `teleport_to`'s `distance` defaults to 2 m.
 - Touches (`tap`, `drag`): one finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and
   every touch is over by the play's end (the validator's `TOUCH_GAP`).
 - The stages of a contact: `pin` (an object select, `hold` above 0 up to 120 s, `front` 0 to 1000 m or `at` a point,
@@ -154,8 +147,7 @@ Six of the task check's rules, each closing a case that would otherwise read wro
 - a play with an `inputs_missed` row of kind `pin`, `damage` or `set` has no value for any of its probes, the log's
   too: "a stage of the play didn't land: <kind> <target> at <t> s: <why>", the first such row
   (`probes.unstaged`, `STAGES`). A probe that reads `damage_taken` 0 or a time scale of 1 would otherwise pass on a
-  contact that never happened. Rows of other kinds (a touch, a click, a shot whose event never came, a scene) change
-  nothing here (they are the play's misses, read by the grade);
+  contact that never happened. Rows of other kinds (a touch, a click, a shot, a scene) change nothing;
 - a still-works probe is excused only when its start play has no samples ("no samples in the window": the play
   crashed, ended early or wrote no probe file); one that finds nothing to measure in a start that ran counts against
   the task (`verdict.verdict`);
@@ -177,13 +169,8 @@ A `file_exists` glob leaves out the engine's and the checker's folders (`.godot`
 
 What each field means, for a task's author, is `docs/task-probes.md` section 2, and this section doesn't repeat it.
 It says, kind by kind, where the probe reads the measure (the script, its constants) and what it writes for the logs
-beyond the fields. The reduction (`since`, `window`, `at`, `agg`, `of`, `match`, `to_angle`, `to_axis`; every match
-counted past the 200 rows through the sample's `total` and `full`) is the checker's (`probes.py`). A measure's `since`
-is read from the same play's samples: the checker plans its event's query beside the measure's own
-(`probes.all_needs`), finds the first sample (no later than `within` s) whose reading of it meets its expect
-(`probes.event_time`, `holds`), and counts the measure's `window` and `at` from that sample's time (`probes.pick`);
-with neither, the samples from it on. No such sample: no value, `its event never happened (its <probe> <field> never
-read <op> <value>[ in the play's first <within> s])` (`probes.NEVER`).
+beyond the fields. The reduction (`window`, `at`, `agg`, `of`, `match`, `to_angle`, `to_axis`; every match counted
+past the 200 rows through the sample's `total` and `full`) is the checker's (`probes.py`).
 
 - **Selects and rows** (`find.gd`, `query.gd` `write_rows`). Matches come in tree order, as the engine lists the tree
   (`Node.find_children`, depth first): the root's children in order, so the autoloads first, then the current scene;
@@ -351,12 +338,9 @@ read <op> <value>[ in the play's first <within> s])` (`probes.NEVER`).
   Control of no size counts), its own `self_modulate` not counted, so an invisible hit area a player presses is
   pressed. Clipping plays no part in that choice; the Control chosen is then tested by `UiScan.clipped_out`: when
   its centre, where the press goes, lies outside a `clip_contents` Control above it at any depth (a
-  `ScrollContainer`'s view), in that Control's own rectangle as the engine tests a press, its scroll areas scroll to
-  it when they alone hide it, else nothing is sent and the input is a miss (section 4), never passed on to the next
-  match. A widget wholly outside such a Control is not on screen (`visible`); one partly inside is. `covered`
-  (`UiScan.covered`): 1 when a press at its centre goes to something else (`UiScan.press_reaches`, section 4), 0 when
-  it reaches it; null when it isn't on screen, has no size, its centre is outside a `clip_contents` Control above it
-  or the frame, or it can't be told. How text is read: task-probes.md 2.6.
+  `ScrollContainer`'s view), in that Control's own rectangle as the engine tests a press, nothing is sent and the
+  input is a miss (section 4), never passed on to the next match. A widget wholly outside such a Control is not on
+  screen (`visible`); one partly inside is. How text is read: task-probes.md 2.6.
 - **pieces** (`queries/pieces.gd`): over every node in the tree (`Find.all_nodes`, not the probe's own): a
   `MeshInstance3D` whose mesh has faces (`Mesh.get_faces().size() / 3` triangles, read once a mesh a sample) is one
   piece at its global position; a `MultiMeshInstance3D` is one piece an instance it draws (the first
@@ -608,7 +592,8 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   compare them (`UiScan.label_key`: lower case, each run of anything but letters and digits one `_`, none at either
   end, so `begin_run` reads "Begin Run"; a letter of a script without case, an ideograph, a kana, a hangul syllable,
   is a letter, `UiScan.is_word`). Of several, the first in reading order (top to bottom, then left to right), and `probe.log` notes how many read it. A name or a
-  class wins over a caption. The mouse moves to its centre, the left button goes down, and up in the next frame. For a `BaseButton` the probe listens for its `pressed` signal: when it hasn't fired two
+  class wins over a caption. The mouse moves to its centre, the left button goes down, and up in the next frame: real events, so a Control drawn
+  over it takes them instead. For a `BaseButton` the probe listens for its `pressed` signal: when it hasn't fired two
   frames after the release, the click is a row of `inputs_missed`, as is a click nothing matches. `probe.log` names the
   widget clicked, its class and how it was found (`clicked PushButton (Button) by name`, `by class`, `by its caption
   "Begin Run"`). A click nothing matches is the row `{"t", "kind": "click", "target": <its widget>, "why": "no visible
@@ -619,40 +604,12 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   task's click may say `"optional": true` (a confirmation a game shows only sometimes): the probe sends it as any
   click, and the checker reads its NO_CONTROL row as no miss (`check.missed`); a control it found that didn't press,
   or found disabled, is still a miss. A click may say `"disabled": true` (a button the game disables by design): the
-  checker reads its row that says `shown but disabled` as landed; any other miss of it is still a miss.
-  Scrolling: when the Control it found (by name, class or caption, or the disabled button it found) has its centre
-  outside a `clip_contents` Control above it (`UiScan.clipped_out`), and every such Control is a `ScrollContainer`
-  that can move to show it (`UiScan.scroll_steps`: from the innermost out, each the least move that shows the Control
-  whole in its view, its rectangle less the scroll bars it shows, or centres it when it is larger than the view, only
-  along the ways it scrolls and within its scroll bar's range, each one further out read with what those inside it
-  moved; the centre then inside every one of them and the frame), those areas are set so (`UiScan.scroll_into_view`,
-  `scroll_horizontal`, `scroll_vertical`), `probe.log` says `scrolled <area> (ScrollContainer)[, <area> ...] to show
-  <name> (<class>) for the click on '<widget>'`, and the click is made once more in the next frame, once the layout
-  has followed (no row after it is sent before it; it scrolls no more and counts once in `inputs_sent`). When no
-  Control matches on screen, the first a click would take but for the scroll areas it lies in (shown wherever it lies,
-  of some size, by its name, then its class, then a button's caption read wherever it lies, as written then alike;
-  one that takes a click, or a disabled button; `UiScan.scrolled_away`) is scrolled to the same way. Otherwise (a
-  `clip_contents` Control that isn't a `ScrollContainer` leaves the centre out, an area can't move that way or that
-  far, the centre would end outside the frame, or the Control is still out of view in the next frame) nothing is
-  pressed and the row's why is `a control matches it (<name> (<class>) by <how>), scrolled out of its container's
-  view: a press at its centre lands outside the view` (it holds the checker's `check.SCROLLED_OUT`): a miss neither
-  mark excuses. A click still waiting for its next frame when the play ends is the row `its scroll area was scrolled
-  to it, but the play ended before the press`. Cover: before the press, the probe asks what a press at the
-  Control's centre reaches (`UiScan.press_reaches`): an embedded window shown (not passing the mouse through) that
-  holds the point, or an exclusive one anywhere, takes it; else the Control the GUI picks there (`UiScan.picked_at`,
-  the engine's `Viewport.gui_find_control` redone: the GUI's root Controls by canvas layer, then tree order, the last
-  first, each shown; in each, the children the last first, internal ones too, a clipping Control only where it holds
-  the point, top-level ones on their own turn; the first whose effective mouse filter isn't `IGNORE`, with
-  `mouse_behavior_recursive`, holding the point by its script's `_has_point` or its rectangle; `z_index` plays no
-  part) takes it, unless it is the Control or one below it whose press climbs to it (none on the way up with
-  `MOUSE_FILTER_STOP` or set top level). When something else takes it, nothing is pressed, `probe.log` says `<name>
-  (<class>) matches '<widget>', but <parent>/<name> (<class>) is over it: not clicked` (`..., shown but disabled, and
-  ... is over it: not clicked` for a disabled button), and the row's why is `covered by another control` (the
-  checker's `check.COVERED`), a miss neither mark excuses. When it can't be told (the Control's mouse filter is
-  `IGNORE`, or nothing is picked there) the press is sent. Not seen: a Control on the way up that accepts the press
-  itself, a game's `_input` that marks it handled first, a native `_has_point` (a `TextureButton`'s click mask: its
-  rectangle is read), whether a press outside an open non-exclusive popup only closes it, title bars, windows that
-  aren't embedded, and what is inside a `SubViewportContainer`.
+  checker reads its row that says `shown but disabled` as landed; any other miss of it is still a miss. A click
+  scrolls nothing: when the Control it found (by name, class or caption, or the disabled button it found) has its
+  centre outside a `clip_contents` Control above it (`UiScan.clipped_out`), nothing is pressed and the row's why is
+  `a control matches it (<name> (<class>) by <how>), scrolled out of its container's view: a press at its centre
+  lands outside the view` (it holds the checker's `check.SCROLLED_OUT`): a miss neither mark excuses. A button wholly
+  out of the view shows no caption, so a click by its caption alone finds nothing: the NO_CONTROL row.
 - cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
@@ -669,12 +626,8 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   point `[fx, fy]` (fractions of the frame, y down), or `{"widget": name}`, the centre of the first visible Control
   of some size whose name (a wildcard) matches, else the first whose class does, else the first button in reading order
   whose shown caption is it as written, else reads it alike, as a widget click's (`UiScan.named`,
-  `UiScan.by_caption`; it needn't be enabled). A tap whose widget is out of view is scrolled to as a click's Control
-  is (its widget found as above, else `UiScan.scrolled_away`; `probe.log` says `... for the tap on '<widget>'`) and
-  made once more in the next frame; then a widget whose centre is outside a `clip_contents` Control above it
-  (`UiScan.clipped_out`) is no spot, and the touch misses with the click's words for it; and a tap's widget something
-  else is over (`UiScan.press_reaches`) is a miss, `covered by another control` (`probe.log`: `... is over it: not
-  tapped`). A drag scrolls nothing and is not asked what is over its widget.
+  `UiScan.by_caption`; it needn't be enabled); a widget so found whose centre is outside a `clip_contents` Control
+  above it (`UiScan.clipped_out`) is no spot, and the touch misses with the click's words for it.
   `probe.log` says what the finger went down on and how it was found. The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
   `InputEventScreenDrag` events (a drag's path walked evenly over `over` seconds, at once without it), and lifts once
   its path and its `hold` are over, never in the frame it went down. Fingers 0 to 9 may be down together. With
@@ -726,17 +679,7 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   float, a string onto a string or a StringName; a property that holds `null` takes any of them; anything else
   takes nothing. After `Object.set` the property is read back: one that reads as before, when another value was
   written, took nothing (a read-only one). Misses: no match, or no matched object the write lands on.
-- shot: `{"t", "shot": "<name>"}`: `shot_<name>.png` of that frame. With `when` (the checker writes it `{"query":
-  <a query with its id>, "field", "of", "match", "op", "value", "within"}`, `probes.probe_inputs`: the one query the
-  event's measure needs, `within` only when set), the probe makes that query as the play's are
-  (`TaskProbe.own_query`, never sampled with them nor written to `measures`) and, from the shot's time, reads it every
-  frame of the clock after the game's scripts (`Inputs.watch_events`), reduced as the checker reduces one sample
-  (`count`: how many matched; another field: each row's number, a string 1 or 0 by `match`, combined by `of`, or from
-  the sample's summary past 200 rows); the shot is taken in the first frame whose reading meets `op` `value` (`==`
-  and `!=` within 1e-9), `probe.log` saying `the shot <name>'s event: <field> reads <value>`. When `t + within` has
-  passed, or the play ends, first, it is the row `{"kind": "shot_when", "target": <name>, "why": "its event never
-  happened"}` (the checker's `check.NEVER`); one whose query or `match` can't be made is that row at once with the why
-  `its event can't be read (probe.log)`. scene: `{"t", "scene": "res://..."}`:
+- shot: `{"t", "shot": "<name>"}`: `shot_<name>.png` of that frame. scene: `{"t", "scene": "res://..."}`:
   `change_scene_to_file`; a scene the project lacks is a `query_errors` line and a miss. view: `{"t", "view": [pitch,
   yaw]}`: a 3D player's yaw and the `Camera3D`'s rotation set once (pitch clamped to +-89).
 - wait: `{"t", "wait": s}`: the play's clock holds while the game runs paced to real time, until `wait` seconds of
@@ -812,8 +755,8 @@ so the engine imports nothing there), each made fresh before its job.
 - `inputs_sent`: how many input rows were sent. `inputs_missed` (always there): a row `{"t", "kind", "target", "why"}`
   for each input that didn't land: `tap` and `drag` (a spot whose widget isn't on screen, a finger still down, a bad
   finger or path), `click` (no visible control that takes a click matches, a button that matches shown but disabled,
-  or a button that didn't press, one still out of its container's view, one something else is over), `shot` (a
-  bad name), `shot_when` (a shot whose event never came, or can't be read), `scene` (a scene the project lacks), `pin`, `damage` and `set` (a stage nothing took; `target` is the
+  or a button that didn't press), `shot` (a
+  bad name), `scene` (a scene the project lacks), `pin`, `damage` and `set` (a stage nothing took; `target` is the
   select as JSON, the node's name once one matched, or a set's path).
 - Samples fall on frames: the first at 1/30 s (the clock's first frame), then every `every` s, on the frame that
   reaches it. Every sample adds a `track` row, `[t, x, y, z]` (the player's place) or `[t]` while there is no player

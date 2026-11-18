@@ -195,11 +195,8 @@ A task is **VALID** when all of this holds:
 - no check is a **task error**: a probe whose select (`objects`, `widgets`, `components`, `ui`) reads nothing in the
   reference's play, a play that ran to its end (unless the measure reads 0 of nothing and 0 passes: "the crates are
   gone"), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot, an
-  `optional` click that found nothing on screen and a `disabled` click on its button shown disabled aside; a click or
-  a touch on a control still out of its container's view, or on one something else is over (`covered by another
-  control`), and a shot whose event never came (`shot_when`), are never set aside). A probe whose `since` event never
-  comes on the reference has no value there: uncalibrated when its threshold is calibrated or relative to the start,
-  a fail when it is a literal.
+  `optional` click that found nothing on screen and a `disabled` click on its button shown disabled aside; a click on
+  a control scrolled out of its container's view is never set aside).
   No version of the game can be graded by such a check;
 - every required `judge` names a play of its own (`plays`, or a `route`), is scored by you on both sides, and the
   reference passes it (below); every required `seen` probe is read by you on both sides (below);
@@ -443,13 +440,6 @@ fix can't be driven by its play`.** A click found no control, a touch no widget,
 reference itself: the play can't drive the task's own fix, so every probe of that play is the task's error. Drive the
 play by what the reference shows at that moment: the control's on-screen text the instruction quotes, a wait for the
 scene to change, a stage on something the start and the reference both have (`probe.log` says what each input hit).
-`covered by another control`: a dialog, a popup or an overlay is over the control (`probe.log` names it); close it
-first with the player's own input (its button, the key the game closes it with). `scrolled out of its container's
-view`: the control is hidden by more than its own list (a Control that only clips, a list that can't move that far);
-a list it sits in scrolls by itself. `its event never happened` (`shot_when`): the shot's `when` never held on the
-reference within its `within`: read what the event's measure selects in the reference's play.
-**`its event never happened (...)`** in a probe's detail: the measure's `since` never came in that play, so the probe
-has no value; on the reference, read what the event selects there.
 **`the play's input did not land: ...`** in a start row is the start failing that check: read the start's `probe.log`
 to see whether the bug, or a play that only fits the reference, made it miss.
 

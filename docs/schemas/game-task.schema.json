@@ -1,5 +1,5 @@
 {
-  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale, whether it went on and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`). An audio measure may read the sounds that start (`started_audible`, `sounds`, `repeats`) and select by a place (`near`). A task play may name the task plays that run before it on the same side (`after`), for a play that reads what another saves. An object or a component may be read for the light it gives off (`lit`, `glow`), and a select may ask for a part that is lit (`has.lit`). A probe may read text from a named shot of its own task play by the visual checks' model (`seen`: `shot`, a name or a list of 2 to 4, `rect`, `read` text, number or clock, `match`, `agg`; Lab game grader 1.13.0): it is a visual check, counted and switched with the judges. A widget click may be `optional`: a click on a control a game shows only in some states, no miss when nothing on screen matches it (a matched control that takes no press still is). A widget click, and a touch on a widget, may name a button by its caption exactly as the screen shows it, in any language, spaces and punctuation included (matched as written first, then alike ignoring case, spaces and punctuation). A widget click may be `disabled`: a click on a button the game disables by design, landed when that button is shown but disabled (without the mark, that is a miss). A widget click, and a tap on a widget, whose control only its own scroll areas hide scrolls them to it and presses in the next frame; one hidden any other way, and a drag's, presses nothing and is a miss that neither mark excuses. A click or a tap on a control something else is over presses nothing and is a miss that neither mark excuses (`covered by another control`); the widgets field `covered` says whether that is so. A sampled measure may say `since` (an event: its window and at count from the first sample whose reading meets the event's expect), and a `shot` input `when` (taken in the first frame its event comes). A task play may say `fresh`: it starts with the game's saved data cleared, as every play without `after` does, and never has `after`.",
+  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale, whether it went on and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`). An audio measure may read the sounds that start (`started_audible`, `sounds`, `repeats`) and select by a place (`near`). A task play may name the task plays that run before it on the same side (`after`), for a play that reads what another saves. An object or a component may be read for the light it gives off (`lit`, `glow`), and a select may ask for a part that is lit (`has.lit`). A probe may read text from a named shot of its own task play by the visual checks' model (`seen`: `shot`, a name or a list of 2 to 4, `rect`, `read` text, number or clock, `match`, `agg`; Lab game grader 1.13.0): it is a visual check, counted and switched with the judges. A widget click may be `optional`: a click on a control a game shows only in some states, no miss when nothing on screen matches it (a matched control that takes no press still is). A widget click, and a touch on a widget, may name a button by its caption exactly as the screen shows it, in any language, spaces and punctuation included (matched as written first, then alike ignoring case, spaces and punctuation). A widget click may be `disabled`: a click on a button the game disables by design, landed when that button is shown but disabled (without the mark, that is a miss). A widget click, and a touch on a widget, whose control is scrolled out of its container's view presses nothing and is a miss that neither mark excuses. A task play may say `fresh`: it starts with the game's saved data cleared, as every play without `after` does, and never has `after`.",
   "$defs": {
     "AtCamera": {
       "additionalProperties": false,
@@ -171,17 +171,6 @@
         },
         "select": {
           "$ref": "#/$defs/AudioSelect"
-        },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "to_angle": {
           "anyOf": [
@@ -520,17 +509,6 @@
           "title": "Probe",
           "type": "string"
         },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "to_angle": {
           "anyOf": [
             {
@@ -586,7 +564,7 @@
     },
     "Click": {
       "additionalProperties": false,
-      "description": "A click on the first visible Control that takes one (not disabled) whose name (a wildcard) or class\nmatches, else the first button whose shown caption reads it, as a player's click presses it: the mouse at its\ncentre, the left button down and up. A caption is matched as written first (exactly as the screen shows it, in any\nscript, spaces and punctuation included), then in lower case with every run of other characters one `_`.\n`optional`: a click on what a game shows only sometimes (a confirmation it asks only when a save exists): when no\nshown Control matches it, the play goes on and the click is no input that missed; one that matches but takes no\npress is still a miss. `disabled`: a click on a button the game disables by design (a locked choice): it has\nlanded when that button is shown disabled, and does nothing, as a player's click on it; without it, that is a miss.\nA Control that only its own ScrollContainers hide (its centre out of their view, at any depth) is scrolled into\nview first, the least way, as a player scrolls a list to it, and clicked in the next frame; one hidden any other way\n(outside a Control that only clips, still out of view once scrolled) is not pressed and the click is a miss whatever\nits marks. A Control something else is over, where a player's press at its centre would go to that instead (another\nControl, a higher canvas layer, a dialog or a popup), is not pressed either: a miss whatever its marks.",
+      "description": "A click on the first visible Control that takes one (not disabled) whose name (a wildcard) or class\nmatches, else the first button whose shown caption reads it, as a player's click presses it: the mouse at its\ncentre, the left button down and up. A caption is matched as written first (exactly as the screen shows it, in any\nscript, spaces and punctuation included), then in lower case with every run of other characters one `_`.\n`optional`: a click on what a game shows only sometimes (a confirmation it asks only when a save exists): when no\nshown Control matches it, the play goes on and the click is no input that missed; one that matches but takes no\npress is still a miss. `disabled`: a click on a button the game disables by design (a locked choice): it has\nlanded when that button is shown disabled, and does nothing, as a player's click on it; without it, that is a miss.\nA click never scrolls: when the Control it takes has its centre outside the view of a Control above it that clips\nwhat it holds (scrolled out of a ScrollContainer's view), nothing is pressed and the click is a miss whatever its\nmarks; the play brings that Control into view first, as a player would.",
       "properties": {
         "click": {
           "const": true,
@@ -904,17 +882,6 @@
         "select": {
           "$ref": "#/$defs/ComponentSelect"
         },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "to_angle": {
           "anyOf": [
             {
@@ -1218,17 +1185,6 @@
           "title": "Probe",
           "type": "string"
         },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "to_angle": {
           "anyOf": [
             {
@@ -1280,109 +1236,6 @@
         "field"
       ],
       "title": "DrawnMeasure",
-      "type": "object"
-    },
-    "Event": {
-      "additionalProperties": false,
-      "description": "A moment of the play that its reading decides: the first sample (a measure's `since`) or the first frame (a\nshot's `when`) at which `measure`, read as one sample (no window, at, agg or since of its own), meets `expect`, a\nliteral threshold. `within`: it counts only that many seconds from the play's start (`since`) or from the shot's `t`\n(`when`); else to the play's end. A measure's `since` counts its `window` and `at` from that moment, and reads\nnothing when it never comes; a shot's `when` that never comes is a missed input (docs/task-probes.md).",
-      "properties": {
-        "expect": {
-          "$ref": "#/$defs/Value"
-        },
-        "measure": {
-          "discriminator": {
-            "mapping": {
-              "audio": "#/$defs/AudioMeasure",
-              "camera": "#/$defs/CameraMeasure",
-              "components": "#/$defs/ComponentsMeasure",
-              "drawn": "#/$defs/DrawnMeasure",
-              "ground": "#/$defs/GroundMeasure",
-              "log": "#/$defs/LogMeasure",
-              "objects": "#/$defs/ObjectsMeasure",
-              "pieces": "#/$defs/PiecesMeasure",
-              "player": "#/$defs/PlayerMeasure",
-              "render": "#/$defs/RenderMeasure",
-              "screen": "#/$defs/ScreenMeasure",
-              "seen": "#/$defs/SeenMeasure",
-              "spawns": "#/$defs/SpawnsMeasure",
-              "ui": "#/$defs/UiMeasure",
-              "widgets": "#/$defs/WidgetsMeasure",
-              "world": "#/$defs/WorldMeasure"
-            },
-            "propertyName": "probe"
-          },
-          "oneOf": [
-            {
-              "$ref": "#/$defs/PlayerMeasure"
-            },
-            {
-              "$ref": "#/$defs/CameraMeasure"
-            },
-            {
-              "$ref": "#/$defs/ObjectsMeasure"
-            },
-            {
-              "$ref": "#/$defs/WidgetsMeasure"
-            },
-            {
-              "$ref": "#/$defs/ComponentsMeasure"
-            },
-            {
-              "$ref": "#/$defs/ScreenMeasure"
-            },
-            {
-              "$ref": "#/$defs/SpawnsMeasure"
-            },
-            {
-              "$ref": "#/$defs/LogMeasure"
-            },
-            {
-              "$ref": "#/$defs/AudioMeasure"
-            },
-            {
-              "$ref": "#/$defs/UiMeasure"
-            },
-            {
-              "$ref": "#/$defs/RenderMeasure"
-            },
-            {
-              "$ref": "#/$defs/WorldMeasure"
-            },
-            {
-              "$ref": "#/$defs/DrawnMeasure"
-            },
-            {
-              "$ref": "#/$defs/PiecesMeasure"
-            },
-            {
-              "$ref": "#/$defs/GroundMeasure"
-            },
-            {
-              "$ref": "#/$defs/SeenMeasure"
-            }
-          ],
-          "title": "Measure"
-        },
-        "within": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "maximum": 120,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Within"
-        }
-      },
-      "required": [
-        "measure",
-        "expect"
-      ],
-      "title": "Event",
       "type": "object"
     },
     "FileExists": {
@@ -1542,17 +1395,6 @@
           "anyOf": [
             {
               "$ref": "#/$defs/Select"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
             },
             {
               "type": "null"
@@ -2272,17 +2114,6 @@
         "select": {
           "$ref": "#/$defs/Select"
         },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "to_angle": {
           "anyOf": [
             {
@@ -2339,7 +2170,7 @@
     },
     "OnWidget": {
       "additionalProperties": false,
-      "description": "The centre of the first visible widget of that name (a wildcard) or type, whatever its kind: a Control node (a\nbutton, a stick, a panel), as a widgets select finds one; else of the first button whose caption reads it, as a\nclick's (exactly as shown first, in any script). A tap's widget that only its own ScrollContainers hide is\nscrolled into view first and tapped in the next frame, and one something else is over is a miss, as for a click; a\ndrag's widget is taken as it is, and one scrolled out of its container's view is no spot: the touch is a miss.",
+      "description": "The centre of the first visible widget of that name (a wildcard) or type, whatever its kind: a Control node (a\nbutton, a stick, a panel), as a widgets select finds one; else of the first button whose caption reads it, as a\nclick's (exactly as shown first, in any script). A widget scrolled out of its container's view, as for a click, is\nno spot: the touch is a miss.",
       "properties": {
         "widget": {
           "pattern": "^[^\\x00-\\x1f\\x7f]{1,120}$",
@@ -2540,17 +2371,6 @@
         "select": {
           "$ref": "#/$defs/PieceSelect"
         },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "to_angle": {
           "anyOf": [
             {
@@ -2748,17 +2568,6 @@
           "const": "player",
           "title": "Probe",
           "type": "string"
-        },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "to": {
           "anyOf": [
@@ -3062,17 +2871,6 @@
           "title": "Probe",
           "type": "string"
         },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "to_angle": {
           "anyOf": [
             {
@@ -3264,17 +3062,6 @@
           "minItems": 4,
           "title": "Rect",
           "type": "array"
-        },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "to_angle": {
           "anyOf": [
@@ -3644,7 +3431,7 @@
     },
     "Shot": {
       "additionalProperties": false,
-      "description": "A screenshot at `t` with the UI, as the player sees it, named `shot` (shot_<name>.png beside the evenly spaced\nones): the grader's own picture of a moment, for a judge and for whoever reviews a run (docs/task-probes.md, section 1.1).\nNever a pass or fail by itself. `when`: taken in the first frame at or after `t` at which its event comes; a missed\ninput (kind shot_when) when it doesn't come in time.",
+      "description": "A screenshot at `t` with the UI, as the player sees it, named `shot` (shot_<name>.png beside the evenly spaced\nones): the grader's own picture of a moment, for a judge and for whoever reviews a run (docs/task-probes.md, section 1.1).\nNever a pass or fail by itself.",
       "properties": {
         "shot": {
           "pattern": "^[a-z_][a-z0-9_]{0,31}$",
@@ -3656,17 +3443,6 @@
           "minimum": 0,
           "title": "T",
           "type": "number"
-        },
-        "when": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         }
       },
       "required": [
@@ -3749,17 +3525,6 @@
           "const": "spawns",
           "title": "Probe",
           "type": "string"
-        },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "to_angle": {
           "anyOf": [
@@ -4313,17 +4078,6 @@
         "select": {
           "$ref": "#/$defs/UiSelect"
         },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "to_angle": {
           "anyOf": [
             {
@@ -4687,8 +4441,7 @@
             "x",
             "y",
             "w",
-            "h",
-            "covered"
+            "h"
           ],
           "title": "Field",
           "type": "string"
@@ -4729,17 +4482,6 @@
         },
         "select": {
           "$ref": "#/$defs/WidgetSelect"
-        },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "to_angle": {
           "anyOf": [
@@ -4865,17 +4607,6 @@
           "const": "world",
           "title": "Probe",
           "type": "string"
-        },
-        "since": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Event"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "to_angle": {
           "anyOf": [

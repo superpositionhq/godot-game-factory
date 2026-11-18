@@ -416,28 +416,21 @@ looks up and a positive yaw turns left.
   a signal's range, any limit the instruction gives); walk or drive there instead.
 - **A play never repeats an action that already happened.** A second click on Continue or Retry after the first
   worked finds no button (it is gone) and is a miss in `inputs_missed`: each click once, while its control is there.
-- **A click scrolls its own list.** A click or a tap on a control that only the lists it sits in hide (scroll
-  containers, at any depth of nesting: a list in a list, a row below the frame) scrolls those lists the least way
-  that shows it, as a player scrolls to an item, and presses it in the next frame. So never script the scrolling for
-  it: no wheel turns, drags or keys before a click whose only purpose is to bring its control into view (they are
-  timing you guess, and a build that lays the list out otherwise needs other ones). A control hidden any other way
-  is still a miss that says it is "scrolled out of its container's view", whatever `optional` or `disabled` say: one
-  behind a container that clips without scrolling, one a list can't scroll far enough to show. A drag scrolls
-  nothing: drag on what is in view. Scroll with the player's own input only when the scrolling is itself what the
-  task asks about.
-- **A covered control can't be clicked.** A click or a tap lands only where a player's pointer at the control's
-  centre would reach it: under a dialog, a popup, a tooltip, a fade or any overlay that takes the mouse, it is a
-  miss that says "covered by another control", whatever `optional` or `disabled` say, and `probe.log` names what is
-  over it. Close the dialog, popup or overlay first with the player's own input (its button, the key the game closes
-  it with), or wait for it to go, then press the control. A see-through overlay that ignores the mouse covers
-  nothing. The `widgets` field `covered` reads whether a control is covered, for a check that a button can be
-  pressed where it shows.
+- **A click never scrolls.** A click, a tap or a drag names a control; the probe finds it as always (by name, class,
+  caption, or the disabled button), then checks where the press would go, the control's centre. When that centre is
+  outside the visible part of any container above it that clips its contents (a scroll container, at any depth of
+  nesting), nothing is sent and the input is a miss that says the control is "scrolled out of its container's view".
+  The probe never skips it for the next control that matches, and neither `optional` nor `disabled` excuses this
+  miss: a player can't press what is scrolled out of view. So scroll the list first with the player's own input (the
+  wheel, a drag, the keys the game scrolls with), then click or tap the control once it is in view. (A button wholly
+  out of view shows no caption, so a click naming only its caption finds nothing; an `optional` click so written is
+  excused as any click that finds nothing.)
 - **An optional click is for a control that appears only in some states**, never to hide a click that should land.
   `"optional": true` on a widget click is for a control the game shows only sometimes (a confirmation that appears
   only when something exists): when nothing on screen matches it, the play goes on. A miss is how a play says it
   never reached its moment, so a click the play needs stays required: a play that makes the state itself clicks its
-  control as required, and a matched control that takes no press, is still out of its container's view, or is
-  covered, is a miss either way.
+  control as required, and a matched control that takes no press, or that is scrolled out of its container's view,
+  is a miss either way.
 - **A control is named by the words the player sees, in the game's own language.** A widget click or a tap on a
   widget may give a button's caption exactly as the screen shows it (`{"widget": "开始游戏", "click": true}`), spaces
   and punctuation included: that is how a player finds it, and any build that keeps the words keeps the click. A
@@ -448,20 +441,9 @@ looks up and a positive yaw turns left.
   button the game locks by design (a choice the instruction says stays locked), and its click lands when that button
   is shown disabled. A miss is how a play learns its control was not usable, so a click the play needs to press is
   never marked; `optional` never covers a disabled button either.
-- **A window is timed from the event it measures.** Where the moment depends on the game (a boss that appears after
-  a load, a door that opens when its animation ends, a score shown when a round is over), tie the window to that
-  event with `since`: `"since": {"measure": <what shows the event>, "expect": {"op": ">=", "value": 1}, "within":
-  20}` counts the measure's `window` and `at` from the first sample in which the event's reading meets its expect,
-  so a build or a machine that gets there a little later is read at the same moment of the event; one where it
-  never comes reads nothing, and fails. Otherwise time it from the input that sets the event off, with a margin for
-  how long the reference took (read in its samples), never a fixed second picked without looking where the event
-  fell.
-- **A judge's picture is taken when the thing is on screen.** A `shot` input may say `when` (the same event form):
-  the picture is taken in the first frame at or after its `t` in which the event holds, so a judge or a `seen` probe
-  sees the banner, the dialog or the score itself rather than a second guessed around it. Its measure is one the
-  probe reads every frame (`ui` count or text, `widgets` count or visible, `objects` count, a position, `active`,
-  `hidden` or a `prop:`); an event that never comes is a missed input, so give it a `within` that covers the slowest
-  build you mean to accept.
+- **A window is timed from the event it measures**: from the input that sets the event off, in play time, with a
+  margin for how long the reference took (read in its samples), never a fixed second picked without looking where
+  the event fell.
 - **Touches.** `{"t": 2.0, "tap": <spot>, "hold": s, "finger": n}` puts a finger down at the spot and lifts it (after
   `hold` seconds: a long press, a button kept down); `{"t": 2.0, "drag": [<spot>, <spot>, ...], "over": s, "hold": s,
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
@@ -930,9 +912,7 @@ task's solution.
 | A caption is written exactly as the screen shows it, in the game's own language | it is the words a player finds the control by |
 | A click is marked `disabled` only where the instruction says its control must be disabled | a click on a disabled button does nothing, and the miss says the play's control was not usable |
 | A first-launch play may say `"fresh": true`, never with `after` | it states the clean start every play without `after` has |
-| A click or a tap on a control only its lists hide scrolls them and lands: never script scrolling for it; a control hidden any other way (a container that clips without scrolling, a list that can't show it), and a drag's control out of view, is a miss whatever `optional` or `disabled` say | a player scrolls a list to what they want, but can't press what nothing brings into view; scripted scrolling is guessed timing another build's layout breaks |
-| A control under a dialog, popup or overlay is never clicked or tapped: close it first with the player's own input | the press goes to what is over the control, as a player's would, whatever `optional` or `disabled` say |
-| A window whose moment the game decides is tied to it with `since`; a judge's or a `seen` picture of such a moment is taken with `when` | a fixed second misses an event a build or a machine reaches a little later, and a picture taken early shows nothing to judge |
+| A click, a tap or a drag on a control whose centre is scrolled out of its container's view (outside any clipping parent, at any depth) is a miss, whatever `optional` or `disabled` say: scroll the list first with the player's own input, then press the control | a player can't press what is scrolled out of view, and the probe never takes the next match instead |
 | A click on a control shown only in some states is `optional`, or made in a play that makes that state | every required click must land |
 | A play relies on no state it doesn't make: a save, a profile, an expired timer come from its own steps, its `after` plays or the instruction | every play starts from a fresh save |
 | A window is timed from the input that sets its event off, with a margin read from the reference's samples | a fixed second misses an event that falls a little later |

@@ -3,12 +3,10 @@ extends "../query.gd"
 ## visible field reads 1), every one with "visible": false in the select.
 ## "rows": [{"name", "class", <field>: value}] for every Control the select matches (select: component, a class of
 ## the Control, and with a name one above it too; name, a wildcard on its name; text, a regular expression its text
-## must match; visible: false, hidden ones too). `covered`: 1 when a press at its centre goes to something else first, 0
-## when it comes to it (UiScan.covered).
+## must match; visible: false, hidden ones too).
 
 const UiScan := preload("../ui_scan.gd")
-const KNOWN := ["count", "visible", "text", "percent", "value", "interactable", "has_brush", "brush", "x", "y", "w", "h",
-	"covered"]
+const KNOWN := ["count", "visible", "text", "percent", "value", "interactable", "has_brush", "brush", "x", "y", "w", "h"]
 
 var _type := ""
 var _name := ""
@@ -82,9 +80,6 @@ static func _field(c: Control, f: String, shown: Variant) -> Variant:
 		"brush":
 			var picture := UiScan.image(c)
 			return Find.resource_name(picture) if picture != null else null
-		"covered":
-			# no value when that can't be told: off screen, of no size, scrolled out of view, taking no press
-			return UiScan.covered(c)
 		"x", "y", "w", "h":
 			var r: Variant = UiScan.rect(c)
 			return null if r == null else r[["x", "y", "w", "h"].find(f)]

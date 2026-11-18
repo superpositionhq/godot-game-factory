@@ -177,45 +177,25 @@ thing instead of removing it still pass? If not, move the probe to what the play
       is text a player reads on the button: its own text, or a label drawn on it; never a tooltip, nor text drawn
       see-through (an invisible hit area is still clicked by its name). A name or a class wins over a caption; of
       several buttons that read it, the first in reading order (top to bottom, then left to right). It clicks as a player's click presses it: the mouse moves to its
-      centre, the left button goes down and, a frame later, up. The play's `probe.log` names what it clicked, its
-      class and how it was found: `clicked RetryButton (Button) by name`, `clicked Button2 (Button) by its caption
-      "Begin Run"`. No match, or a button that didn't press: nothing else happens, and the click is listed in
-      `probe.json` `inputs_missed`. A button whose action already happened is usually gone: click once.
-      **A click scrolls its own list.** When the control's centre, where the press goes, is outside the view of the
-      `ScrollContainer`s it sits in (at any depth of nesting: a list in a list), and those scroll areas alone hide it,
-      they scroll the least way that shows the control whole (one larger than the view: centred in it), as a player
-      scrolls a list to an item, each only along the ways it scrolls and as far as its scroll bar goes, and the click
-      is made in the next frame on the control as it then lies (the inputs after it wait that frame, so their order
-      stays). This holds for a control found outside the frame or wholly out of the view too: when nothing on screen
-      matches, one only scroll areas hide is found by its name, class or caption as above (a caption read wherever
-      it lies) and scrolled to. `probe.log` says `scrolled List (ScrollContainer) to show ListBottom (Button) for the
-      click on 'ListBottom'` (nested lists: the innermost first). A control hidden any other way presses nothing and
-      is a miss that says `scrolled out of its container's view` (`a control matches it (ListBottom (Button) by name),
-      scrolled out of its container's view: a press at its centre lands outside the view`): one outside a Control
-      that only clips (`clip_contents` on a Control that isn't a `ScrollContainer`), one a scroll area can't move to
-      (it doesn't scroll that way, or not that far), one whose centre would end outside the frame, and one still out
-      of view in the next frame. The click is not passed on to the next control that matches, and neither `optional`
-      nor `disabled` (below) excuses this miss. A click scrolled to in the play's last frame is a miss that says `its
-      scroll area was scrolled to it, but the play ended before the press`. **A covered control is not clicked.** The
-      press lands only when a pointer at the control's centre reaches it, as the engine's GUI picks a control at a
-      point: nothing drawn over it there that takes the mouse (a panel, a Control that draws nothing but stops the
-      mouse, a sibling that passes the press on to its own parent, a scroll bar, a control on a higher `CanvasLayer`),
-      no embedded window (a dialog, a popup) holding that point, and no exclusive dialog shown anywhere; a control
-      below it whose press climbs to it (a label on a button) is no cover, and one whose mouse filter is `IGNORE` (a
-      see-through overlay that takes no press) neither. Otherwise nothing is sent and the click is a miss that says
-      `covered by another control`, which neither `optional` nor `disabled` excuses, and `probe.log` names what is
-      over it: `Buy (Button) matches 'Buy', but Shop/Tooltip (Panel) is over it: not clicked`. Close the dialog,
-      popup or overlay first with the player's own input. The test redoes the engine's picking (mouse filters, the
-      order Controls are drawn in, canvas layers, top-level Controls, clipping, a script's `_has_point`); it cannot
-      see a control on the way up that accepts the press itself, a game's `_input` that marks the press handled
-      first, a native hit test such as a `TextureButton`'s click mask (its rectangle is read), whether a press outside
-      an open popup only closes it, title bars, windows that aren't embedded, nor what is inside a
-      `SubViewportContainer`. A click is required unless it says `"optional": true`: `{"t": 2.0, "widget": "ConfirmButton",
+      centre, the left button goes down and, a frame later, up. They are real mouse events, so a Control drawn over
+      it takes them instead, as it would a player's. The play's `probe.log` names what it clicked, its class and how
+      it was found: `clicked RetryButton (Button) by name`, `clicked Button2 (Button) by its caption "Begin Run"`.
+      No match, or a button that didn't press: nothing else happens, and the click is listed in `probe.json`
+      `inputs_missed`. A button whose action already happened is usually gone: click once. A click never scrolls: the
+      control is found as above, and when its centre, where the press goes, is outside the visible part of any
+      Control above it that clips what it holds (a `ScrollContainer`'s view, at any depth of nesting), nothing is
+      sent and the click is a miss that says `scrolled out of its container's view` (`a control matches it
+      (ListBottom (Button) by name), scrolled out of its container's view: a press at its centre lands outside the
+      view`). The click is not passed on to the next control that matches, and neither `optional` nor `disabled`
+      (below) excuses this miss: a player can't press what is scrolled out of view, so the play scrolls the list
+      first with the player's own input (the wheel, a drag, the keys the game scrolls with). A button wholly out of
+      the view shows no caption, so a click that names only its caption finds nothing (a miss of no control, which
+      `optional` excuses). A click is required unless it says `"optional": true`: `{"t": 2.0, "widget": "ConfirmButton",
       "click": true, "optional": true}` is for a control a game shows only in some states (a confirmation shown only
       when something was saved). When no shown control matches an optional click, nothing is pressed, the play goes
       on and the click is no miss (the probe still lists it in `inputs_missed`; the checker and the Lab's grader
       leave it out); a control it matches that takes no press is a miss all the same, and so is a button it finds
-      shown but disabled, a control it finds scrolled out of its container's view, and one it finds covered. Never mark a click optional to cover one the play needs: a play that makes the state itself
+      shown but disabled or a control it finds scrolled out of its container's view. Never mark a click optional to cover one the play needs: a play that makes the state itself
       clicks it as required. A click on a button shown but disabled (one a click would take by its name, class or
       caption, where a player could press it) presses nothing, as a player's does, and is a miss that says so
       (`a button matches it (Locked (Button) by its caption "Locked Door"), shown but disabled: the click does
@@ -223,10 +203,8 @@ thing instead of removing it still pass? If not, move the probe to what the play
       "disabled": true}` is for a button the game disables by design (a locked choice the instruction asks to stay
       locked), and its click lands when that button is shown disabled (the probe still lists it; the checker and the
       Lab's grader leave it out). A `disabled` click that finds no such button (none matches, or the button is
-      enabled and pressed) is no excuse: the first is a miss, the second a press like any. A disabled button its
-      scroll areas alone hide is scrolled to as any control, and then found shown but disabled; one hidden any other
-      way is a miss as any control there, and one something is over is `covered by another control`, which the mark
-      doesn't excuse. Mark a click disabled only
+      enabled and pressed) is no excuse: the first is a miss, the second a press like any; nor is a disabled button
+      scrolled out of its container's view, a miss as any control there. Mark a click disabled only
       where the instruction says its control must be disabled;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
@@ -275,19 +253,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
       32) takes `shot_pause_menu.png` at that moment, with the UI, beside the evenly spaced ones. Each name once in a
       play, 20 at most. A picture never passes or fails anything by itself: it is for a judge (section 3.2), for a
       `seen` probe that reads its text (section 2.22) and for
-      whoever reviews a run. A shot may wait for the moment it shows: `{"t": 2.0, "shot": "victory", "when":
-      {"measure": {"probe": "widgets", "select": {"name": "VictoryBanner"}, "field": "count"}, "expect": {"op": ">=",
-      "value": 1}, "within": 8}}` is taken in the first frame at or after `t` in which the event's measure, read as
-      one sample of it, meets its `expect` (a literal), at most `within` seconds after `t` (else to the play's end).
-      The probe reads it itself every frame, so its measure is one it reads cheaply: `ui` `count` or `text` (a select
-      without `rect`), `widgets` `count` or `visible`, `objects` `count`, `x`, `y`, `z`, `active`, `hidden` or a
-      `prop:` member, with no `window`, `at`, `agg`, `since`, `to_angle` or `to_axis` of its own and no `has.lit`
-      anywhere (the validator refuses others). `probe.log` says `the shot victory's event: count reads 1` and when it
-      was taken. An event that doesn't come in time takes no picture and is a missed input of kind `shot_when` (`its
-      event never happened`), as any input that didn't land (section 3); one whose query or `match` can't be made is
-      a missed input saying `its event can't be read (probe.log)`. Take a judge's or a `seen` probe's picture with
-      `when` whenever the thing to be seen shows at a moment the game decides (a banner, a dialog, a score), rather
-      than at a guessed second;
+      whoever reviews a run;
     - a scene load: `{"t": 10.0, "scene": "res://scenes/Yard.tscn"}` changes to that scene of the project, as the
       game's own `change_scene_to_file` does; the play's clock stands still while it changes;
     - a view turn: `{"t": 10.5, "view": [-15, 90]}` turns the player to the yaw and the camera to that pitch and
@@ -399,12 +365,9 @@ of the first visible, laid-out widget of that name (a wildcard) or type, whateve
 panel): a `Control` node, found as a `widgets` select finds one (section 2.6), by its node name first, then by its
 class, then by the caption a button shows, as a widget click finds one (section 1.1: exactly as the screen shows it
 first, in any language, `{"widget": "确定"}`, then read alike, `{"widget": "tap_me"}` touching a button reading
-"Tap Me"; a touch needn't find it enabled). A tap's widget that only its own scroll areas hide is scrolled into view
-first and tapped in the next frame, as a click is (section 1.1), and a tap on a widget something else is over is a
-miss that says `covered by another control`. A drag scrolls nothing and isn't asked what is over its widget: a drag's
-widget whose centre is scrolled out of its container's view is no spot, nothing is touched and the drag is a miss
-that says it is scrolled out of its container's view (never the next widget that matches); bring it into view first
-with the player's own input.
+"Tap Me"; a touch needn't find it enabled); a widget whose centre is scrolled out of its container's view is no
+spot, as for a click: nothing is touched and the touch is a miss that says it is scrolled out of its container's view
+(never the next widget that matches).
 Name the widget where you can: its place differs between landscape and portrait, its name
 and its caption do not. A
 widget's spot is where it is when the finger goes down.
@@ -535,18 +498,6 @@ section 1.2. Points and `near`: section 2.13. Why a probe has no value: section 
 - `window`: `[t0, t1]` seconds of play time (ends inclusive), or `at`: `[t, ...]` (at most 40 times, each 0-120; the
   sample nearest each time, when one is within 0.26 s of it) or `"end"` (the last sample); not both. Default: the
   whole play.
-- `since` (every measure but `log` and `seen`): an event the window counts from, `{"measure": <a measure>, "expect":
-  {"op": ">=", "value": 1}, "within": 20}`: the first sample of the play in which `measure`, read as one sample of it
-  (no `window`, `at`, `agg` or `since` of its own; any sampled measure but `audio` `sounds` and `repeats`), meets
-  `expect` (a literal), no later than `within` seconds into the play when it says. Its `window` and `at` then count
-  from that sample's time (`"window": [0, 2]` is the two seconds from the event; `"at": [1]` one second after it),
-  and with neither it reads the samples from the event on (`"at": "end"` the last sample, when that is not before
-  it). The event is known to the play's sampling step (`every`: 0.5 s unless the play says less), so tie a window
-  to it rather than to fixed seconds wherever the moment depends on the build or the machine (a boss that appears
-  after a load, a door that opens when its animation ends). An event that never comes reads nothing: "its event
-  never happened (its widgets count never read >= 1 in the play's first 20 s)", and the probe fails on that side; on
-  the reference a calibrated or start-relative threshold is then uncalibrated (the task is invalid where the check
-  is required), and a literal one fails there.
 - `agg`: how the samples reduce to one number: `min`, `max`, `mean`, `first`, `last`, `delta` (last minus first),
   `any` (1 if any sample is non-zero), `all` (1 if every sample is non-zero), `count` (number of non-zero samples),
   `sum`, `range` (max minus min), `std` (standard deviation), `changes` (how many times the value changes between
@@ -898,7 +849,7 @@ not the node the `owner` select matched).
   everything above it, its canvas layer too), not transparent (its own `self_modulate` and the `modulate` of it and
   of the nodes above it, an alpha above 0.004), inside the frame, and not wholly outside a Control above it that
   clips what it holds (an item scrolled out of a scroll container's view). A Control of no size counts as on screen
-  (a container that only holds others), and so does one another Control covers (the field `covered` tells that). So `count` counts what the game
+  (a container that only holds others), and so does one another Control covers. So `count` counts what the game
   shows (a warning bar's shown messages, not the ones it keeps hidden), and a "no longer shown" check passes on a
   widget a build hides as on one it removes. A fully transparent Control (an invisible hit area over art, its
   `self_modulate` alpha 0) reads as not shown here, while a click or a touch still reaches it (section 1.1): inputs
@@ -918,11 +869,7 @@ not the node the `owner` select matched).
   `brush` (that texture's name, its file's without the extension, with `match`); `x`, `y`, `w`, `h` (the widget's
   rectangle in fractions of the frame 0-1, **y down from the top**, whatever anchor, container or canvas layer
   placed it, as laid out at the sample: a change of layout a container makes in that frame shows from the next
-  sample; no value for a widget of no size); `covered` (1 when a press at the widget's centre would go to something
-  else first, as a click's press is tested, section 1.1: a control or a canvas layer drawn over it that takes the
-  mouse, a dialog or a popup; 0 when it would reach the widget; no value when that can't be told: a widget off
-  screen, of no size, whose centre is out of its scroll area's view or the frame, or that takes no press itself).
-  `"field": "covered", "of": "max", "expect": {"op": "==", "value": 0}` says a button is pressable where it shows.
+  sample; no value for a widget of no size).
 
 ### 2.9 `spawns`: objects appearing and disappearing
 
@@ -1408,10 +1355,8 @@ How it is graded, and its limits:
 - **An input that didn't land is listed.** A play's `probe.json` names every input that reached nothing in
   `inputs_missed`: a touch whose widget isn't on screen, a click no control took or one on a button shown but
   disabled (an `optional` click that found nothing on screen, and a `disabled` click on its button shown disabled,
-  aside: section 1.1), a click or a touch on a control still out of its container's view, or hidden by a Control
-  that only clips (no mark excuses it), a click or a tap on a control something else is over (`covered by another
-  control`, no mark excuses it), a shot whose event never came (`shot_when`), a scene the project lacks, a stage of a
-  contact nothing took (section 1.4). Read it in the fix's play before trusting
+  aside: section 1.1), a click or a touch on a control scrolled out of its container's view (no mark excuses it), a
+  scene the project lacks, a stage of a contact nothing took (section 1.4). Read it in the fix's play before trusting
   what the play measured.
   A missed stage of a contact (`pin`, `damage`, `set`) fails every probe of its play on that side, with "a stage of
   the play didn't land: <kind> <target> at <t> s: <why>": what the play read is of a contact that never happened.
