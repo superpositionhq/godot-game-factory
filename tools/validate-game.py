@@ -1325,7 +1325,8 @@ def thread_errors(t, outcomes):
     if 'long-thread' not in (t.get('tags') or []):
         errs.append('no long-thread tag')
     if not (isinstance(t.get('seed'), dict) and t['seed'].get('reference')):
-        errs.append("no seed.reference: every task ends at the game's own accepted fix of the thread")
+        errs.append("no seed.reference: every task ends at the game's own accepted fix of the thread, and a task with "
+                    "no reference can't be validated (its oracle side can't be played)")
     if outcomes < MIN_OUTCOME_PROBES:
         errs.append(f'{outcomes} required outcome probe(s) outside still_works, fewer than {MIN_OUTCOME_PROBES} '
                     '(a required probe of weight 0 is a guard, not an outcome)')
@@ -1446,6 +1447,17 @@ def required_quality_judges(t):
                 c.get('name') == 'looks_as_asked' or m.get('name') == 'still_works'))]
 
 
+def judges_without_own_play(t):
+    """([required], [optional]) names of the `judge` checks that name no play of their own (no `plays`, no `route`):
+    they are shown only the shared idle look and the drive, which never press a task's keys or leave a title screen,
+    so what their rubric asks is never on screen and an item that can't be seen scores 0 (godot-write-tasks
+    section 5)."""
+    found = [c for m in t.get('milestones') or [] if isinstance(m, dict) for c in m.get('checks') or []
+             if isinstance(c, dict) and c.get('kind') == 'judge' and not c.get('plays') and not c.get('route')]
+    return ([c.get('name') for c in found if c.get('required', True)],
+            [c.get('name') for c in found if not c.get('required', True)])
+
+
 def check_task(rep, a, label, t, game, has_commit):
     """One whole task (GameTask): schema, the format's extra rules, seed on `game` and on known commits. False when the
     schema refuses it: the rest reads the values as the schema types them, so it waits until the task matches."""
@@ -1469,6 +1481,14 @@ def check_task(rep, a, label, t, game, has_commit):
                 and c.get('required', True) and outcome_weight(c) and not is_seen(c)]
     for e in thread_errors(t, len(outcomes)):
         rep.error(a, f'{label}: {e} (godot-write-tasks section 1: only long threads of multiple edits)')
+    blind, idle = judges_without_own_play(t)
+    if blind:
+        rep.error(a, f'{label}: required judge check(s) {blind} name no play of their own (`plays`): shown only the '
+                     'idle look and the drive, they never see what their rubric asks, and what can\'t be seen is a '
+                     'fail (godot-write-tasks section 5)')
+    if idle:
+        rep.warn(a, f'{label}: judge check(s) {idle} name no play of their own (`plays`): shown only the idle look '
+                    'and the drive, they score 0 on what those never show (godot-write-tasks section 5)')
     if judged:
         rep.note(a, f'{label}: required judge check(s) {judged}: only a judge of the brief\'s looks is required '
                     '(`looks_as_asked`, or a judge in `still_works`); other judges should be "required": false '

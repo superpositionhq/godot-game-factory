@@ -20,9 +20,14 @@ every required check, as the Lab's own no-op and oracle check of a task holds th
   (check.Side.package), so a required one on a machine without the release export template makes the task INVALID;
 - the start fails every required probe outside still_works (or doesn't build by design), and at least one of those is
   not a `seen` probe: a seen probe is a visual check a model reads, never the outcome that shows the bug;
-- without a reference: the start fails every required probe outside still_works (or doesn't build by design);
+- without a reference: never VALID (NO_REFERENCE, check.check_task): the oracle side can't be played, so nothing
+  shows the checks can be passed. `verdict` with no reference still holds the start to its rules (it fails every
+  required probe outside still_works, or doesn't build by design), so the writer reads what the start does;
 - every probe the task names, required or not, has a threshold: the Lab's check stops on a probe it can't calibrate
   (`uncalibrated`), whichever it is;
+- no probe that carries weight, outside still_works, reads the same on the start and the reference, whatever its
+  threshold (a literal too): it measures nothing the change moves, so it is uncalibrated, never a pass (SAME_READING;
+  a still-works probe and a weight-0 guard read the same on purpose);
 - no check of either side is a task error (check.TASK_ERROR: a probe whose selector reads nothing even on the
   reference, a task play whose input didn't land on the reference): no version of the game can be graded by it;
 - either way, every required probe of the task's `still_works` milestone already passes at the start: what still works
@@ -46,6 +51,11 @@ JUDGES = ("judge", "code_judge")
 SEEN_ONLY = ("no required probe outside still_works but seen ones: a seen probe is a visual check a model reads, never "
              "the outcome that shows the start failing the task")
 TASK_ERROR = "task error"  # a check's detail starts so when no version of the game can be graded by it (the Lab's word)
+NO_REFERENCE = ("no seed.reference: the oracle side can't be played, so nothing shows the task's checks can be passed; a "
+                "task with no reference can't be validated (the start's rows below only say what the start does)")
+SAME_READING = ("{name} reads the same on the start and the reference ({value}): uncalibrated, never a pass: it "
+                "measures nothing the change moves; read what the change moves (its field, select, play or window), "
+                "never a looser threshold")
 MARGIN = 0.25  # a calibrated threshold whose start measured nothing: the reference's value, this share toward the start
 
 
@@ -169,6 +179,16 @@ def verdict(task, reference, start):
             elif detail.startswith(TASK_ERROR):
                 why.append(f"{c['name']} on the {side}: {detail[:160]}")
                 told.add(c["name"])
+    flat = set()  # weighted probes that read the same on both sides: they measure nothing the change moves
+    if reference is not None:
+        for name, (group, c) in every.items():
+            if c["kind"] != "probe" or name in still or name in told or not c.get("weight", 1) > 0:
+                continue
+            a = ((start.get("probes") or {}).get(name) or {}).get("value")
+            b = ((reference.get("probes") or {}).get(name) or {}).get("value")
+            if all(isinstance(v, int | float) and not isinstance(v, bool) for v in (a, b)) and same(a, b):
+                why.append(SAME_READING.format(name=name, value=probes.fmt(a)))
+                flat.add(name)
     why.extend(f"{n} is a required code_judge: a model reads the change in the Lab and no check here can, so make it "
                "\"required\": false (code review is a quality check)" for n, (_, c) in every.items()
                if c["kind"] == "code_judge" and c.get("required", True))
@@ -192,5 +212,5 @@ def verdict(task, reference, start):
         # with more guards than still_works holds): it gates, never pays, and is not refused for passing at the start.
         weight = {c["name"]: c["weight"] for _, c in tasks.checks(task)}
         why.extend(f"start already passes required probe {c['name']}" for c in gates
-                   if c["passed"] and c not in broken and weight.get(c["name"], 1) > 0)
+                   if c["passed"] and c not in broken and weight.get(c["name"], 1) > 0 and c["name"] not in flat)
     return not why, why, notes

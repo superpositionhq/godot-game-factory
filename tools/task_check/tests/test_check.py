@@ -20,7 +20,7 @@ from unittest import mock
 
 from helpers import NO_FIX, FakeProject, measuring, probe, side, task_with
 
-from task_check import check, cli, godot, probes, seeds, tasks
+from task_check import check, cli, godot, probes, seeds, tasks, verdict
 
 WALLS = {"component": "CastlePiece", "tag": "Wall"}
 PROJECT = ('config_version=5\n\n[application]\n\nconfig/name="Metro Runner"\nrun/main_scene="res://scenes/Main.tscn"\n'
@@ -270,6 +270,22 @@ class TaskErrors(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("the task's own fix fails it", detail)
 
+    def test_a_ui_select_that_reads_nothing_on_the_reference_is_a_task_error(self):
+        task = task_with(probe(measure={"probe": "ui", "select": {"kind": "text", "text": "LAP"}, "field": "signature",
+                                        "agg": "changes"}, expect={"op": ">=", "value": 1}))
+        passed, detail = first_row(task, "reference", None, side("reference", FakeProject(answering([])), task))
+        self.assertFalse(passed)
+        self.assertTrue(detail.startswith("task error: "), detail)
+        self.assertIn("its select", detail)
+        shown = side("reference", FakeProject(answering([{"kind": "text", "text": "LAP 2/3", "x": 0.1, "y": 0.1,
+                                                          "w": 0.1, "h": 0.05}])), task)
+        self.assertFalse(first_row(task, "reference", None, shown)[1].startswith("task error"),
+                         "a select that shows something is graded")
+        gone = task_with(probe(measure={"probe": "ui", "select": {"kind": "text", "text": "GAME OVER"},
+                                        "field": "count", "agg": "last"}, expect={"op": "==", "value": 0}))
+        self.assertEqual(first_row(gone, "reference", None, side("reference", FakeProject(answering([])), gone))[0],
+                         True, "\"the banner is gone\" reads 0 of nothing")
+
     def test_an_input_that_doesnt_land_on_the_reference_is_a_task_error(self):
         tap = {"name": "open_menu", "seconds": 5, "inputs": [{"t": 1, "key": "<Keyboard>/m", "press": True},
                                                              {"t": 1.2, "key": "<Keyboard>/m", "press": False},
@@ -513,7 +529,7 @@ class Whole(unittest.TestCase):
             task = task_with({"kind": "build", "name": "player_builds", "weight": 0}, probe(), seed=NO_FIX)
             result = self.check(task, {"start": FakeProject(measuring(10))}, tmp)
             self.assertEqual((result["verdict"], result["reasons"]),
-                             ("INVALID", ["start already passes every required probe"]))
+                             ("INVALID", [verdict.NO_REFERENCE, "start already passes every required probe"]))
 
     def test_a_start_that_doesnt_build_by_design(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -524,6 +540,13 @@ class Whole(unittest.TestCase):
             result = self.check(task, {"start": start, "reference": FakeProject(measuring(5))}, tmp)
             self.assertEqual(result["verdict"], "VALID", result["reasons"])
             self.assertEqual(start.plays, [], "a start that doesn't build is never played")
+
+    def test_a_task_with_no_reference_is_never_valid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = task_with({"kind": "build", "name": "player_builds", "weight": 0}, probe(), seed=NO_FIX)
+            result = self.check(task, {"start": FakeProject(measuring(-10))}, tmp)
+            self.assertEqual((result["verdict"], result["reasons"]), ("INVALID", [verdict.NO_REFERENCE]),
+                             "a start that fails as it should still proves nothing without the oracle side")
 
     def test_another_engine_is_invalid(self):
         with tempfile.TemporaryDirectory() as tmp:

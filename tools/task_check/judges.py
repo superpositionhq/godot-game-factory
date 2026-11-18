@@ -8,7 +8,9 @@ looks at them and answers the rubric:
   by the probe; a play another judge asks more of is played with the most asked, and `shots` of them are picked
   evenly through), and every screenshot its `shot` inputs take by name, in the order taken;
 - a judge with no plays is shown the shared idle play ("look", 20 s, 6 screenshots) and the drive (22 s, 8) on the
-  task's play_scene;
+  task's play_scene; a required one with no `route` either keeps the task from VALID (NO_OWN_PLAY, check.judged),
+  since those never reach what a rubric asks;
+- an item the pictures don't show scores 0 (UNSEEN): cannot be seen is a fail, never a pass, and ask.md says so;
 - a judge with a `route` is also shown the developer's route file played by the checker as the Lab plays it (read from
   the graded copy: the reference in a task check, the agent's game in a try; 8 screenshots; check.Side.route_play),
   after its other plays; a route that can't be played (no such file, not a route) is said in the notes and shows
@@ -43,6 +45,12 @@ PENDING = "shots saved for {sides}, answer needed"
 ANSWERED = "scored in blind/answers.json"
 ANSWERS = "answers.json"  # under blind/
 ROUTE = "route"  # the developer's route's play, as a judge's play name
+NO_OWN_PLAY = ("no play of its own (no `plays`, no `route`): it is shown only the idle look and the drive, which never "
+               "press the task's keys or leave a title screen, so it can't see what its rubric asks; give it plays "
+               "that show each item at its moment")
+UNSEEN = ("An item the pictures don't show (its moment isn't on screen, its subject is off view, hidden or not reached) "
+          "scores 0 on that side: cannot be seen is a fail, never a pass. On the reference that means its plays must "
+          "be fixed to show it, never the item eased.")
 
 
 def judge(c):
@@ -168,10 +176,13 @@ def ask_text(task, check, sides, notes=(), blind=False, saved=None):
              f"{'Required' if check.get('required', True) else 'Optional'} check, weight {check.get('weight', 1)}.",
              "", "## The brief", "", task.get("instruction", "").strip(), "", "## The question", "",
              check["question"].strip(), "", "## The rubric", "",
-             f"Score each item from 0 (not at all) to 1 (fully) from what the pictures show; an item they can't show "
-             f"scores 0. A side passes when its weighted score is at least {PASS} and no required item is below "
-             f"{REQUIRED}.", "", "| key | required | weight | criterion |", "| --- | --- | --- | --- |", rubric, "",
+             f"Score each item from 0 (not at all) to 1 (fully) from what the pictures show. {UNSEEN} A side passes "
+             f"when its weighted score is at least {PASS} and no required item is below {REQUIRED}.", "",
+             "| key | required | weight | criterion |", "| --- | --- | --- | --- |", rubric, "",
              "## The pictures", ""]
+    if not check["plays"] and not check["route"]:
+        lines += [f"This judge has {NO_OWN_PLAY}" + (": the task isn't VALID until it has." if check.get("required", True)
+                                                    else "."), ""]
     for play, label, shots in plays(check):
         name = play if isinstance(play, str) else play["name"]
         if play == ROUTE:

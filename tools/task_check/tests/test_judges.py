@@ -248,11 +248,12 @@ class Saved(unittest.TestCase):
 
 
 class Whole(unittest.TestCase):
-    def run_check(self, tmp, **kw):
+    def run_check(self, tmp, plays=True, **kw):
         if getattr(self, "game", (None,))[-1] != tmp:
             self.game = (*make_game(tmp)[:3], tmp)
         repo, start, fix, _ = self.game
-        task = task_with(probe(expect={"op": ">=", "calibrate": 0.5}), judge(reference=True))
+        task = task_with(probe(expect={"op": ">=", "calibrate": 0.5}),
+                         judge(reference=True, plays=[play()] if plays else None))
         task["seed"] = {**task["seed"], "commit": start, "reference": fix}
         names = {start[:12]: "start", fix[:12]: "reference"}
         projects = {"start": Shooting(measuring(-500), folder="start"),
@@ -279,7 +280,7 @@ class Whole(unittest.TestCase):
                                                  "needed"])
             base = Path(tmp) / "out" / "probe-task" / "judge-shots" / "door_looks_open"
             for folder in ("start", "reference", "blind/A", "blind/B"):
-                self.assertEqual(len(list((base / folder).iterdir())), 14, folder)
+                self.assertEqual(len(list((base / folder).iterdir())), 5, folder)
             self.assertTrue((base / "ask.md").is_file())
             self.score(tmp, {"door_open": 0, "lit": 1}, {"door_open": 1, "lit": 1})
             self.assertEqual((self.run_check(tmp)["verdict"]), "VALID")
@@ -290,6 +291,20 @@ class Whole(unittest.TestCase):
             self.score(tmp, {"door_open": 0.5, "lit": 0}, {"door_open": 1, "lit": 1})
             self.assertEqual(self.run_check(tmp)["reasons"], [
                 "start already meets a required item of judge door_looks_open as you scored it (weighted 0.17)"])
+
+    def test_a_required_judge_with_no_play_of_its_own_is_never_valid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_check(tmp, plays=False)
+            self.assertEqual(result["reasons"][0], f"judge door_looks_open: {judges.NO_OWN_PLAY}")
+            base = Path(tmp) / "out" / "probe-task" / "judge-shots" / "door_looks_open"
+            ask = (base / "ask.md").read_text()
+            self.assertIn(judges.UNSEEN, ask, "the writer is told that what can't be seen scores 0")
+            self.assertIn(f"This judge has {judges.NO_OWN_PLAY}: the task isn't VALID until it has.", ask)
+            self.score(tmp, {"door_open": 0, "lit": 0}, {"door_open": 1, "lit": 1})
+            again = self.run_check(tmp, plays=False)
+            self.assertEqual((again["verdict"], again["reasons"]),
+                             ("INVALID", [f"judge door_looks_open: {judges.NO_OWN_PLAY}"]),
+                             "scores never pass a judge that sees only the idle look and the drive")
 
     def test_no_judge_shots_leaves_a_required_judge_unanswered(self):
         with tempfile.TemporaryDirectory() as tmp:

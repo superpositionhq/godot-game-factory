@@ -1046,6 +1046,29 @@ class Units(unittest.TestCase):
             {'name': 'still_works', 'checks': [judge('hud_unchanged'), judge('code', 'code_judge')]}]}
         self.assertEqual(vg.required_quality_judges(t), ['reads_well', 'looks_as_asked', 'code'])
 
+    def test_a_judge_names_a_play_of_its_own(self):
+        """A judge with no `plays` (and no `route`) sees only the idle look and the drive, never what its rubric asks:
+        a required one is an error, an optional one a warning; a code judge plays nothing and is neither."""
+        def judge(name, kind='judge', **over):
+            return {'name': name, 'kind': kind, 'question': 'q', 'rubric': [{'key': 'k', 'criterion': 'c'}], **over}
+        own = {'name': 'open_menu', 'seconds': 6, 'inputs': [{'t': 1.0, 'key': '<Keyboard>/c', 'press': True}]}
+        t = {'milestones': [{'name': 'done', 'checks': [
+            judge('looks_as_asked'), judge('menu', plays=[own]), judge('route', route='Tests/route.json'),
+            judge('taste', required=False), judge('code', 'code_judge')]}]}
+        self.assertEqual(vg.judges_without_own_play(t), (['looks_as_asked'], ['taste']))
+        t = task('a' * 40, 'b' * 40)
+        t['milestones'][-1]['checks'] += [judge('looks_as_asked', weight=0), judge('taste', required=False, weight=0)]
+        rep = vg.Report()
+        vg.check_task(rep, 'repo: Tasks', 'x', t, SLUG, None)
+        self.assertEqual([m[:71] for m in errors(rep)],
+                         ["x: required judge check(s) ['looks_as_asked'] name no play of their own"])
+        self.assertTrue(any(m.startswith("x: judge check(s) ['taste'] name no play of their own") for s, _a, m in
+                            rep.items if s == 'warning'), rep.items)
+        t['milestones'][-1]['checks'][-2]['plays'] = [own]
+        rep = vg.Report()
+        vg.check_task(rep, 'repo: Tasks', 'x', t, SLUG, None)
+        self.assertEqual(errors(rep), [])
+
     def test_schema_keywords(self):
         """Every keyword the schemas use is one check_schema reads, an annotation, or the if/then/else that
         check_assets_manifest evaluates by hand (a keyword it ignored would be a rule never checked); each works."""

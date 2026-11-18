@@ -222,7 +222,9 @@ class Whole(unittest.TestCase):
 
             self.answer(tmp, ["COMBO x3"], ["COMBO x3"])
             held = self.run_check(tmp, task, projects())
-            self.assertEqual(held["reasons"], ["start already passes every required probe"])
+            self.assertEqual(held["reasons"], [verdict.SAME_READING.format(name="combo_shows", value="3"),
+                                               "start already passes every required probe"],
+                             "the same reading on both sides measures nothing: uncalibrated, never a pass")
 
             changed = {"start": Played(5, folder="start"), "reference": Played(2, folder="reference")}
             moved = self.run_check(tmp, task, changed)

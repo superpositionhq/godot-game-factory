@@ -213,6 +213,32 @@ class Verdict(unittest.TestCase):
         self.assertEqual(verdict.verdict(weightless, ref, start), (True, [], []))
         self.assertEqual(verdict.noop_score(weightless, start), (0.0, []))
 
+    def test_a_weighted_probe_that_reads_the_same_on_both_sides_is_uncalibrated_whatever_its_threshold(self):
+        """A literal threshold too: the same reading on the start and the reference measures nothing the change
+        moves, so it is never a pass, required or not."""
+        task = task_with(milestones=[{"name": "fixed", "checks": [probe("hud"), probe("lamp", required=False)]},
+                                     {"name": "guards", "checks": [probe("guard", weight=0)]},
+                                     {"name": "still_works", "checks": [probe("runs", weight=0)]}])
+
+        def side_of(hud, lamp, passed):
+            rows = record(checked("hud", "probe", passed), checked("lamp", "probe", False),
+                          checked("guard", "probe", True), checked("runs", "probe", True))
+            rows["probes"] = {"hud": {"value": hud}, "lamp": {"value": lamp}, "guard": {"value": 1.0},
+                              "runs": {"value": 1.0}}
+            return rows
+
+        valid, why, _ = verdict.verdict(task, side_of(4.0, 2.0, True), side_of(4.0, 2.0, True))
+        self.assertFalse(valid)
+        self.assertEqual(why, [verdict.SAME_READING.format(name="hud", value="4"),
+                               verdict.SAME_READING.format(name="lamp", value="2"),
+                               "start already passes every required probe"],
+                         "a guard and a still-works probe read the same on purpose; a weighted probe never")
+        valid, why, _ = verdict.verdict(task, side_of(4.0, 3.0, True), side_of(1.0, 2.0, False))
+        self.assertEqual((valid, why), (True, []), "readings that differ are measured as before")
+        missing = side_of(None, 2.0, False)
+        self.assertEqual(verdict.verdict(task, side_of(4.0, 3.0, True), missing)[:2], (True, []),
+                         "a start that measured nothing (the bug crashes it) is no same reading")
+
     def test_a_judge_is_not_counted_in_a_no_op(self):
         task = task_with(probe("hud"), {"kind": "judge", "name": "taste", "question": "q", "required": False, "rubric": [{"key": "k", "criterion": "c"}]})
         start = record(checked("hud", "probe", False), checked("taste", "judge", False, "not asked"))

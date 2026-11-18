@@ -9,10 +9,13 @@
 3. With a reference, the reference is checked as a solution would be: its checks in the task's order (a check whose
    `needs` failed isn't run and fails), build, boot, log_absent, file_exists, package and every probe against its
    threshold. A calibrated or start-relative threshold measures the start (its plays, played once) and, calibrated, the
-   reference. A probe whose select reads nothing on the reference, or whose task play's input didn't land there, is a
-   task error (TASK_ERROR), as the Lab's grade makes it.
+   reference. A probe whose select (objects, widgets, components, ui) reads nothing on the reference, or whose task
+   play's input didn't land there, is a task error (TASK_ERROR), as the Lab's grade makes it.
 4. The start is checked on its probes (and on a `fails_at_start` build check).
-5. verdict.verdict decides VALID or INVALID from the two sides' check rows.
+5. verdict.verdict decides VALID or INVALID from the two sides' check rows. A task with no seed.reference is never
+   VALID: its oracle side can't be played, so nothing shows its checks can be passed (NO_REFERENCE). A required judge
+   with no play of its own (no `plays`, no `route`) is never VALID either: it is shown only the idle look and the
+   drive, which never reach what its rubric asks (judged).
 
 A run of several tasks shares one scratch copy per commit (Builds): a commit that is one task's start and another's
 reference, or two tasks' start, is materialized and built once and kept until the last task that needs it is done.
@@ -69,9 +72,11 @@ MOBILE_DRIVE = [_push(1.0, [0.15, 0.6], 5.0), _push(6.0, [0.25, 0.75], 2.0), _pu
                 _push(15.0, [0.15, 0.6], 6.0)]
 JUDGES = ("judge", "code_judge")
 NOT_JUDGED = "not asked: a model's check, answered by the task's writer (judge-shots)"
+NO_OWN_PLAY = judges.NO_OWN_PLAY
+NO_REFERENCE = verdict.NO_REFERENCE
 PACKAGED_SECONDS = 20  # a package check's play of the exported player
 TASK_ERROR = verdict.TASK_ERROR
-SELECTING = ("objects", "widgets", "components")  # the runtime measures that read what their select matches
+SELECTING = ("objects", "widgets", "components", "ui")  # the runtime measures that read what their select matches
 ROUTE_INPUTS, ROUTE_BYTES, ROUTE_SECONDS, ROUTE_SHOTS = 400, 1024 * 1024, 120, 8  # a judge's route, as the Lab reads it
 SKIP = {".godot", "Build", "Logs", "android", ".git"}  # left out of file_exists
 # s: a play of `seconds` samples on to seconds + OVERRUN and stops there (the probe ends a play at `t >= seconds +
@@ -535,15 +540,19 @@ def missed_text(rows, limit=3):
 def reads_nothing(measure, probe):
     """Why a selecting measure read nothing in a whole play, its window aside, or None: the probe sampled its query
     but its select matched no row in any sample, or no row it matched had a value for its field (any row is one for a
-    `count`). None too when the play never sampled it (the play's own failure, said elsewhere)."""
+    `count`, and for a `ui` field read over everything the select picks: signature, number, clock). A `ui` sample
+    after which no frame was drawn is left out. None too when the play never sampled it (the play's own failure, said
+    elsewhere)."""
     (query,) = probes.needs(measure)
-    samples = [s for s in (probe.get("measures") or {}).get(probes.query_id(query)) or [] if isinstance(s, dict)]
+    samples = [s for s in (probe.get("measures") or {}).get(probes.query_id(query)) or [] if isinstance(s, dict)
+               and (measure["probe"] != "ui" or isinstance(s.get("rows"), list))]
     if not samples:
         return None
     rows = [r for s in samples for r in s.get("rows") or [] if isinstance(r, dict)]
     totals = [s.get("total") for s in samples if isinstance(s.get("total"), int | float)]
     match = measure.get("match")
-    if (rows or any(totals)) and (measure["field"] == "count" or any(
+    whole = measure["probe"] == "ui" and measure["field"] in probes.UI_WHOLE
+    if (rows or any(totals)) and (measure["field"] == "count" or whole or any(
             probes.number(r.get(measure["field"]), match) is not None for r in rows)):
         return None
     select = json.dumps(measure.get("select"), sort_keys=True)
@@ -597,7 +606,7 @@ class Grade:
         return passed, verdict.describe(check, value, limit, start, fix, why)
 
     def unreadable(self, check, limit):
-        """Why no version of the game can pass probe `check`, or None: its select (objects, widgets, components) reads
+        """Why no version of the game can pass probe `check`, or None: its select (objects, widgets, components, ui) reads
         nothing in the reference's play of it, a play that ran to its end: no row matched in any sample, or none had a
         value for its field. A measure that reads 0 of nothing (a count, or `of` count, any, all or sum) is not refused
         when 0 passes its threshold `limit`: there nothing matching is the outcome."""
@@ -768,11 +777,15 @@ def judged(task, records, played=True):
     """Why the task's required `judge` checks keep it from being VALID, from the writer's scores (save_judge_shots'
     records): every one scored on every side shown, the reference passing it, and the start passing a judge of what
     still looks as it did (in still_works) or scoring every required item below judges.REQUIRED on any other. A judge
-    is a required check like any other, so a task isn't VALID on scores nobody gave."""
+    is a required check like any other, so a task isn't VALID on scores nobody gave. A required judge with no play of
+    its own (no `plays`, no `route`) never passes here, whatever its scores: it is shown only the idle look and the
+    drive, which never press a task's keys or leave a title screen."""
     out = []
     for group, c in tasks.checks(task):
         if c["kind"] != "judge" or not c["required"]:
             continue
+        if not c.get("plays") and not c.get("route"):
+            out.append(f"judge {c['name']}: {NO_OWN_PLAY}")
         found = (records or {}).get(c["name"])
         if not played or found is None:
             out.append(f"judge {c['name']}: not played (--no-judge-shots), answer needed")
@@ -907,6 +920,8 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
         else:
             start_grade = Grade(task, "start", start, reference, thresholds).run()
         valid, why, notes = verdict.verdict(task, ref_grade, start_grade)
+        if reference is None:  # the start's rows still tell the writer what it does, but nothing proves the checks
+            valid, why = False, [NO_REFERENCE] + list(why)
         if judges.judges(task):
             if judge_shots:
                 shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None}
