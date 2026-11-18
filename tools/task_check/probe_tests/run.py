@@ -2,7 +2,7 @@
 plays a game, and check what the probe wrote (README.md).
 
     python tools/task_check/probe_tests/run.py <work folder> [--godot EXE] [--rendered] [--desk] [--play NAME ...]
-                                               [--once] [-v]
+                                               [--once] [--pointer-locked] [-v]
 
 Without --rendered every play runs headless: everything but pixels. With it, the plays that need a drawn frame run in
 a window, at a desktop game's size and at a portrait phone's."""
@@ -30,7 +30,7 @@ VARIANTS = {
     "desktop": {"size": [960, 540], "project": (1920, 1080), "renderer": "forward_plus"},
     "portrait": {"size": [1080, 1920], "project": (1080, 1920), "renderer": "mobile"},
 }
-TIMEOUT = 180
+TIMEOUT = 180  # seconds a play may run, unless its test says (`timeout`)
 
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent.parent))
@@ -89,7 +89,7 @@ def run(argv, cwd, timeout=TIMEOUT):
     return code, output.decode("utf-8", "replace"), time.monotonic() - start
 
 
-def play(godot, copy, name, test, variant, rendered, desk):
+def play(godot, copy, name, test, variant, rendered, desk, pointer_locked=False):
     """One play of `copy`: the spec written, the game run, what it wrote read back."""
     logs = copy / "Logs" / "TaskProbe"
     out = logs / "play"
@@ -110,7 +110,7 @@ def play(godot, copy, name, test, variant, rendered, desk):
     argv += ["--", *(["-taskProbe", asked] if test.get("flag", True) else []), *test.get("args", [])]
     if desk:
         argv = [sys.executable, DESK, *argv]
-    code, output, seconds = run(argv, copy)
+    code, output, seconds = run(argv, copy, test.get("timeout", TIMEOUT))
     files = {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()} if out.is_dir() else {}
     probe = None
     if "probe.json" in files:
@@ -125,7 +125,8 @@ def play(godot, copy, name, test, variant, rendered, desk):
     (kept / "play.log").write_text(text + "\n" + output, encoding="utf-8")
     shutil.copy(asked, kept / "play_spec.json")
     return {"code": code, "output": output, "seconds": seconds, "probe": probe, "files": files, "log": text + output,
-            "spec": spec, "size": VARIANTS[variant]["size"], "rendered": rendered, "out": out}
+            "spec": spec, "size": VARIANTS[variant]["size"], "project": VARIANTS[variant]["project"],
+            "rendered": rendered, "pointer_locked": pointer_locked, "out": out}
 
 
 def main():
@@ -136,6 +137,10 @@ def main():
     parser.add_argument("--desk", action="store_true", help="start each play on a Windows desktop of its own (desk.py)")
     parser.add_argument("--play", action="append", help="only these plays")
     parser.add_argument("--once", action="store_true", help="no second play of the plays that must read the same twice")
+    parser.add_argument("--pointer-locked", action="store_true",
+                        help="this session can't move the display's own pointer (a Windows session without a desktop "
+                             "of its own, as over ssh): a rendered play's checks of the mouse a game polls are "
+                             "skipped, each on a SKIPPED line")
     parser.add_argument("-v", "--verbose", action="store_true", help="print every check")
     args = parser.parse_args()
     godot = godot_exe(args.godot)
@@ -156,14 +161,14 @@ def main():
                 continue
             if test.get("first"):  # the play before it on the copy, which saves what this one must find, or must not
                 play(godot, copy, test["first"], tests.PLAYS[test["first"]], variant, args.rendered, args.desk)
-            found = play(godot, copy, name, test, variant, args.rendered, args.desk)
+            found = play(godot, copy, name, test, variant, args.rendered, args.desk, args.pointer_locked)
             checks = tests.Checks()
             if found["code"] is None:
-                checks.fail(f"the play ran out of time ({TIMEOUT} s)")
+                checks.fail(f"the play ran out of time ({test.get('timeout', TIMEOUT)} s)")
             test["check"](checks, found)
             same = ""
             if test.get("twice") and not args.once and found["probe"] is not None:
-                again = play(godot, copy, name, test, variant, args.rendered, args.desk)
+                again = play(godot, copy, name, test, variant, args.rendered, args.desk, args.pointer_locked)
                 # the whole file, or for a play paced to real time what its test says two plays agree on
                 read = test.get("same") or (lambda played: played["files"].get("probe.json"))
                 same = "  same twice" if again["probe"] is not None and read(again) == read(found) else ""
@@ -174,7 +179,7 @@ def main():
             print(f"{'FAIL' if bad else 'PASS'}  {variant}.{name:<12} {len(checks.done)} checks"
                   f"{f', {len(bad)} failed' if bad else ''}{same}  {found['seconds']:.0f} s")
             for ok, what in checks.done:
-                if not ok or args.verbose:
+                if not ok or args.verbose or what.startswith(tests.SKIPPED):
                     print(f"      {'ok  ' if ok else 'FAIL'} {what}")
         folder = saves_folder(saves_name(copy))
         if SAVES.match(folder.name) and folder.is_dir():

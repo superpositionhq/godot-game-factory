@@ -106,7 +106,10 @@ thing instead of removing it still pass? If not, move the probe to what the play
   - `name`: lowercase letters, digits and `_`, at most 32, and not `look` or `drive`. A check can't point at another
     check's play by its name: every check that reads a task play carries the whole play, and plays with the same name
     in one task must be identical (the play then runs once per side for all of them).
-  - `seconds`: a whole number, 5-120. No input at or after the end.
+  - `seconds`: a whole number, 5-300. No input at or after the end. Every time in a play goes up to 300 s too (an
+    input's `t`, a `hold`, a move's or a drag's `over`, a measure's `at`, an event's `within`), so a moment that
+    comes late in a game (a third wave, a long build-up) can be reached and read. Keep a play as short as what it
+    measures allows: every second is played on each side of every check.
   - `every`: the sampling step, 0.1-1.0 s (default 0.5). A play samples on the first frame at or after each step, from
     1/30 s to its `seconds` plus 0.5, so a step that isn't a whole number of frames alternates (0.25 s: 0.267, 0.5,
     0.767, 1.0, ...): keep window edges off the exact moment something happens.
@@ -139,7 +142,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
     instruction asks for a first launch, and changes nothing in how it is played. Never with `after`
     (`tools/validate-game.py` refuses the two together: a play starts either clean or on what others saved). Two
     plays of one name, one `fresh` and one not, differ, and the validator refuses them as any two that differ.
-  - `inputs` (at most 400; a play with none leaves the key out), each at time `t` (seconds of play, 0-120). They reach
+  - `inputs` (at most 400; a play with none leaves the key out), each at time `t` (seconds of play, 0-300). They reach
     the game as the engine's own input events (`InputEventKey`, `InputEventMouseButton`, `InputEventMouseMotion`,
     `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventScreenTouch`, `InputEventScreenDrag`), so the
     game's `_input` and `_unhandled_input`, its Controls and its input actions (`Input.is_action_pressed`) take them
@@ -149,13 +152,26 @@ thing instead of removing it still pass? If not, move the probe to what the play
     - a key: `{"t": 1.0, "key": "<Keyboard>/w", "press": true}` and later `"press": false`. `key` is a control path,
       `^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$`, written as the other factories' plays write it, so a route
       reads alike across engines: a key of `<Keyboard>/` by its Input System name (`w`, `space`, `enter`, `leftShift`,
-      `f2`, `escape`, `upArrow`, `numpad1`) or by the engine's own name (`up`, `shift`, `pageup`), any case (left and
-      right modifiers are one key); on `<Mouse>/`, `leftButton`, `rightButton`, `middleButton`, `forwardButton`,
-      `backButton`; on `<Gamepad>/`, `buttonSouth` (the engine's A), `buttonEast`, `buttonWest`, `buttonNorth`,
-      `leftShoulder`, `rightShoulder`, `start`, `select`, `leftStickPress`, `rightStickPress`, `dpad/up`, `dpad/down`,
-      `dpad/left`, `dpad/right`. A key event carries the key as both `keycode` and `physical_keycode`, so an action
-      bound either way takes it. Any other control is a line in the play's `query_errors`, and nothing is pressed. In
-      a mobile game's play `<Keyboard>/escape` is the phone's back button (section 1.3);
+      `f2`, `escape`, `upArrow`, `numpad1`) or by the engine's own name (`up`, `shift`, `pageup`), any case; on
+      `<Mouse>/`, `leftButton`, `rightButton`, `middleButton`, `forwardButton`, `backButton`; on `<Gamepad>/`,
+      `buttonSouth` (the engine's A), `buttonEast`, `buttonWest`, `buttonNorth`, `leftShoulder`, `rightShoulder`,
+      `start`, `select`, `leftStickPress`, `rightStickPress`, `dpad/up`, `dpad/down`, `dpad/left`, `dpad/right`. A key
+      event carries the key as both `keycode` and `physical_keycode`, so an action bound either way takes it. Any
+      other control is a line in the play's `query_errors`, and nothing is pressed. In a mobile game's play
+      `<Keyboard>/escape` is the phone's back button (section 1.3).
+      **A key is a keyboard's.** It carries the modifiers held (Shift, Ctrl, Alt, Meta: a modifier's own press
+      counts itself, its release doesn't), so Ctrl held and then S matches an action bound to Ctrl+S; every mouse
+      event does too. `leftShift`, `rightCtrl` and the other sided modifiers press that side's key, so an action bound
+      to the left Shift alone fires for `leftShift` and not for `rightShift` (`shift` names no side). A printable key types its character, a letter in capitals while Shift
+      is held (a digit stays a digit). A held key doesn't repeat. **A key goes to the focused control first**, by the
+      engine's own route: the game's `_input`, then the Control that has the keyboard focus, then
+      `_shortcut_input`, `_unhandled_key_input` and `_unhandled_input` only while nothing has taken it. So a key
+      typed into a focused text field (a `LineEdit` a click focused) goes into the field and never reaches the game's
+      later stages, and the action bound to it doesn't fire there; a focused button is pressed by Enter (`ui_accept`)
+      and, as the engine does, lets that key and every other through; with nothing focused the game gets every key. `Input.is_key_pressed` and
+      `Input.is_action_pressed` follow every key, taken or not, as with a keyboard. A play that must drive the game
+      after typing into a field first leaves the field with the player's own input (a click on another control, the
+      key the game closes it with);
     - an axis event: `{"t": 2.0, "key": "<Mouse>/delta/x", "axis": 40.0}` (`axis` -1000 to 1000), on `<Mouse>/`
       `delta/x`, `delta/y`, `scroll/x`, `scroll/y` or `<Gamepad>/` `leftStick/x`, `leftStick/y`, `rightStick/x`,
       `rightStick/y`, `leftTrigger`, `rightTrigger`. A mouse delta is one mouse movement of that many pixels
@@ -229,7 +245,19 @@ thing instead of removing it still pass? If not, move the probe to what the play
       doesn't excuse. Mark a click disabled only
       where the instruction says its control must be disabled;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
-      from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
+      from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there.
+      **The cursor is the game's own mouse**, as a player's is: the game's `_input`, a Control's `_gui_input` (one it
+      draws itself in `_draw` too), `_unhandled_input` and the physics picking (an `Area2D` or a 3D body with input
+      pickable) get the motion and the press at that point, and what the game reads of the mouse itself is there:
+      `get_viewport().get_mouse_position()`, a canvas item's `get_global_mouse_position()`, the button's state
+      (`Input.is_mouse_button_pressed`), and which picked object the mouse is over between motions. So a menu or a
+      HUD the game paints on the canvas and hit-tests itself is clicked by a cursor input and a press, as a player
+      clicks it; a widget click is only for a `Control`. A widget click moves the mouse the same way. In a window
+      the engine reads the polled position and the hover from the display's own pointer, which the probe moves there;
+      a display that keeps its pointer put is said once in the play's `probe.log` (`the display's pointer didn't
+      follow the cursor to (x, y): the game reads it at (x, y)`), and what the game polled of the mouse in that play
+      is then not where the cursor went (its events still are). A `move` and a mouse delta move the mouse by an
+      amount and leave the display's pointer where it is;
     - a mouse move: `{"t": 1.0, "move": [300, -40], "over": 1.5}` moves the mouse by [dx, dy] pixels of the frame
       (right, down), spread evenly over `over` seconds as one motion a frame (at once without `over`), the way a
       mouse look reads it (`InputEventMouseMotion.relative`, in the frame's pixels); the cursor stays where it is.
@@ -260,7 +288,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
       otherwise (section 2.4). No match: nothing happens. The play's `probe.log` says what each one did,
       `teleported next to <name>: asked (x, y, z) yaw <degrees>, now at (x, y, z)` or
       `teleport_to skipped (no object matches)`: check it in the fix's play;
-    - holding the player there: `"hold": 5` on a `teleport` or `teleport_to` (seconds, up to 120) puts the player back
+    - holding the player there: `"hold": 5` on a `teleport` or `teleport_to` (seconds, up to 300) puts the player back
       at the spot (its position; its view stays free) for that many seconds of play, before the game's scripts of
       every frame and again after them, so a camera that follows the player frames the spot; a hold lasts through a
       `wait`. For a game that sets its player's place every frame, which would otherwise undo a teleport at once.
@@ -270,7 +298,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
       clock, a web request) sees less real time than the play's seconds. At `t` the play's clock holds while the game
       keeps running, paced to real time, until `wait` real seconds and `wait` seconds of game time have both passed;
       nothing is sampled, sent or screenshot meanwhile; then the play goes on from `t`. A play's waits add at most
-      300 s in all, and its timeout grows by them; `seconds`, windows and `at` stay in play time, within 120 s;
+      300 s in all, and its timeout grows by them; `seconds`, windows and `at` stay in play time, within 300 s;
     - a named screenshot: `{"t": 6.0, "shot": "pause_menu"}` (a letter or `_` first, then letters, digits, `_`; up to
       32) takes `shot_pause_menu.png` at that moment, with the UI, beside the evenly spaced ones. Each name once in a
       play, 20 at most. A picture never passes or fails anything by itself: it is for a judge (section 3.2), for a
@@ -392,7 +420,7 @@ A task play may touch the screen as a phone's player does. Two inputs, each with
 - a drag, `{"t": 2.0, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "over": 0.3, "hold": 2.0, "finger": 0}` (2 to 16
   spots): the finger goes down at the first spot, moves through the others evenly over `over` seconds (at once
   without it), stays at the last for `hold` seconds, then lifts: a swipe, a slider, a virtual stick pushed over and
-  held there.
+  held there. A `hold` and an `over` go up to 300 s each, within the play.
 
 A spot is a point of the screen `[fx, fy]` in fractions 0-1 from its top left, or `{"widget": "MoveStick"}`: the centre
 of the first visible, laid-out widget of that name (a wildcard) or type, whatever its kind (a button, a stick, a
@@ -439,7 +467,7 @@ invalid when the fix's play misses.
 
 - `{"t": 2.0, "pin": <object select>, "hold": 3, "front": 1.5, "offset": [x, y, z]}` or, in place of `front`,
   `"at": <Point>`: the match nearest the player (never the player or a node below it; of two as near, the first in
-  tree order) is held at its place for `hold` seconds (up to 120) while its own scripts, animation and attacks run
+  tree order) is held at its place for `hold` seconds (up to 300) while its own scripts, animation and attacks run
   on: it is put back and its velocity stilled before the game's scripts of every frame and again after them, as a
   held player is (section 1.1), and it still turns, swings and blocks. First it is set `front` m (0 to 1000) ahead
   of the player along the way the player faces (its -Z on the level; a 2D player's +X), at its own height (its y is
@@ -532,7 +560,7 @@ section 1.2. Points and `near`: section 2.13. Why a probe has no value: section 
 
 ### 2.1 Common fields
 
-- `window`: `[t0, t1]` seconds of play time (ends inclusive), or `at`: `[t, ...]` (at most 40 times, each 0-120; the
+- `window`: `[t0, t1]` seconds of play time (ends inclusive), or `at`: `[t, ...]` (at most 40 times, each 0-300; the
   sample nearest each time, when one is within 0.26 s of it) or `"end"` (the last sample); not both. Default: the
   whole play.
 - `since` (every measure but `log` and `seen`): an event the window counts from, `{"measure": <a measure>, "expect":
@@ -636,7 +664,8 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     `"player": false`: anything but the player and the nodes below it (the foes among every `CharacterBody3D`). Never
     `near` the old place of something the task asks to move: select it by what it is.
   - `where`: `[{"prop": "<path>", "op": "==", "value": v}, ...]` (1 to 4): a property of the node, the path a `prop:`
-    field reads, compared with a number, a boolean or a string (a string takes `==` and `!=`); every condition must
+    field reads, compared with a number, a boolean or a string (a string takes `==` and `!=`; a number is compared
+    as a number, so a property of 5 is not `== 2` and is `< 5.5`); every condition must
     hold, and a node whose property doesn't resolve doesn't match. Only foes not dead, a bay's own crates:
     `{"tag": "foe", "where": [{"prop": "dead", "op": "==", "value": false}]}`. Name only members the task doesn't
     ask to change, or another solution fails for its names.

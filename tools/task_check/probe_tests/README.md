@@ -7,7 +7,8 @@ that no play here checks is not tested.
 ## Running them
 
 ```
-python tools/task_check/probe_tests/run.py <work folder> [--godot EXE] [--rendered] [--desk] [--play NAME ...] [--once] [-v]
+python tools/task_check/probe_tests/run.py <work folder> [--godot EXE] [--rendered] [--desk] [--play NAME ...] [--once]
+                                           [--pointer-locked] [-v]
 ```
 
 `<work folder>` is a scratch folder the run may fill and empty: it copies the game there, never plays it in place.
@@ -39,12 +40,17 @@ FAIL  desktop.second       17 checks, 1 failed  0 s
 ...
 ```
 
-`--play` runs some plays, `--once` leaves out the second play, `-v` prints every check. What each play wrote is kept in
+`--play` runs some plays, `--once` leaves out the second play, `-v` prints every check. `--pointer-locked` says the
+session can't move the display's own mouse pointer (a Windows session without a desktop of its own, as over ssh): the
+checks of `mouse_drawn` that read the mouse a game polls are then skipped, each said on a `SKIPPED` line on every run,
+and the play checks instead that `probe.log` says the pointer didn't follow. A play's run is stopped after 180 s
+(`longest`: 900 s). What each play wrote is kept in
 `<work folder>/<variant>/Logs/ProbeTests/<play>/` (probe.json, probe.log, the screenshots, the game's log, the spec).
 
 Headless, the engine runs the scene tree, the scripts, the input events, the physics and the audio mix, but draws
 nothing: a headless play writes no screenshot, a `screen` sample has no value and `render` reads 0. `--rendered` runs
-the plays that need a drawn frame instead (`frame`, `lamps_drawn`, `lamps_reach`, `places_drawn`, `field_drawn`), in a window, twice over: as a desktop game (`desktop`: a
+the plays that need a drawn frame instead (`frame`, `lamps_drawn`, `lamps_reach`, `places_drawn`, `field_drawn`,
+`mouse_drawn`, `typing_drawn`), in a window, twice over: as a desktop game (`desktop`: a
 1920x1080 project read at 960x540) and as a portrait phone game (`portrait`: a 1080x1920 project on the Mobile
 renderer played at 1080x1920, whatever the screen). It needs a GPU and a desktop; `--desk` starts each play on a
 Windows desktop of its own (`../desk.py`), as the checker does, so nothing shows on the screen.
@@ -67,7 +73,15 @@ and `Box`, one that only clips round a list taller than it, which could scroll t
 (`Top/Banner`) and a panel over a disabled button (`Shutter` over `Shut`); M shows an exclusive `AcceptDialog`
 (`Modal`) for 30 frames. A press on a button prints `PRESSED` and its name, one on what lies over a button `TOOK` and
 that one's name. `scenes/Events.tscn` (`game/events.gd`) shows its banner 20 frames after Space and from the next frame
-on counts its score up by one a frame.
+on counts its score up by one a frame. `scenes/Mouse.tscn` (`game/mouse.gd`, built in code at fractions of the frame)
+holds what a game reads of the mouse itself: a control it draws and reads itself (`Dial`, `game/dial.gd`: `_draw`,
+`_gui_input`), a menu item painted on the canvas (`Menu`) that it hit-tests from a press no control took
+(`_unhandled_input`) and by polling the mouse in `_process` (`get_mouse_position`, `get_global_mouse_position`,
+`Input.is_mouse_button_pressed`), an `Area2D` (`Pad`) and a 3D body (`Block`) the physics picks; each prints what it
+got. `scenes/Typing.tscn` (`game/typing.gd`) holds a text field (`NameField`) and a button (`Apply`) that take the
+keyboard focus when clicked, and the game's actions jump (J), save (Ctrl+S) and dash (the left Shift, bound by its
+physical key and side); it prints each key at every stage the engine hands it to, the field's text, the button's
+presses, the actions `_unhandled_input` reads and their polled state.
 
 | Node | What it is for |
 |---|---|
@@ -96,7 +110,7 @@ with an id of its own.
 
 | Play | What it proves |
 |---|---|
-| `keys` | keys through an input action, the wheel, a widget click, the cursor and the left button, a gamepad button, a teleport with a hold, `teleport_to`, a view turn; every kind's fields on the scene above: object selects (group, name, class, `near`, `has`, `where`, `inactive`), `prop:` paths, parts, speed and spin, extents, 200 rows of 250 with `total` and `full`, components (class, `effect`, `mesh`, lights), a light's extents (0: it draws nothing) as an object and as a component, spawns, the camera, widgets, ui, audio (count, volume at the listener, level, `started`, selects by name, bus and owner), render's keys; the saved data cleared; an unknown key and a click that finds nothing |
+| `keys` | keys through an input action, the wheel, a widget click, the cursor and the left button, a gamepad button, a teleport with a hold, `teleport_to`, a view turn; every kind's fields on the scene above: object selects (group, name, class, `near`, `has`, `where`: a number compared as a number, `inactive`), `prop:` paths, parts, speed and spin, extents, 200 rows of 250 with `total` and `full`, components (class, `effect`, `mesh`, lights), a light's extents (0: it draws nothing) as an object and as a component, spawns, the camera, widgets, ui, audio (count, volume at the listener, level, `started`, selects by name, bus and owner), render's keys; a label shown under a hidden panel reads hidden; the saved data cleared; an unknown key and a click that finds nothing |
 | `touch` | a tap on a named Control, a drag that holds the stick over, a second finger's tap meanwhile, `<Keyboard>/escape` as the phone's back button (the spec says `touch`), a Control by its class, and the misses: a widget that isn't there, a finger still down |
 | `touch_drawn` (`--rendered`) | the same play with a frame, on both layouts: the stick stands at 0.135 of the frame's width, so the drag to `[0.135, 0.6]` pushes it straight up on the desktop's and the portrait phone's alike |
 | `captions` | a widget click and a tap by the caption a button shows (`scenes/Captions.tscn`): a button named `Button2` reading "Begin Run" clicked by `begin_run`, a button named `Start` clicked by name though another reads "Start", "Again" clicked as written (the lower one, the only one that shows it so), "again" read alike by two (the upper one, noted), a label on a `TextureButton` as its caption, a tap by caption, a button and a panel in a scrolled list's view, a Chinese caption clicked as written and one read alike (its middle dot a gap), a tap by a Chinese caption; the list's controls out of its view (a button and a panel wholly out, below the list or above the frame, a button partly in view whose centre is out of it, by its name and, `optional`, by its caption, a caption read on a button partly in view) scrolled into view, the least way, and pressed in the next frame, a tap on one the list then shows (it scrolls nothing), a disabled button scrolled to and found shown but disabled; the misses: a caption drawn see-through, no match, an `optional` click with no match (sent as any click), a click on a button shown but disabled by its caption marked `disabled` and one by its name without the mark (each says so, nothing pressed) |
@@ -118,6 +132,11 @@ with an id of its own.
 | `idle` | without `-taskProbe` the addon does nothing |
 | `shutdown` | a game that quits by itself: `ended` `shutdown`, the samples kept |
 | `wait` | a `wait` takes its real time and the clock holds |
+| `mouse` | a cursor input moves the game's own mouse (`scenes/Mouse.tscn`): a control the game draws and reads itself gets the motion and the press at the cursor, in its own and the window's units, from a cursor input and from a widget click; the game's `_input` gets every motion and press there, Ctrl held on a press made with Ctrl down; `_unhandled_input` gets the presses no control took, and hits the painted menu item; the physics picks the `Area2D` and the 3D body and hands each its press; the mouse the game polls is at the cursor's point at each press and the painted menu item is hit by polling; the hover holds between motions (each entered once, the `Area2D` left for the body); `probe.log` says nothing of the pointer |
+| `mouse_drawn` (`--rendered`) | the same in a window, where the engine reads the polled mouse and the hover from the display's own pointer, which the probe moves to the cursor; every run of one line kept once (a display may report the move as a motion of its own) |
+| `typing` | a key goes the engine's way (`scenes/Typing.tscn`): the game's `_input` first, then the focused control, then `_shortcut_input`, `_unhandled_key_input`, `_unhandled_input` while nothing took it: with nothing focused the game gets J at every stage and its action fires; a focused text field takes the typed keys (a capital with Shift held, a digit as it is) and the action bound to J doesn't fire, though its polled state and `Input.is_key_pressed` are down as a keyboard's; a focused button takes no J and is pressed by Enter, which still goes on; Ctrl+S matches an action bound to it; an action bound to the left Shift by its side fires for it and not for the right one; a modifier's side and the modifiers held on every key |
+| `typing_drawn` (`--rendered`) | the same in a window |
+| `longest` | a play of 300 s, the longest a task's may be: a tap held 180 s and a drag spread over 210 s and held 60 s lift when they end, a shot at 240 s taken in the frame its event comes, a shot at 299.5 s, and samples to the end |
 | `kept` | a spec that says `keep_saves`: the play starts on what the play before it saved, what it saved when it was told to close too (`wait` is played first) |
 | `fresh` | any other play starts clean, whatever the play before it saved |
 | `frame` (`--rendered`) | screenshots of exactly the frame's size without alpha, one taken in the frame its event comes (`when`: the tap's count shown) and one whose event doesn't come in time (a `shot_when` miss), a tap on a named Control landing, `screen` and `render` with values, at 960x540 and at 1080x1920 |

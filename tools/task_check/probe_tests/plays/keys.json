@@ -35,6 +35,8 @@
     {"id": "spin_object", "kind": "objects", "select": {"component": "MeshInstance3D", "name": "Spin*"}, "fields": ["spin"]},
     {"id": "coins", "kind": "objects", "select": {"component": "coin", "where": [{"prop": "worth", "op": "==", "value": 5}]}, "fields": ["prop:info.kind", "prop:info.sides", "prop:info.sides[1]", "prop:worth"]},
     {"id": "dear_coins", "kind": "objects", "select": {"component": "coin", "where": [{"prop": "worth", "op": ">", "value": 5}]}, "fields": []},
+    {"id": "coins_of_two", "kind": "objects", "select": {"component": "coin", "where": [{"prop": "worth", "op": "==", "value": 2}]}, "fields": []},
+    {"id": "coins_under", "kind": "objects", "select": {"component": "coin", "where": [{"prop": "worth", "op": "<", "value": 5.5}]}, "fields": ["prop:worth"]},
     {"id": "near_crate", "kind": "objects", "select": {"component": "MeshInstance3D", "near": {"point": {"object": {"name": "Crate1"}, "offset": [0.0, 0.0, 0.0]}, "radius": 3.5}}, "fields": []},
     {"id": "ball", "kind": "objects", "select": {"name": "Ball", "has": {"simulating": true}}, "fields": ["collision", "simulating"]},
     {"id": "made", "kind": "spawns", "component": "coin"},

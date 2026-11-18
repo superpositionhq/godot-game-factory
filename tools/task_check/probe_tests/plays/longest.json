@@ -1,0 +1,18 @@
+{
+  "seconds": 300,
+  "shots": 0,
+  "every": 1.0,
+  "scene": "res://scenes/Events.tscn",
+  "inputs": [
+    {"t": 5.0, "tap": [0.85, 0.85], "hold": 180.0},
+    {"t": 10.0, "drag": [[0.4, 0.85], [0.5, 0.85]], "over": 210.0, "hold": 60.0, "finger": 1},
+    {"t": 240.0, "key": "<Keyboard>/space", "press": true},
+    {"t": 240.0, "shot": "banner", "when": {"query": {"id": "w_banner", "kind": "widgets", "select": {"name": "Banner"}, "fields": []}, "field": "count", "of": "count", "match": null, "op": ">=", "value": 1, "within": 40.0}},
+    {"t": 240.1, "key": "<Keyboard>/space", "press": false},
+    {"t": 299.5, "shot": "closing"}
+  ],
+  "queries": [
+    {"id": "banner", "kind": "widgets", "select": {"name": "Banner"}, "fields": []},
+    {"id": "score", "kind": "objects", "select": {"name": "Events"}, "fields": ["prop:score"]}
+  ]
+}

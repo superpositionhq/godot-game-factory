@@ -5,6 +5,8 @@ import math
 import re
 import struct
 
+SKIPPED = "SKIPPED"  # a check this machine can't make (Checks.skip)
+
 
 class Checks:
     """What a play's check found: (passed, what) of every check."""
@@ -20,6 +22,10 @@ class Checks:
 
     def eq(self, what, got, want):
         self.done.append((got == want, what if got == want else f"{what}: got {got!r}, want {want!r}"))
+
+    def skip(self, what, why):
+        """A check this machine can't make: no failure, and said on a SKIPPED line of its own on every run."""
+        self.done.append((True, f"{SKIPPED} {what}: {why}"))
 
     def near(self, what, got, want, within):
         ok = isinstance(got, int | float) and not isinstance(got, bool) and math.isfinite(got) and abs(got - want) <= within
@@ -142,6 +148,10 @@ def check_keys(c, found):
     c.eq("an array is its size", coins[0].get("prop:info.sides") if coins else None, 2)
     c.eq("an array's element", coins[0].get("prop:info.sides[1]") if coins else None, 2)
     c.eq("where keeps none", rows(found, "dear_coins", 2.6), [])
+    c.eq("where compares a number as a number: no coin is worth 2, and every one worth 5 is under 5.5",
+         ([r["name"] for r in rows(found, "coins_of_two", 2.6)],
+          [(r["name"], r.get("prop:worth")) for r in rows(found, "coins_under", 2.6)]),
+         ([], [(r["name"], 5) for r in coins]))
     made = value(found, "made", 6.5)
     c.eq("spawned over the play", made.get("spawned"), 6)
     c.eq("destroyed over the play (three are kept)", made.get("destroyed"), 3)
@@ -185,7 +195,9 @@ def check_keys(c, found):
     c.true("the wheel turns twice", "ZOOM 2" in texts(found, "texts", 2.0), texts(found, "texts", 2.0))
     c.true("a gamepad button", "PAD 0" in texts(found, "texts", 5.0), texts(found, "texts", 5.0))
     c.true("the saved data is cleared before a play", "VISITS 1" in texts(found, "texts", 1.0), texts(found, "texts", 1.0))
-    c.eq("a hidden widget", (row(found, "secret", 3.5).get("visible"), row(found, "secret", 4.5).get("visible")), (0, 1))
+    c.eq("a widget is shown only when it and every parent are: a label whose own visible is on reads hidden under "
+         "its hidden panel, and shown once the panel is", (row(found, "secret", 3.5).get("visible"),
+                                                         row(found, "secret", 4.5).get("visible")), (0, 1))
     c.eq("a button drawn fully transparent is not on screen to widgets, and exists with visible false",
          (rows(found, "ghost_shown", 1.0), row(found, "ghost", 1.0).get("visible")), ([], 0))
     c.eq("a click still reaches it, as a player's does", (row(found, "ghost", 5.0).get("text"),
@@ -920,6 +932,156 @@ def check_frame(c, found):
          (1, 0))
 
 
+PLAY_END = "TaskProbe: the play's time is up"  # what the probe prints when the play's time is up (task_probe.gd)
+POINTER_STUCK = "the display's pointer didn't follow the cursor"  # probe.log, once, when the display keeps its pointer
+
+
+def printed(found, *heads):
+    """What the game printed during the play, the lines that start with one of `heads`, in order: from the engine's
+    log file alone (the runner's copy of the output repeats it), up to the probe's line that the play's time is up."""
+    log = found["log"][:len(found["log"]) - len(found["output"])].split(PLAY_END)[0]
+    return [line.rstrip() for line in log.splitlines() if line.split(" ", 1)[0] in heads]
+
+
+def squeezed(lines):
+    """`lines` with a run of one line kept once: a display may report the probe's move of its pointer as one more
+    motion at the same point."""
+    return [line for i, line in enumerate(lines) if i == 0 or line != lines[i - 1]]
+
+
+def check_mouse(c, found):
+    """A cursor input moves the game's own mouse: what a game reads of it itself, at the cursor's point
+    (`scenes/Mouse.tscn`)."""
+    if not ended(c, found, 3.5 + (5 / 30 if not found["rendered"] else 0)):
+        return
+    probe = found["probe"]
+    width, height = found["project"]
+
+    def point(fx, fy):
+        return f"{round(fx * width)},{round(fy * height)}"
+
+    dial, menu, pad, block = point(0.2, 0.2), point(0.7, 0.2), point(0.2, 0.7), point(0.7, 0.7)
+    c.eq("inputs sent", probe.get("inputs_sent"), 15)
+    c.eq("no input missed", probe.get("inputs_missed"), [])
+    c.eq("a control the game draws and reads itself gets the motion and the press at the cursor, in its own units "
+         "and the window's, from a cursor input and from a widget click", squeezed(printed(found, "DIAL")),
+         [f"DIAL motion at={point(0.1, 0.1)} window={dial}", f"DIAL press at={point(0.1, 0.1)} window={dial}"] * 2)
+    c.eq("the game's _input gets every motion at a cursor's point",
+         sorted({line for line in printed(found, "GAME") if " motion " in line}),
+         sorted({f"GAME motion at={p}" for p in (dial, menu, pad, block)}))
+    c.eq("and every press there, Ctrl held on the one made while Ctrl is down",
+         [line for line in printed(found, "GAME") if " press " in line],
+         [f"GAME press at={dial} ctrl=false", f"GAME press at={menu} ctrl=true", f"GAME press at={pad} ctrl=false",
+          f"GAME press at={block} ctrl=false", f"GAME press at={dial} ctrl=false"])
+    c.eq("_unhandled_input gets the presses no control took, at the cursor: the menu item painted on the canvas is hit "
+         "by the game's own test", printed(found, "LEFTOVER"),
+         [f"LEFTOVER press at={menu} menu=true", f"LEFTOVER press at={pad} menu=false",
+          f"LEFTOVER press at={block} menu=false"])
+    c.eq("the physics picks the Area2D and the 3D body under the cursor and hands each its press",
+         [line for line in printed(found, "PAD", "BLOCK") if " press " in line],
+         [f"PAD press at={pad}", f"BLOCK press at={block}"])
+    note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
+    if found["rendered"] and found["pointer_locked"]:
+        c.true("the probe says the display kept its pointer put", POINTER_STUCK in note, note[-2000:])
+        c.skip("the mouse a game polls (Viewport.get_mouse_position, get_global_mouse_position, the button's state) "
+               "is at the cursor's point, and the physics picking's hover holds between motions",
+               "this session can't move the display's own pointer (--pointer-locked)")
+        return
+    c.true("the display's pointer follows the cursor (probe.log says nothing of it)", POINTER_STUCK not in note,
+           note[-2000:])
+    polled = printed(found, "POLLED")
+    c.eq("the mouse the game polls in _process is at the cursor's point when each press comes: its own test of the "
+         "painted menu item hits there", [line for line in polled if line.startswith("POLLED press")],
+         [f"POLLED press at={dial} menu=false", f"POLLED press at={menu} menu=true", f"POLLED press at={pad} menu=false",
+          f"POLLED press at={block} menu=false", f"POLLED press at={dial} menu=false"])
+    c.true("Viewport.get_mouse_position and a canvas item's get_global_mouse_position read each cursor's point",
+           all(f"POLLED at={p} canvas={p}" in polled for p in (dial, menu, pad, block)), polled)
+    hover = [line for line in printed(found, "PAD", "BLOCK") if line.endswith((" enter", " exit"))]
+    c.eq("the hover holds between motions: the Area2D is entered once and left when the cursor goes to the body, "
+         "which is entered once", hover[:3] + [hover.count("PAD enter"), hover.count("BLOCK enter")],
+         ["PAD enter", "PAD exit", "BLOCK enter", 1, 1])
+
+
+STAGES = ("input", "focus", "shortcut", "unhandled_key", "unhandled")  # the engine's order (scenes/Typing.tscn)
+
+
+def stages(key, down, focus=None, taken=False):
+    """The STAGE lines of one key: every stage in order, the focused control's (`focus`: field or button) among them
+    when one has the focus, and none after it when it takes the key (`taken`)."""
+    names = [focus if s == "focus" else s for s in STAGES if s != "focus" or focus]
+    if taken:
+        names = names[:names.index(focus) + 1]
+    return [f"STAGE {s} {key} {'down' if down else 'up'}" for s in names]
+
+
+def check_typing(c, found):
+    """A key goes the engine's way: the game's _input, then the focused control, then the game's later stages while
+    nothing took it; modifiers and sides as a keyboard's (`scenes/Typing.tscn`)."""
+    if not ended(c, found, 4.5 + (5 / 30 if not found["rendered"] else 0)):
+        return
+    probe = found["probe"]
+    c.eq("inputs sent", probe.get("inputs_sent"), 24)
+    c.eq("no input missed", probe.get("inputs_missed"), [])
+    want = (stages("J", True) + stages("J", False)  # nothing has the focus: the game gets the key at every stage
+            + stages("J", True, "field", True) + stages("J", False, "field")  # the field takes the typed key
+            + stages("shift+Shift(left)", True, "field")  # a Shift alone types nothing: it goes on
+            + stages("shift+K", True, "field", True) + stages("shift+K", False, "field")
+            + stages("shift+2", True, "field", True) + stages("shift+2", False, "field")
+            + stages("Shift(left)", False, "field")
+            + stages("J", True, "button") + stages("J", False, "button")  # a focused button takes no J
+            + stages("Enter", True, "button") + stages("Enter", False, "button")
+            + stages("ctrl+Ctrl(left)", True, "button") + stages("ctrl+S", True, "button")
+            + stages("ctrl+S", False, "button") + stages("Ctrl(left)", False, "button")
+            + stages("shift+Shift(right)", True, "button") + stages("Shift(right)", False, "button")
+            + stages("shift+Shift(left)", True, "button") + stages("Shift(left)", False, "button"))
+    c.eq("each key goes the engine's way, with the modifiers held and a modifier's side: the game's _input first, "
+         "then the control with the keyboard focus, then _shortcut_input, _unhandled_key_input and _unhandled_input "
+         "only while nothing took it", printed(found, "STAGE"), want)
+    c.eq("the field types the keys sent to it: a letter in capitals with Shift held, a digit as it is",
+         printed(found, "TYPED"), ["TYPED j", "TYPED jK", "TYPED jK2"])
+    c.eq("the button is pressed by its click and, with the focus, by Enter", printed(found, "CLICKED"),
+         ["CLICKED Apply", "CLICKED Apply"])
+    c.eq("the game's actions fire on what reaches _unhandled_input: J with nothing focused and with the button "
+         "focused, never while the field took it; Ctrl+S with Ctrl held; the left Shift, bound by its side, and not "
+         "the right one", printed(found, "ACTION"),
+         ["ACTION jump", "ACTION dash", "ACTION jump", "ACTION save", "ACTION dash"])
+    c.eq("polled, an action and a key are down while held, as on a keyboard, though the field took the key",
+         printed(found, "HELD"),
+         ["HELD jump down", "HELD key_j down", "HELD jump up", "HELD key_j up",
+          "HELD jump down", "HELD key_j down", "HELD jump up", "HELD key_j up",
+          "HELD dash down", "HELD dash up",
+          "HELD jump down", "HELD key_j down", "HELD jump up", "HELD key_j up",
+          "HELD save down", "HELD save up", "HELD dash down", "HELD dash up"])
+
+
+def check_longest(c, found):
+    """A play of 300 s, the longest a task's may be: a touch held and a drag spread past two minutes, a shot waiting
+    for its event near the end, and samples to the end (`scenes/Events.tscn`)."""
+    if not ended(c, found, 300.5 + (5 / 30 if not found["rendered"] else 0)):
+        return
+    probe = found["probe"]
+    note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
+    c.eq("inputs sent", probe.get("inputs_sent"), 6)
+    c.eq("no input missed", probe.get("inputs_missed"), [])
+    c.true("the tap held 180 s lifts at 185 s", re.search(
+        r"^185\.00 \[[^]]*\] tap: finger 0 lifts at pixel \(\d+, \d+\) after 180\.00 s", note, re.M), note[-3000:])
+    c.true("the drag spread over 210 s and held 60 s lifts at 280 s", re.search(
+        r"^280\.00 \[[^]]*\] drag: finger 1 lifts at pixel \(\d+, \d+\) after 270\.00 s", note, re.M), note[-3000:])
+    taken = re.search(r"screenshot shot_banner\.png at (\d+\.\d\d) s", note)
+    shown = float(taken.group(1)) if taken else None
+    c.true("the shot at 240 s waits for its event and is taken in the frame the banner shows (20 frames on)",
+           "the shot banner's event: count reads 1.0" in note and shown is not None
+           and 240 + 19 / 30 - 0.02 <= shown <= 240 + 20 / 30 + 0.02, note[-3000:])
+    c.true("the shot at 299.5 s is taken", "screenshot shot_closing.png at 299.50 s" in note, note[-3000:])
+    first = next((s["t"] for s in samples(found, "banner") if s.get("rows")), None)
+    c.near("the samples show the banner first at the step after it", first, 241.0, 0.05)
+    last = samples(found, "score")[-1] if samples(found, "score") else {}
+    c.near("the samples go on to the play's end", last.get("t"), 300.0, 0.05)
+    c.eq("the score counts a point a frame from the banner's frame to the last sample's",
+         ((last.get("rows") or [{}])[0].get("prop:score")),
+         round(last.get("t", 0) * 30) - round((shown or 0) * 30))
+
+
 PLAYS = {
     "keys": {"check": check_keys},
     "touch": {"check": check_touch, "twice": True},
@@ -946,4 +1108,9 @@ PLAYS = {
     "kept": {"check": check_kept, "first": "wait"},
     "fresh": {"check": check_fresh, "first": "wait"},
     "frame": {"check": check_frame, "rendered": True},
+    "mouse": {"check": check_mouse},
+    "mouse_drawn": {"check": check_mouse, "spec": "mouse", "rendered": True},
+    "typing": {"check": check_typing},
+    "typing_drawn": {"check": check_typing, "spec": "typing", "rendered": True},
+    "longest": {"check": check_longest, "timeout": 900},
 }

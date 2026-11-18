@@ -130,7 +130,9 @@ recorded commands. Never start the engine another way for something a mode does.
 - **All input through Godot's input events and the Input Map.** Define the game's actions in `project.godot`'s input
   map and read them as actions and `InputEvent`s (`_unhandled_input`, `_input`, a `Control`'s `_gui_input`,
   `Input.is_action_pressed`). The AutoPlay bot and the task plays send input as Godot `InputEvent`s through
-  `Input.parse_input_event`, so a game that reads input any other way takes none of it. Every action is reachable by
+  `Input.parse_input_event`, so a game that reads input any other way takes none of it. They move the game's own mouse
+  as a player's does (`get_viewport().get_mouse_position()` and a menu the game paints and hit-tests itself follow the
+  cursor), and a key reaches a focused control (a text field) before the game, as a keyboard's. Every action is reachable by
   input (a hotkey or a control for what is otherwise UI-only), and the game never pauses or mutes because its window
   lost focus (your platform skill says when a phone game pauses).
 - **The player's node is in the group `player`.** The task probe finds the player that way (its position, its

@@ -397,6 +397,23 @@ looks up and a positive yaw turns left.
   `teleport_to` the node a select matches), a wait in real time, a named screenshot (`shot`), a scene load, a view
   turn, and the stages of a contact (`pin`, `damage`, `set`: "A contact ask is staged" below, and
   docs/task-probes.md section 1.4). docs/task-probes.md has each one's form.
+- **A play may run up to 300 s; keep it as short as what it measures allows.** A play's `seconds` and every time in
+  it (an input's `t`, a `hold`, a move's or a drag's `over`, a measure's `at`, an event's `within`) go up to 300 s,
+  so a moment that comes late in a game (a later wave, a long build-up, a day's end) can be reached by playing to it.
+  Every second is played on both sides of every check that names the play, so start the play where its moment is
+  (`play_scene`, `play_args`, a scene load) and end it soon after what it reads.
+- **A cursor move then a press clicks what the game itself draws there.** The cursor is the game's own mouse: a
+  `cursor` input and a `<Mouse>/leftButton` press and release reach the game's `_input`, a control it draws itself, its
+  `_unhandled_input` and the physics picking at that point, and what the game polls (`get_mouse_position`) is there.
+  So a menu or a HUD the game paints on the canvas and hit-tests itself, which no widget click can find, is driven by
+  a cursor input onto it and a press, as a player clicks it. Aim it at a place every build keeps (the instruction's
+  layout, or where the start draws it); a `Control` is still clicked by its caption or name.
+- **A key goes to the focused control first.** As on a keyboard, a key reaches the game's `_input`, then the control
+  that has the keyboard focus, and the game's later stages (`_unhandled_input`, where most games read their actions)
+  only when that control doesn't take it. A text field a click focused takes every typed key, so the game's action
+  on that key doesn't fire while it has the focus. A play that must drive the game after typing into a field first
+  leaves the field by the player's own input (a click on the next control, the key the game closes it with), never
+  by a key the field would type.
 - **A play that reads what another play writes names it in `after`. Never rely on the checker's order.** A task play
   that reads a save (a level reached, a profile filled in) lists the plays that write it:
   `"after": ["writes_save"]`, by their names. On each side they run, and end, first, and the reader starts on the
@@ -918,6 +935,9 @@ task's solution.
 | rule | why |
 |---|---|
 | A play does what a player must do to reach the state it probes: the start control by the text the instruction quotes, a wait for the scene | a play that never reaches the moment measures nothing |
+| A play lasts up to 300 s, every time in it too; keep it as short as what it measures allows | a late moment can be played to, and every second is played on both sides of every check |
+| A menu or HUD the game paints itself is clicked by a cursor input onto it and a press | the cursor is the game's own mouse, as a player's is; no widget click finds what isn't a Control |
+| After typing into a field, a play leaves it by the player's own input before driving the game | a key goes to the focused control first, and a field takes every key it would type |
 | No shortcut only the reference has (a flag, a debug key, a scene the fix added) | the start and other builds don't have it |
 | `play_args` (and `play_scene` where needed) are always set, and checked to exist at both seeds | every grader play starts from them |
 | A place is reached by `teleport_to` or `pin` on a node, never raw coordinates of something a build places | each build places things itself |

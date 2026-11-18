@@ -2,7 +2,10 @@ extends RefCounted
 ## A play's scripted inputs (contract section 4), sent at their times as the engine's own input events through
 ## Input.parse_input_event, so the game's _input, its controls and its input actions take them as a player's: keys,
 ## mouse buttons, mouse movement and the wheel, a gamepad's buttons and axes, widget clicks, touches (a tap, a long
-## press, a drag, several fingers at once) and the phone's back button; and the grader's own stages: cursor moves,
+## press, a drag, several fingers at once) and the phone's back button. A key travels the engine's own way (the game's
+## _input, the control with the keyboard focus, then the game's later stages while nothing took it) and carries the
+## modifiers held, as a keyboard's; a move of the cursor to a point also puts the display's own pointer there, so a
+## game that reads the mouse itself finds it where the cursor went. And the grader's own stages: cursor moves,
 ## teleports of the player (held there for a while when asked), waits in real time, named screenshots, scene loads,
 ## view turns, and the stages of a contact: an object pinned at a place, a hit through the game's take_damage, a
 ## property set. A click or a tap on a Control that only its own scroll areas hide scrolls them to it, as a player
@@ -24,6 +27,13 @@ const KEYS := {
 	"numpad1": KEY_KP_1, "numpad2": KEY_KP_2, "numpad3": KEY_KP_3, "numpad4": KEY_KP_4, "numpad5": KEY_KP_5,
 	"numpad6": KEY_KP_6, "numpad7": KEY_KP_7, "numpad8": KEY_KP_8, "numpad9": KEY_KP_9, "printscreen": KEY_PRINT,
 }
+## a modifier named with its side: the side a keyboard's event gives it (an action bound to that side alone takes it)
+const SIDED := {
+	"leftshift": KEY_LOCATION_LEFT, "rightshift": KEY_LOCATION_RIGHT, "leftctrl": KEY_LOCATION_LEFT,
+	"rightctrl": KEY_LOCATION_RIGHT, "leftalt": KEY_LOCATION_LEFT, "rightalt": KEY_LOCATION_RIGHT,
+	"leftmeta": KEY_LOCATION_LEFT, "rightmeta": KEY_LOCATION_RIGHT,
+}
+const MODIFIER_KEYS := [KEY_SHIFT, KEY_CTRL, KEY_ALT, KEY_META]
 const MOUSE_BUTTONS := {
 	"leftbutton": MOUSE_BUTTON_LEFT, "rightbutton": MOUSE_BUTTON_RIGHT, "middlebutton": MOUSE_BUTTON_MIDDLE,
 	"forwardbutton": MOUSE_BUTTON_XBUTTON2, "backbutton": MOUSE_BUTTON_XBUTTON1,
@@ -47,6 +57,7 @@ const COVERED := "covered by another control"  ## the why of a click or a tap so
 const NEVER := "its event never happened"  ## the why of a shot whose event didn't come in time (check.NEVER)
 const UNPRESSED := "its scroll area was scrolled to it, but the play ended before the press"
 const UNREAD := "its event can't be read (probe.log)"  ## a shot whose event's query or match can't be made
+const PLAY_SECONDS := 300.0  ## the longest task play (the task schema's): a touch's hold and a drag's spread at most
 const WARM := 0.2  ## seconds before an input's time from which its has.lit selects are looked at every frame
 const LIT_WAIT := 1.0  ## seconds an input whose has.lit select waits for a part's first drawing is held back at most
 
@@ -61,6 +72,8 @@ var _next := 0
 var _cursor := Vector2.ZERO
 var _cursor_set := false
 var _buttons := 0  # the mouse buttons held, as a mask
+var _modifiers_down: Dictionary = {}  # a modifier key held -> the sides of it held (KeyLocation)
+var _pointer_stuck_said := false  # probe.log said once that the display's pointer stayed put
 var _parsed := false  # an event was handed to the engine in this frame
 var _touching: Array[Dictionary] = []  # fingers on the screen
 var _clicks: Array[Dictionary] = []  # widget clicks under way
@@ -353,6 +366,11 @@ func _where() -> Vector2:
 
 
 func _move_cursor(to: Vector2, relative: Vector2) -> void:
+	## A motion of the mouse to `to` (the window's pixels) as a display sends a player's: its relative motion
+	## (`relative`, or from where the cursor was), the buttons and modifiers held, and the velocity the engine tracks.
+	## A move to a point (no `relative`: a cursor input, a click's move to its control) also takes the display's own
+	## pointer there, as a real mouse does, so what a game reads of the mouse itself is that point; a relative motion (a
+	## move, a mouse delta) leaves it where it is.
 	var from := _where()
 	_cursor = to
 	var motion := InputEventMouseMotion.new()
@@ -360,8 +378,38 @@ func _move_cursor(to: Vector2, relative: Vector2) -> void:
 	motion.global_position = to
 	motion.relative = relative if relative != Vector2.ZERO else to - from
 	motion.screen_relative = motion.relative
+	motion.velocity = Input.get_last_mouse_velocity()
+	motion.screen_velocity = Input.get_last_mouse_screen_velocity()
 	motion.button_mask = _buttons
+	_held_modifiers(motion)
 	_parse(motion)
+	if relative == Vector2.ZERO:
+		_pointer_to(to)
+
+
+func _pointer_to(to: Vector2) -> void:
+	## The display's own pointer to `to` (the window's pixels). With a mouse on the display, the engine reads
+	## Viewport.get_mouse_position, a canvas item's get_global_mouse_position and the physics picking's hover between
+	## motions from that pointer, not from the events; headless it has none and reads them from the events already. A
+	## display that keeps its pointer put (a session without a desktop of its own) is said once in probe.log.
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_MOUSE):
+		return
+	Input.warp_mouse(to)
+	var root: Window = probe.get_tree().root
+	var asked := root.get_final_transform().affine_inverse() * to
+	var reads := root.get_mouse_position()
+	if reads.distance_to(asked) > 1.0 and not _pointer_stuck_said:
+		_pointer_stuck_said = true
+		probe.note("the display's pointer didn't follow the cursor to (%.0f, %.0f): the game reads it at (%.0f, %.0f)"
+			% [asked.x, asked.y, reads.x, reads.y])
+
+
+func _held_modifiers(event: InputEventWithModifiers) -> void:
+	## the modifier keys held now, which a keyboard's state puts on every key and mouse event
+	event.shift_pressed = _modifiers_down.has(KEY_SHIFT)
+	event.ctrl_pressed = _modifiers_down.has(KEY_CTRL)
+	event.alt_pressed = _modifiers_down.has(KEY_ALT)
+	event.meta_pressed = _modifiers_down.has(KEY_META)
 
 
 func _button(index: MouseButton, down: bool, factor: float = 1.0) -> void:
@@ -375,16 +423,37 @@ func _button(index: MouseButton, down: bool, factor: float = 1.0) -> void:
 	event.position = _where()
 	event.global_position = _where()
 	event.button_mask = _buttons
+	_held_modifiers(event)
 	_parse(event)
 
 
-func _key(code: Key, down: bool) -> void:
+func _key(code: Key, down: bool, side: KeyLocation = KEY_LOCATION_UNSPECIFIED) -> void:
+	## A key as a keyboard sends it: its code, a modifier's side (`side`), the modifiers held (a modifier's own press
+	## among them, its release not), and the character it types (a letter in capitals while Shift is held; other keys
+	## as they are). It never repeats while held. The engine routes it as a keyboard's: the game's _input, the control
+	## with the keyboard focus (a text field takes a typed key), then _shortcut_input, _unhandled_key_input and
+	## _unhandled_input while nothing has taken it; Input's polled state follows every key, taken or not.
+	if MODIFIER_KEYS.has(code):
+		var sides: Array = _modifiers_down.get(code, [])
+		if down:
+			if not sides.has(side):
+				sides.append(side)
+		else:
+			sides.erase(side)
+		if sides.is_empty():
+			_modifiers_down.erase(code)
+		else:
+			_modifiers_down[code] = sides
 	var event := InputEventKey.new()
 	event.keycode = code
 	event.physical_keycode = code
 	event.key_label = code
+	event.location = side
+	_held_modifiers(event)
 	if code >= KEY_SPACE and code <= KEY_ASCIITILDE:
-		event.unicode = String.chr(code).to_lower().unicode_at(0)
+		var typed := String.chr(code)
+		typed = typed.to_upper() if event.shift_pressed else typed.to_lower()
+		event.unicode = typed.unicode_at(0)
 	event.pressed = down
 	_parse(event)
 
@@ -416,7 +485,7 @@ func _control(path: String, value: float, is_axis: bool) -> void:
 		if code == KEY_NONE:
 			probe.error("inputs: the keyboard has no key " + control)
 			return
-		_key(code, value != 0.0)
+		_key(code, value != 0.0, SIDED.get(lower, KEY_LOCATION_UNSPECIFIED))
 	elif device == "<Mouse>":
 		if MOUSE_BUTTONS.has(lower):
 			_button(MOUSE_BUTTONS[lower], value != 0.0)
@@ -661,7 +730,8 @@ func _touch(row: Dictionary, elapsed: float, again: bool = false) -> void:
 			return
 	var touch := {
 		"kind": kind, "finger": finger, "points": points, "start": elapsed, "last": points[0], "down": true, "finished": false,
-		"over": clampf(Find.num(row, "over"), 0.0, 120.0) if drag else 0.0, "hold": clampf(Find.num(row, "hold"), 0.0, 120.0),
+		"over": clampf(Find.num(row, "over"), 0.0, PLAY_SECONDS) if drag else 0.0,
+		"hold": clampf(Find.num(row, "hold"), 0.0, PLAY_SECONDS),
 	}
 	_touching.append(touch)
 	_touch_event(finger, points[0], true)

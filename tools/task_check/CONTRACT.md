@@ -77,12 +77,15 @@ Plays and inputs:
 - Events (`Event`: `{"measure", "expect", "within"}`): a sampled measure's `since` and a shot's `when`. The measure is
   one the probe samples (never `log` or `seen`, nor `audio` `sounds` or `repeats`), with no `window`, `at`, `agg` or
   `since` of its own, under every rule of a measure; `expect` is a literal (`Value`); `within` is above 0, up to
-  120 s. A shot's `when` reads `ui` `count` or `text` (no select `rect`), `widgets` `count` or `visible`, or `objects`
+  300 s. A shot's `when` reads `ui` `count` or `text` (no select `rect`), `widgets` `count` or `visible`, or `objects`
   `count`, `x`, `y`, `z`, `active`, `hidden` or a `prop:` member, with no `to_angle` or `to_axis` and no `has.lit`
   anywhere (the validator's `event_errors`, `WHEN_FIELDS`).
 - Touches (`tap`, `drag`): one finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and
   every touch is over by the play's end (the validator's `TOUCH_GAP`).
-- The stages of a contact: `pin` (an object select, `hold` above 0 up to 120 s, `front` 0 to 1000 m or `at` a point,
+- A task play's `seconds` is 5 to 300, and every time in one goes up to 300 s: an input's `t`, a `hold` (`tap`,
+  `drag`, `teleport`, `teleport_to`, `pin`), a `move`'s or a `drag`'s `over`, a measure's `at`, an event's `within`.
+  A play's waits add at most 300 s of real time in all; a boot check's `seconds` stays up to 600.
+- The stages of a contact: `pin` (an object select, `hold` above 0 up to 300 s, `front` 0 to 1000 m or `at` a point,
   `offset`), `damage` (above 0, `to` and optionally `from`, object selects), `set` (a path of up to 6 members without
   an index, `on` an object select, `value` a boolean, a number or a string of at most 120 characters, `all`). The
   validator refuses a pin whose select says `"player": true` and one with both `front` and `at`.
@@ -95,7 +98,8 @@ Selects and points:
   any case), `near`, `has`, `where`, `player` (true: the player alone; false: every node but the player and the nodes
   below it), `inactive` (true lets nodes that aren't shown match). `has`: `component`, `lit`, `visible`, `near`,
   `simulating` (at least one key; `lit`, `visible`, `simulating` only `true`). `where`: 1 to 4 conditions `{"prop":
-  <path>, "op": "==|!=|>|>=|<|<=", "value": <number, boolean or string>}`, every one must hold.
+  <path>, "op": "==|!=|>|>=|<|<=", "value": <number, boolean or string>}`, every one must hold; a number is compared
+  as a number with the property read as one (`Find.holds`: `==` within `is_equal_approx`), a string only with a string.
 - Component select: `component` or `effect` or both, `name`, `owner` (an object select), `near`, `mesh`, `visible`,
   `inactive`.
 - Widget select: `component`, `name`, `text` (a regular expression on its text), `visible`.
@@ -583,8 +587,16 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
 - key: `{"t", "key": "<Keyboard>/w", "press": true|false}`. `<Keyboard>/`: an `InputEventKey` with `keycode`,
   `physical_keycode` and `key_label` set (an action bound either way matches), by the key's Input System name as the
   other factories' plays write it (`inputs.gd` `KEYS`: `enter`, `leftShift`, `upArrow`, `numpad1`, ...) or the
-  engine's own name (`OS.find_keycode_from_string`: `w`, `space`, `escape`, `f2`, `up`, `shift`), any case; left and
-  right modifiers are one key. `<Mouse>/`: `leftButton`, `rightButton`, `middleButton`, `forwardButton`, `backButton`,
+  engine's own name (`OS.find_keycode_from_string`: `w`, `space`, `escape`, `f2`, `up`, `shift`), any case. Sent as a
+  keyboard sends it: `leftShift`, `rightCtrl` and the other sided modifiers set the event's `location` (`inputs.gd`
+  `SIDED`), so an action bound to one side's physical key takes that side alone; every key and mouse event carries
+  the modifiers held (`shift_pressed`, `ctrl_pressed`, `alt_pressed`, `meta_pressed`; a modifier's own press counts
+  itself, its release doesn't), so an action bound to Ctrl+S matches S with Ctrl held; a printable key's `unicode` is
+  its character, a letter in capitals while Shift is held (a digit stays itself); a held key sends no `echo`. Given
+  to `Input.parse_input_event`, the engine routes it as a keyboard's: the game's `_input`, then the Control with the
+  keyboard focus (a `LineEdit` takes a typed key; a focused `Button` is pressed by `ui_accept` and lets the key go
+  on), then `_shortcut_input`, `_unhandled_key_input` and `_unhandled_input` while nothing has taken it;
+  `Input.is_key_pressed` and `is_action_pressed` follow every key, taken or not. `<Mouse>/`: `leftButton`, `rightButton`, `middleButton`, `forwardButton`, `backButton`,
   an `InputEventMouseButton` at the cursor. `<Gamepad>/`: `buttonSouth` (the engine's `JOY_BUTTON_A`), `buttonEast`,
   `buttonWest`, `buttonNorth`, `leftShoulder`, `rightShoulder`, `start`, `select`, `leftStickPress`,
   `rightStickPress`, `dpad/up` and the other three, an `InputEventJoypadButton` of device 0. `<Keyboard>/escape` in a
@@ -654,9 +666,17 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   rectangle is read), whether a press outside an open non-exclusive popup only closes it, title bars, windows that
   aren't embedded, and what is inside a `SubViewportContainer`.
 - cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
-  point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
-  An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
-  holds whatever stretches the frame to the window (`UiScan.to_window`).
+  point (the cursor starts at the frame's centre; `relative` from where it was, `velocity` and `screen_velocity` the
+  engine's last tracked ones, the buttons and modifiers held, as a display's motion carries them); a following
+  `<Mouse>/leftButton` press and release clicks there. An event's position is the point in the frame's own units
+  through the root window's `get_final_transform()`, which holds whatever stretches the frame to the window
+  (`UiScan.to_window`). Where the display has a mouse (`DisplayServer.FEATURE_MOUSE`: not headless), a move to a
+  point (a cursor input, a widget click's move to its control) also puts the display's own pointer there
+  (`Input.warp_mouse`), since in a window the engine reads `Viewport.get_mouse_position`, a canvas item's
+  `get_global_mouse_position` and the physics picking's hover between motions from that pointer (headless it reads
+  them from the events). A display that keeps its pointer put is said once in `probe.log` (`the display's pointer
+  didn't follow the cursor to (x, y): the game reads it at (x, y)`). A display may also report the warp as a motion
+  of its own at the same point. A `move` and a mouse delta leave the pointer where it is.
 - move: `{"t", "move": [dx, dy], "over": s}`: without `over` one `InputEventMouseMotion` whose `relative` is
   [dx, dy] in the frame's pixels, through the root window's `get_final_transform()` (`basis_xform`) so the game's
   viewport gives it back in the frame's pixels; with `over`, in every frame from `t` the part due by then
@@ -665,7 +685,7 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   over 30 events, 150 half way.
 - tap, drag: `{"t": 2.0, "tap": [0.5, 0.25], "finger": 1, "hold": 0.5}`, `{"t": 3.0, "drag": [{"widget":
   "MoveStick"}, [0.2, 0.6]], "finger": 0, "over": 0.3, "hold": 2.0}` (the checker writes `finger`, 0 when unset;
-  `hold` and `over` only when set; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
+  `hold` and `over` only when set, the probe holding each to 0-300 s, `PLAY_SECONDS`; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
   point `[fx, fy]` (fractions of the frame, y down), or `{"widget": name}`, the centre of the first visible Control
   of some size whose name (a wildcard) matches, else the first whose class does, else the first button in reading order
   whose shown caption is it as written, else reads it alike, as a widget click's (`UiScan.named`,
