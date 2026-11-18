@@ -404,12 +404,22 @@ looks up and a positive yaw turns left.
   shows in the reader's checks. Of two writers, one names the other in its own `after`. A writer saves during its
   play, or when the game is closed (`NOTIFICATION_WM_CLOSE_REQUEST`, `_exit_tree`): a play ends that way
   (docs/task-probes.md, 1.1).
+- **A play never relies on state it doesn't make.** Each play starts from a fresh save: an existing save, a filled
+  profile, an expired timer or an unlocked level is there only when the play makes it with a player's own steps, when
+  the plays its `after` names made it, or when the instruction states it and how QA's play reaches it.
 - **A play keeps its own preconditions true.** No input on the frame the game resets a state (a key at a
   scenario's, a scene's or a shift's start lands while it resets: send it a few seconds in). A teleport moves the
   player alone: never teleport past what the game moves with the player or holds it to (a carried object, a tether,
   a signal's range, any limit the instruction gives); walk or drive there instead.
 - **A play never repeats an action that already happened.** A second click on Continue or Retry after the first
   worked finds no button (it is gone) and is a miss in `inputs_missed`: each click once, while its control is there.
+- **A click never scrolls.** A control below a list's visible area is clicked at its centre, outside the view, and
+  takes nothing: the play brings it into view first with a player's own inputs. And every click must land: there is
+  no optional click, so a control that shows only in some states (a confirmation that appears only when a save
+  exists) is clicked only in a play that makes that state itself.
+- **A window is timed from the event it measures**: from the input that sets the event off, in play time, with a
+  margin for how long the reference took (read in its samples), never a fixed second picked without looking where
+  the event fell.
 - **Touches.** `{"t": 2.0, "tap": <spot>, "hold": s, "finger": n}` puts a finger down at the spot and lifts it (after
   `hold` seconds: a long press, a button kept down); `{"t": 2.0, "drag": [<spot>, <spot>, ...], "over": s, "hold": s,
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
@@ -515,7 +525,9 @@ by what the player sees:
   the instruction quotes) or by its name at the start.
   Never match an exact string the instruction doesn't quote, and never a run of keys that only works on the
   reference's layout (a menu walked by counting presses).
-- **"Shown" means on screen.** `ui` and `widgets` read what is on screen, so a check that something is shown, or no
+- **"Shown" means on screen.** `ui` and `widgets` read what is on screen, as a player sees it: shown itself and by
+  every parent and canvas layer above it, not transparent, inside the frame and not scrolled out of a container's
+  view. A node's own `visible` alone is no proof: a hidden parent hides it. So a check that something is shown, or no
   longer shown, passes the same on a build that hides a widget as on one that removes it. Write `"visible": false` in
   a widgets select only when the check means the widget exists while hidden.
 - **Ask the second-solution question of every check**: would a correct solution that names things otherwise, lays
@@ -557,8 +569,9 @@ and on the reference (and its `route`, read from the reference's copy, as the La
 the cloud's judge would be shown under `.task-checks\<task>\judge-shots\<check>\` (`start\`, `reference\`, and a
 blind copy in `blind\A\` and `blind\B\` whose sides are in `blind\key.json`), with `ask.md` holding the brief, the
 question and the rubric. Look at the pictures blind: score every rubric item for A and for B from 0 to 1 into
-`blind\answers.json` before you open the key and `sides.md`, then check the task again. A required judge keeps the task
-from being VALID until both sides are scored; the reference must pass it, and the start must score every required
+`blind\answers.json` before you open the key and `sides.md`, then check the task again. An item the pictures don't
+show (its moment isn't on screen, its subject is off view, hidden or never reached) scores 0 on that side: cannot be
+seen is a fail, never a pass. A required judge keeps the task from being VALID until both sides are scored; the reference must pass it, and the start must score every required
 item below 0.5 (a `still_works` judge of what still looks as it did must pass at the start too). If a side doesn't,
 reword the item or fix the plays so the pictures show the state, never by asking less of the solution
 ([docs/task-check.md](../../docs/task-check.md), "VALID and INVALID").
@@ -576,7 +589,11 @@ the same rules:
   either side may be a task error (a check no version of the game can be graded by).
 
 **A task is not finished until both are right**: the no-op fails and the oracle passes, on your machine, after the
-task's last edit. Step by step:
+task's last edit. Run the oracle side yourself before you submit: a reference that fails its own check with a real
+reading (a threshold past what the reference does), or doesn't do what the instruction says, is the task's fault, and
+a task with no reference can't be validated at all (the task check never calls it VALID). **Both right is not valid
+yet**: a task that passes the no-op and oracle check still fails review when a sentence of its instruction has no
+check that decides it ("Every ask has a check", below). Step by step:
 
 1. **Validate the format** after committing on the tasks branch:
    `python <GGF_ROOT>\godot-game-factory\tools\validate-game.py <GGF_ROOT>\games\<slug>`. Fix every `repo: Tasks`
@@ -605,7 +622,7 @@ What each verdict means:
 
 | verdict | meaning |
 |---|---|
-| `VALID` | the no-op fails and earns nothing, the still-works probes pass at the start, the oracle passes every required check, every probe has a threshold, no task error, every required judge and `seen` probe answered and agreeing |
+| `VALID` | the task has a reference, the no-op fails and earns nothing, the still-works probes pass at the start, the oracle passes every required check, every probe has a threshold and no weighted one reads the same on both sides, no task error, every required judge has plays of its own, every required judge and `seen` probe answered and agreeing |
 | `INVALID` | one of those doesn't hold: `reasons` says which; the task doesn't ship as it is |
 | `ERROR` | the checker couldn't check it (a commit not fetched, LFS objects missing, no Godot, no desktop of its own): fix that and run again; it says nothing about the task |
 
@@ -620,6 +637,9 @@ What each failure means and what to do (the exact lines and more fixes: [docs/ta
 | `reference fails X: ...` | the oracle fails a required check: the check or the reference is wrong | read the reference's row and play: a threshold on the wrong side (`op`), a play that doesn't reach the state, a `log_absent` pattern or `file_exists` glob the reference itself fails, or a reference that doesn't do the ask (pick another reference, or take the ask out of the instruction) |
 | `uncalibrated: ... the reference measured nothing`, `... task error: ... reads nothing even on the task's own fix` | a reference that measures nothing: the select finds nothing there, so no build can pass | select by what the thing does or carries, or by names the start has; read the rows in the reference's `probe.json` and check the play reaches the place |
 | `uncalibrated: ... both measure N`, `X has no threshold: ...` | start and reference read the same: nothing to put a threshold between (any probe, required or not, stops the Lab's check) | measure something the change moves, or a literal for a count or a boolean; or drop an optional probe |
+| `X reads the same on the start and the reference (N): uncalibrated, never a pass` | a weighted probe that measures nothing the change moves, whatever its threshold | compare both sides' samples; read what the change moves (field, select, play, window), never a looser threshold |
+| `no seed.reference: the oracle side can't be played ...` | a task with no reference can't be validated | give it the thread's accepted end as `seed.reference` (section 2) |
+| `judge X: no play of its own ...` | a required judge shown only the idle look and the drive, which never reach what it asks | give it `plays` that show each item at its moment |
 | `seen X: crops saved ..., answer needed`, `judge X: shots saved ..., answer needed` | the check can't decide it without you | answer it blind (step 5), then check again |
 | `no samples in the window (the play ended at N s)`, `a stage of the play didn't land`, `... an input did not land ...` | a play that never reaches its moment: it ended early, a stage found nothing, a click or touch found no control | read `probe.log` and `inputs_missed`; drive the play as a player would (the start control by the text the instruction quotes, a wait for the scene, a stage on something both sides have) |
 | a value just past its threshold, `... did not go as its first play`, a crop you can read only with a `?` | an unsteady reading: a window at the edge of the event, a sample at a moment that moves, text that changes while the shot is taken | read the samples, not only the reduced value; move the window into the steady part of the event, read a quantity with a clear gap between the sides, take the shot at a still moment; never ease what the instruction asks |
@@ -661,6 +681,9 @@ what you find in the task before it is packed:
   thing; a bare "everything else keeps working" is covered by any required `still_works` check.
 - **Never cover an ask with an optional probe, a `build`, `boot` or `package` check, or a `"required": false` quality
   check alone.**
+- **A rubric item asks exactly what its sentence asks**, in the sentence's own words: never more (a quality, a
+  colour, a count the sentence doesn't name), never something else. A judge asking more fails fair solutions; one
+  asking something else leaves the sentence unchecked.
 - **A look described by a list of items** gets those items named in the `looks_as_asked` rubric, an item each where
   the instruction asks for each on its own: a judge asked only about the whole look passes a build that leaves one
   out.
@@ -668,6 +691,9 @@ what you find in the task before it is packed:
   things otherwise, lays its scene out otherwise, words on-screen text otherwise where the instruction doesn't quote
   it, or hides a thing where the reference removed it (or the reverse), still pass? A name, text, place or input
   sequence only the reference has, and the instruction doesn't give, ties it: move the check to what the player sees.
+  So are a click or a tap at fixed screen coordinates on a control (click it by its caption or name), a teleport to
+  where the reference put something (`teleport_to` the thing), and a count of the parts one build is made of (its
+  nodes, lights, meshes, scripts): drive by the player's controls, measure the outcome.
 - **A contact ask is staged, never left out.** An ask that shows only after a contact (a blow landing, getting hit,
   a stun, the last foe of a group falling) is never dropped because "no fixed play guarantees the contact": `pin`
   the foe or the target ahead of the player and press the task's own attack key or touch; `set` a health the start
@@ -819,6 +845,7 @@ task's solution.
 | A hidden node matches no select unless it says `"inactive": true` | hidden and gone read alike otherwise |
 | A break is read by what changes there (a `prop:` the start names, `changed`, `spread`, `simulating`, the frame) | a dissolve, a swapped mesh or particle debris is invisible to fields that read a whole object |
 | `ui` and `widgets` read what is on screen; `"visible": false` only when the check means "exists while hidden" | a build may hide or remove, and both are "not shown" |
+| "Shown" is what is on screen, parents included: a node's own `visible` with a hidden parent is not shown | a widget under a hidden panel reads as there while the player sees nothing |
 | Text is read from the game's UI first (`ui`, `widgets`); `seen` only for text drawn by a script, a shader or a texture | a node's text is exact; a model's reading of a picture is not |
 | A `seen` probe is a visual check, never an outcome: it doesn't count toward the outcome probes, and the start must fail a probe that isn't `seen` | a model's reading can't be the deterministic proof that the start fails |
 | A threshold comes from the instruction, from the start or from calibration, never from what the reference happens to pass | a number fitted to one build fails another correct one |
@@ -826,6 +853,7 @@ task's solution.
 | `screen` and other pixel readings are never literal: calibrated or relative to the start | pixels differ between GPUs and drivers |
 | A `still_works` probe never calibrates: a literal or relative to the start | what still works reads the same on both sides, so calibration has nothing to sit between |
 | Every probe has a threshold the start and the reference can make, required or not | a probe that can't be calibrated stops the task's check |
+| A probe that carries weight reads differently on the start and the reference, whatever its threshold | the same reading on both sides measures nothing the change moves: uncalibrated, never a pass |
 | A value-reading measure names its `of` (`first`, `max`, ...) | `of` defaults to a count |
 | A motion that is a number is a probe sampled every 0.1 s with `agg` `step`; a motion that can only be seen is a judge item with many `shots` | five stills can't show an ease or a slide |
 | A sound ask is checked by a sound starting when the event happens (`started_audible`, `sounds`, `repeats`), never by how it sounds | how a sound sounds is outside what the grader can decide |
@@ -833,7 +861,9 @@ task's solution.
 | Every check the start passes carries `"weight": 0` (builds, boots, `still_works`, anything true of the start) | a no-op must score zero |
 | Only the brief's own look-and-feel asks are a required judge (`looks_as_asked`, and a `still_works` judge of what must still look as it did); every other judge is `"required": false` | a judge can misread pictures; required checks must be decided reliably |
 | A rubric item is concrete and decidable from the pictures: the start scores 0 on it and any solution meeting the brief scores 1 | a vague item passes or fails on the judge's mood |
-| Every judge names plays of its own that show each item at its moment; one subject per judge | the shared idle play and drive never leave a title screen or press a task's keys |
+| A rubric item asks exactly what its sentence asks, in its words, never more and never something else | a stricter item fails fair solutions; a different one leaves the sentence unchecked |
+| An item the pictures don't show scores 0: cannot be seen is a fail | a judge that can't see its subject must never pass it |
+| Every judge names plays of its own that show each item at its moment; one subject per judge (a required one without them is refused) | the shared idle play and drive never leave a title screen or press a task's keys |
 | A judge's views are the task's own tour (scene loads, `teleport_to` what the build made, view turns, named `shot` inputs), never a view list from the game's files | a build could dress only the spots it lists |
 | A look described by a list gets one rubric item per item the instruction asks for on its own | a judge of the whole look passes a build missing one |
 | A `code_judge` is never required | a model reads code review, and no check before submission can run it |
@@ -853,6 +883,10 @@ task's solution.
 | A play that reads what another play saved names that play in `after` | every other play starts with no saved data |
 | No input on the frame the game resets a state; no teleport past what moves with the player or a limit the instruction gives | the input is lost, or the player arrives without what the moment needs |
 | Each action once, while its control is there | a second click on a control that is gone is a miss |
+| A click or a tap goes to a control by its caption or name, never fixed screen coordinates | another build lays the screen out otherwise |
+| A control out of a list's view is brought into view by the play first; a click that lands only in some states is made only in a play that makes that state | a click never scrolls, and every click must land |
+| A play relies on no state it doesn't make: a save, a profile, an expired timer come from its own steps, its `after` plays or the instruction | every play starts from a fresh save |
+| A window is timed from the input that sets its event off, with a margin read from the reference's samples | a fixed second misses an event that falls a little later |
 | Every input of a task play lands on the reference (`inputs_missed` empty) | an input that misses on the task's own fix makes the task ungradable |
 | A budget (`render`) is read in a task play of its own that goes to the view and reads nothing else | other readings and inputs change what is drawn |
 | A template game's task sets `play_args` and leaves `play_scene` null; `play_scene` only for a scene no scenario loads | naming the scenario's scene too loads it twice |
@@ -865,7 +899,9 @@ task's solution.
 | The no-op (the untouched start) fails every required outcome probe and earns nothing | a task the unchanged game already passes rewards no work |
 | The oracle (the reference) passes every required check, of every kind | a required check the reference fails is one no solution like it can pass |
 | Every required `still_works` probe passes at the start | a still-works probe that fails where the game works is broken and would fail every solution |
-| No check is a task error: no select that reads nothing on the reference, no task play whose input misses there | no version of the game could be graded by such a check |
+| No check is a task error: no select that reads nothing (or only empty values) on the reference, no task play whose input misses there | no version of the game could be graded by such a check |
+| The task has a reference, and you run its oracle side before submitting | a task with no reference, or one whose reference fails its own checks, can't be validated |
+| Passing the no-op and oracle check is not enough: every sentence of the instruction has a check that decides it | a sentence no check decides passes every build that skips it, whatever the two checks say |
 | Required judges and `seen` probes are answered blind, from the pictures the check saves, before the task is called finished | the check asks no model, so your blind answer stands in for it |
 | A task ships only when the task check says VALID after its last edit, however small the edit | a check passed before an edit proves nothing about the task after it |
 | Judge a task's difficulty in the session; never run it with another agent | a try takes long; every submitted task is tried and measured anyway |

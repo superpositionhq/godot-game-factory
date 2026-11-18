@@ -149,7 +149,9 @@ player as the product, the rule here is the one that applies.
 - **Drive the game by touch.** A play's inputs use `tap` and `drag` (docs/task-probes.md section 1.3): a spot on the
   screen as fractions of its width and height, or a widget by name (`{"widget": "FireButton"}`: the centre of the
   first visible `Control` of that node name); `hold` for a held touch, `finger` for a second finger. The back button
-  is the key `<Keyboard>/escape`. The checker's own `drive` play is by touch on a mobile game: a left thumb at the
+  is the key `<Keyboard>/escape`. Touch a control by its name or the caption it shows, never by a spot of the
+  screen: its place differs between landscape and portrait and between builds; a spot only where no control is (a
+  virtual stick's area, the open playfield). The checker's own `drive` play is by touch on a mobile game: a left thumb at the
   lower left pushed along the route, a tap at the lower right. A brief written for a mobile game never asks for a
   key or a mouse. A touch whose control isn't on screen is a miss (`inputs_missed`): on the reference it makes the
   task INVALID (its own fix can't be driven by the play), on the start it fails that play's checks. Read both sides'
