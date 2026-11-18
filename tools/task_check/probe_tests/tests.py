@@ -121,6 +121,10 @@ def check_keys(c, found):
     c.eq("hidden ones with inactive", [(r["name"], r["active"], r["hidden"]) for r in rows(found, "crates_all", 1.0)],
          [("Crate1", 1, 0), ("Crate2", 1, 0), ("Crate3", 0, 1)])
     c.near("a scaled crate's extent", row(found, "wide", 1.0).get("extent_x"), 1.0, 1e-4)
+    c.near("an object that draws nothing (a light) has an extent of 0, never no value",
+           row(found, "lamp_object", 1.0).get("extent_x"), 0.0, 1e-9)
+    c.near("a component with no box of its own (a light) has an extent of 0",
+           row(found, "lamp_part", 1.0).get("extent_y"), 0.0, 1e-9)
     c.near("its scale", row(found, "wide", 1.0).get("scale"), 4 / 3, 1e-4)
     c.eq("near a point on an object", sorted(r["name"] for r in rows(found, "near_crate", 1.0)), ["Crate1", "Crate2"])
     c.eq("has: simulating", [(r["name"], r["simulating"], r["collision"]) for r in rows(found, "ball", 1.0)], [("Ball", 1, 1)])
@@ -243,33 +247,48 @@ def check_touch(c, found):
 
 
 def check_captions(c, found):
-    if not ended(c, found, 5.5):
+    if not ended(c, found, 7.5):
         return
     probe = found["probe"]
     game_log = found["log"][:len(found["log"]) - len(found["output"])]  # the log file alone (its output echoes it)
     pressed = re.findall(r"^PRESSED (\w+)", game_log, re.M)
     note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
     c.eq("each control the play named by its shown text is pressed once, in the order sent", pressed,
-         ["Button2", "Start", "AgainHigh", "PlayNow", "Button4", "ListTop", "PanelTop"])
+         ["Button2", "Start", "AgainLow", "AgainHigh", "PlayNow", "Button4", "ListTop", "PanelTop", "Zh", "ZhLoose",
+          "ZhTap"])
     c.true("a click by a caption, whatever its case and spacing: probe.log says how it was found",
            'clicked Button2 (Button) by its caption "Begin Run"' in note, note[-1500:])
     c.true("a name wins over another button's caption", "clicked Start (Button) by name" in note, note[-1500:])
-    c.true("of two that read it, the first in reading order, noted",
-           "click: 2 buttons read 'Again'; took the first in reading order" in note
+    c.true("a caption as written wins over one that reads it alike, with no note",
+           'clicked AgainLow (Button) by its caption "Again"' in note
+           and "buttons read 'Again'" not in note, note[-1500:])
+    c.true("of two that read it alike (none as written), the first in reading order, noted",
+           "click: 2 buttons read 'again'; took the first in reading order" in note
            and 'clicked AgainHigh (Button) by its caption "  AGAIN!"' in note, note[-1500:])
     c.true("a label on a button with no text of its own is its caption",
            'clicked PlayNow (TextureButton) by its caption "Play  Now"' in note, note[-1500:])
     c.true("a tap by a caption", 'finger 0 goes down on Button4 (Button) by its caption "Tap Me"' in note, note[-1500:])
     c.true("a button and a panel in a list's view are clicked", "clicked ListTop (Button) by name" in note
            and "clicked PanelTop (Panel) by name" in note, note[-1500:])
+    c.true("a Chinese caption as written", 'clicked Zh (Button) by its caption "开始游戏"' in note, note[-1500:])
+    c.true("a Chinese caption read alike: its ideographs are letters, its middle dot a gap",
+           'clicked ZhLoose (Button) by its caption "设置 · 声音"' in note, note[-1500:])
+    c.true("a tap by a Chinese caption", 'finger 0 goes down on ZhTap (Button) by its caption "确定"' in note,
+           note[-1500:])
     nothing = "no visible control that takes a click matches it, by name, class or caption"
     c.eq("text that isn't shown, no match, a button and a panel scrolled out of the list's view (their centre outside "
          "it: a click there would land outside it), and an optional click with no match (the probe sends it as any; "
-         "the checker leaves its miss out) are misses, each of no control",
+         "the checker leaves its miss out) are misses, each of no control; a click on a button shown but disabled, "
+         "marked `disabled` or not, is a miss that says so (the checker reads the marked one as landed), and presses "
+         "nothing",
          [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])],
          [(2.5, "click", "hidden_word", nothing), (3.0, "click", "nothing_here", nothing),
           (4.1, "click", "ListBottom", nothing), (4.3, "click", "PanelBottom", nothing),
-          (4.5, "click", "maybe_later", nothing)])
+          (4.5, "click", "maybe_later", nothing),
+          (5.4, "click", "Locked Door", 'a button matches it (Locked (Button) by its caption "Locked Door"), shown but '
+                                       "disabled: the click does nothing"),
+          (5.7, "click", "Sealed", "a button matches it (Sealed (Button) by name), shown but disabled: the click does "
+                                   "nothing")])
 
 
 def check_second(c, found):

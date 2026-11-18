@@ -346,6 +346,46 @@ class TaskErrors(unittest.TestCase):
         script = (Path(check.__file__).parent / "task_probe" / "inputs.gd").read_text(encoding="utf-8")
         self.assertIn(f'_miss(row, "click", want, "{check.NO_CONTROL}")', script)
 
+    def test_a_disabled_click_on_its_disabled_button_has_landed_and_each_mark_excuses_only_its_own_miss(self):
+        """A click on a button the game disables by design (`disabled`): when the probe found that button shown but
+        disabled, the click landed (and did nothing). Without the mark that is a miss; so is an `optional` click on
+        it, and a `disabled` click no button matched."""
+        locked = {"t": 0.5, "kind": "click", "target": "Locked Door",
+                  "why": 'a button matches it (Locked (Button) by its caption "Locked Door"), shown but disabled: the '
+                         "click does nothing"}
+        nothing = {"t": 0.5, "kind": "click", "target": "Locked Door", "why": check.NO_CONTROL}
+
+        def play_with(**mark):
+            return {"name": "pick", "seconds": 5, "inputs": [dict({"t": 0.5, "widget": "Locked Door", "click": True},
+                                                                  **mark)]}
+        marked = play_with(disabled=True)
+        self.assertEqual(tasks.inputs(marked["inputs"]), [{"t": 0.5, "widget": "Locked Door", "click": True,
+                                                           "disabled": True}], "the probe is sent the click as written")
+        self.assertEqual(check.missed({"inputs_missed": [locked]}, marked), [])
+        self.assertEqual(check.missed({"inputs_missed": [nothing]}, marked), [nothing],
+                         "a disabled click that found no button missed")
+        self.assertEqual(check.missed({"inputs_missed": [locked]}, play_with()), [locked])
+        self.assertEqual(check.missed({"inputs_missed": [locked]}, play_with(optional=True)), [locked],
+                         "optional excuses only a click that found nothing")
+        self.assertEqual(check.missed({"inputs_missed": [dict(locked, t=1.0)]}, marked), [dict(locked, t=1.0)],
+                         "only the marked click's own row")
+        task = task_with(probe(play=marked, measure={"probe": "player", "field": "y", "agg": "max"},
+                               expect={"op": ">=", "value": 0}))
+        self.assertEqual(first_row(task, "reference", None,
+                                   side("reference", FakeProject(answering(missed=[locked])), task))[0], True)
+        good = side("reference", FakeProject(answering()), task)
+        plain = copy.deepcopy(task)
+        del plain["milestones"][-1]["checks"][0]["play"]["inputs"][0]["disabled"]
+        passed, detail = first_row(plain, "start", side("start", FakeProject(answering(missed=[locked])), plain), good)
+        self.assertFalse(passed)
+        self.assertIn("the play's input did not land: click Locked Door at 0.5 s", detail)
+
+    def test_the_probes_words_for_a_disabled_button_are_the_checkers(self):
+        """check.DISABLED is in what the probe's inputs.gd writes of a widget click whose button is shown but
+        disabled."""
+        script = (Path(check.__file__).parent / "task_probe" / "inputs.gd").read_text(encoding="utf-8")
+        self.assertIn(f'), {check.DISABLED}: the click does nothing"', script)
+
 
 def git(repo, *args, data=None):
     return subprocess.run(["git", "-C", str(repo), *args], input=data, capture_output=True, check=True).stdout

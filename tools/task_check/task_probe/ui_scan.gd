@@ -229,12 +229,14 @@ static func spot_widget(want: String) -> Array:
 
 
 static func label_key(text: String) -> String:
-	## a name or a caption as a click compares them, as the other engines' probes do: lower case, each run of anything
-	## but letters and digits one "_", none at either end ("New expedition", "new_expedition", "NEW  EXPEDITION!")
+	## a name or a caption as a click compares them when it isn't written exactly as shown, as the other engines'
+	## probes do: lower case, each run of anything but letters and digits one "_", none at either end ("New
+	## expedition", "new_expedition", "NEW  EXPEDITION!"); a letter of a script without case (Chinese, Japanese,
+	## Korean, Thai) is a letter, so "开始 游戏" reads "开始_游戏"
 	var out := ""
 	var gap := false
 	for ch in text.to_lower():
-		if ch.is_valid_int() or ch.to_upper() != ch.to_lower():
+		if is_word(ch):
 			if gap and out != "":
 				out += "_"
 			out += ch
@@ -242,6 +244,32 @@ static func label_key(text: String) -> String:
 		else:
 			gap = true
 	return out
+
+
+static func is_word(ch: String) -> bool:
+	## a letter or a digit of any script, as label_key keeps it: a digit, a letter with case, or any character past
+	## ASCII that isn't a space, a punctuation mark or a symbol (an ideograph, a kana, a hangul syllable: letters without
+	## case, which the case test alone would drop)
+	if ch == "":
+		return false
+	if ch.is_valid_int() or ch.to_upper() != ch.to_lower():
+		return true
+	var code := ch.unicode_at(0)
+	return code >= 0x80 and not is_mark(code)
+
+
+static func is_mark(code: int) -> bool:
+	## a character past ASCII that is no letter: Latin-1's signs and punctuation (0x80-0xBF, the times and divide
+	## signs), general and supplemental punctuation and spaces, arrows, mathematical and technical signs, boxes,
+	## shapes and dingbats, CJK punctuation and the ideographic space, the katakana middle dot, the vertical, small and
+	## compatibility forms, the full-width forms' punctuation, the byte order mark, and pictographs and emoji
+	return (code <= 0xBF) or code == 0xD7 or code == 0xF7 \
+		or (code >= 0x2000 and code <= 0x2BFF) or (code >= 0x2E00 and code <= 0x2E7F) \
+		or (code >= 0x3000 and code <= 0x303F) or code == 0x30FB \
+		or (code >= 0xFE10 and code <= 0xFE1F) or (code >= 0xFE30 and code <= 0xFE6F) \
+		or (code >= 0xFF01 and code <= 0xFF0F) or (code >= 0xFF1A and code <= 0xFF20) \
+		or (code >= 0xFF3B and code <= 0xFF40) or (code >= 0xFF5B and code <= 0xFF65) or code == 0xFEFF \
+		or (code >= 0x1F000 and code <= 0x1FAFF)
 
 
 static func captions(c: Control) -> Array[String]:
@@ -264,23 +292,37 @@ static func captions(c: Control) -> Array[String]:
 	return found
 
 
-static func by_caption(want: String, click: bool) -> Array:
+static func by_caption(want: String, click: bool, disabled: bool = false) -> Array:
 	## [the first button in reading order (top to bottom, then left to right) a player can press whose caption reads
-	## `want` (label_key alike), 'caption "<text>"', a note when more than one reads it], or []. `click`: only one that
-	## takes a click (enabled, not ignoring the mouse), as a widget click asks.
-	var key := label_key(want)
-	if key == "":
+	## `want`, 'caption "<text>"', a note when more than one reads it], or []. A caption written exactly as `want` (any
+	## script, spaces and punctuation included) wins; only when no button shows it so, one that reads it label_key alike.
+	## `click`: only one that takes a click (enabled, not ignoring the mouse), as a widget click asks. `disabled`: only
+	## one shown but disabled (a click's miss says so: disabled_button).
+	if want == "":
 		return []
-	var matched: Array = []
+	var key := label_key(want)
+	var exact: Array = []
+	var loose: Array = []
 	for c in controls():
 		if not (c is BaseButton) or not reachable(c) or rect(c) == null:
 			continue
 		if click and (usable(c) == 0.0 or c.mouse_filter == Control.MOUSE_FILTER_IGNORE):
 			continue
+		if disabled and usable(c) != 0.0:
+			continue
+		var as_written := ""
+		var alike := ""
 		for caption in captions(c):
-			if label_key(caption) == key:
-				matched.append([c, caption])
+			if caption == want:
+				as_written = caption
 				break
+			if alike == "" and key != "" and label_key(caption) == key:
+				alike = caption
+		if as_written != "":
+			exact.append([c, as_written])
+		elif alike != "":
+			loose.append([c, alike])
+	var matched: Array = exact if not exact.is_empty() else loose
 	if matched.is_empty():
 		return []
 	matched.sort_custom(func(a: Array, b: Array) -> bool:
@@ -291,6 +333,21 @@ static func by_caption(want: String, click: bool) -> Array:
 	if matched.size() > 1:
 		note = "%d buttons read '%s'; took the first in reading order" % [matched.size(), want]
 	return [matched[0][0], 'caption "%s"' % matched[0][1], note]
+
+
+static func disabled_button(want: String) -> Array:
+	## [the first button a widget click on `want` would take but that it is disabled, and how it was found ("name",
+	## "class" or 'caption "<text>"')], or []: shown where a player could press it (reachable, of some size), by its
+	## name (a wildcard), else its class, else its caption (by_caption). A click on it does nothing, as a player's.
+	if want == "":
+		return []
+	for by_class in [false, true]:
+		for c in controls():
+			if c is BaseButton and (c as BaseButton).disabled and reachable(c) and rect(c) != null \
+					and (Find.is_a(c, want) if by_class else String(c.name).matchn(want)):
+				return [c, "class" if by_class else "name"]
+	var read: Array = by_caption(want, false, true)
+	return [read[0], read[1]] if not read.is_empty() else []
 
 
 static func to_window(at: Vector2) -> Vector2:

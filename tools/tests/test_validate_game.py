@@ -1051,6 +1051,51 @@ class Units(unittest.TestCase):
                     {'t': 2, 'tap': {'widget': 'Confirm'}, 'optional': True}):
             self.assertNotEqual(schema_errs(bad), [], bad)
 
+    @staticmethod
+    def _input_errs(*inputs, **play):
+        c = {'name': 'p', 'kind': 'probe', 'describe': 'x', 'measure': {'probe': 'player', 'field': 'x'},
+             'expect': {'op': '>=', 'value': 1}, 'play': dict({'name': 'menu', 'seconds': 10, 'inputs': list(inputs)},
+                                                               **play)}
+        t = task('a' * 40, 'b' * 40, milestones=[{'name': 'm', 'checks': [c]}])
+        return list(vg.check_schema(t, vg.SCHEMAS['game-task']))
+
+    def test_a_widget_by_the_text_the_screen_shows(self):
+        """A widget click and a touch on a widget name a button by its caption exactly as shown, in any language,
+        spaces and punctuation included: 1 to 120 characters, none of them a control character."""
+        for text in ('开始游戏', '设置 · 声音', '  AGAIN!', 'Nouvelle partie…', 'はい', '확인', 'New game?', 'x' * 120):
+            self.assertEqual(self._input_errs({'t': 2, 'widget': text, 'click': True},
+                                              {'t': 3, 'tap': {'widget': text}}), [], text)
+        for text in ('', 'x' * 121, 'Line\nbreak', 'Tab\there', 'bell\x07', 'del\x7f'):
+            self.assertNotEqual(self._input_errs({'t': 2, 'widget': text, 'click': True}), [], text)
+            self.assertNotEqual(self._input_errs({'t': 2, 'tap': {'widget': text}}), [], text)
+
+    def test_a_disabled_click(self):
+        """A widget click may say `"disabled": true` (a button the game disables by design), and nothing else: not
+        false, not on another input."""
+        self.assertEqual(self._input_errs({'t': 2, 'widget': 'Locked Door', 'click': True, 'disabled': True}), [])
+        for bad in ({'t': 2, 'widget': 'Locked', 'click': True, 'disabled': False},
+                    {'t': 2, 'widget': 'Locked', 'click': True, 'disabled': 'yes'},
+                    {'t': 2, 'key': '<Keyboard>/w', 'press': True, 'disabled': True},
+                    {'t': 2, 'tap': {'widget': 'Locked'}, 'disabled': True}):
+            self.assertNotEqual(self._input_errs(bad), [], bad)
+
+    def test_a_fresh_play(self):
+        """A task play may say `"fresh": true` (it starts with the game's saved data cleared, as every play without
+        `after` does), only true, and never with `after`; two plays of a name differ when one says it."""
+        self.assertEqual(self._input_errs(fresh=True), [])
+        for bad in (False, 'yes', 1):
+            self.assertNotEqual(self._input_errs(fresh=bad), [], bad)
+        play = {'name': 'reads', 'seconds': 5, 'fresh': True}
+        self.assertEqual(vg.task_play_errors('p', play, {}), [])
+        self.assertEqual(vg.task_play_errors('p', dict(play, after=['writes']), {}),
+                         ["check p: play reads is fresh (it starts with the game's save state cleared) and runs after "
+                          "other plays (it starts on what they saved): name one or the other"])
+        self.assertEqual(vg.task_play_errors('p', dict(play, fresh=None, after=['writes']), {}), [])
+        seen = {}
+        vg.task_play_errors('p', {'name': 'reads', 'seconds': 5}, seen)
+        self.assertEqual(vg.task_play_errors('q', play, seen), ['check q: task play reads differs from another play of '
+                                                                 'that name'])
+
     def test_required_quality_judges(self):
         """A required judge is noted as one that should be optional, but for the judges of the brief's looks: a `judge`
         named `looks_as_asked` and a `judge` in `still_works`."""
@@ -1426,8 +1471,12 @@ class Schema(unittest.TestCase):
             {'t': 3, 'drag': [[0.2, 0.8], {'widget': 'Stick'}, [0.4, 0.6]], 'over': 0.5, 'hold': 2, 'finger': 0},
             {'t': 9, 'key': '<Keyboard>/escape', 'press': True}]}
         self.assertEqual(self.ok(play, 'TaskPlay'), [])
+        # a widget is a name, a class or a caption as shown: any text but control characters ("On/Off", "开始游戏")
+        for shown in ('Hud/Jump', 'On/Off', '开始游戏', 'Ready?  Go!'):
+            self.assertEqual(self.ok(dict(play, inputs=[{'t': 1, 'tap': {'widget': shown}}]), 'TaskPlay'), [], shown)
         for bad in ({'t': 1, 'tap': [1.5, 0.5]}, {'t': 1, 'tap': [0.5]}, {'t': 1, 'tap': [0.5, 0.5], 'finger': 10},
-                    {'t': 1, 'drag': [[0.5, 0.5]]}, {'t': 1, 'tap': {'widget': 'Hud/Jump'}},
+                    {'t': 1, 'drag': [[0.5, 0.5]]}, {'t': 1, 'tap': {'widget': 'Hud\nJump'}},
+                    {'t': 1, 'tap': {'widget': ''}},
                     {'t': 1, 'tap': [0.5, 0.5], 'hold': 0}, {'t': 9, 'key': 'Android_Back', 'press': True}):
             self.assertNotEqual(self.ok(dict(play, inputs=[bad]), 'TaskPlay'), [], bad)
 

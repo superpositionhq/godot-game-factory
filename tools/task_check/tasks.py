@@ -185,7 +185,7 @@ def spot(value):
 
 
 def inputs(rows):
-    """A task play's inputs as the probe reads them: keys, axes, clicks (`optional` only when set), cursor moves, teleports (`yaw` 0 when unset:
+    """A task play's inputs as the probe reads them: keys, axes, clicks (`optional` and `disabled` only when set), cursor moves, teleports (`yaw` 0 when unset:
     a teleport always turns the player), teleports next to an object (`distance` 2 m and `offset` 0 when unset, `face`
     only when set), either with `hold` only when set, waits in real time, named shots, scene loads, view turns,
     touches (`tap`, `drag`: `finger` 0 unless said, `hold` and `over` only when set), and the stages of a contact
@@ -238,8 +238,9 @@ def inputs(rows):
                 row["over"] = float(r["over"])
         elif "widget" in r:
             row.update(widget=r["widget"], click=True)
-            if r.get("optional"):
-                row["optional"] = True
+            for k in ("optional", "disabled"):
+                if r.get(k):
+                    row[k] = True
         elif "axis" in r:
             row.update(key=r["key"], axis=float(r["axis"]))
         else:

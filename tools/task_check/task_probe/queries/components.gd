@@ -183,9 +183,9 @@ func _row(n: Node) -> Dictionary:
 				if turned != null:
 					v = turned[1 if f == "world_yaw" else 0]
 			"extent_x", "extent_y", "extent_z":
+				# a node with no box of its own (a light, an empty mesh) reads 0, as objects' extent does
 				var around: Variant = Find.own_box(n)
-				if around != null:
-					v = (around as AABB).size[f.substr(7)] / 2.0
+				v = 0.0 if around == null else (around as AABB).size[f.substr(7)] / 2.0
 			"simulating":
 				v = 1.0 if Find.shown(n) and Find.simulates(n) else 0.0
 			"intensity":

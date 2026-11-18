@@ -36,7 +36,8 @@ class Touches(unittest.TestCase):
                         measure=MOVED))
 
     def test_a_malformed_touch_is_refused(self):
-        for bad in ({"t": 1.0, "tap": [1.5, 0.5]}, {"t": 1.0, "tap": [0.5]}, {"t": 1.0, "tap": {"widget": "a;b"}},
+        for bad in ({"t": 1.0, "tap": [1.5, 0.5]}, {"t": 1.0, "tap": [0.5]}, {"t": 1.0, "tap": {"widget": "a\nb"}},
+                    {"t": 1.0, "tap": {"widget": ""}},
                     {"t": 1.0, "tap": [0.5, 0.5], "finger": 10}, {"t": 1.0, "drag": [[0.5, 0.5]]},
                     {"t": 1.0, "tap": [0.5, 0.5], "over": 1.0}):
             self.assertIsNotNone(refused(probe(play=play([bad]), measure=MOVED)), bad)

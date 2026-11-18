@@ -430,7 +430,8 @@ func _control(path: String, value: float, is_axis: bool) -> void:
 func _click(row: Dictionary, _elapsed: float) -> void:
 	## a click on a widget: the mouse moved to its centre, the left button pressed, and let go in the next frame
 	## (`widget`: a Control's name or class, else the shown caption of a button, UiScan.by_caption: a name or a class
-	## wins over a caption)
+	## wins over a caption, a caption as written over one alike; a matching button shown but disabled is a miss that
+	## says so, UiScan.disabled_button)
 	var want := Find.text(row, "widget")
 	var found: Control = null
 	var how := ""
@@ -448,6 +449,15 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 			if read[2] != "":
 				probe.note("click: " + read[2])
 	if found == null:
+		# a button the game disabled, shown: the click does nothing, as a player's, and the miss says so (a click marked
+		# `disabled` has landed on it, the grader's plays.DISABLED; any other is a miss)
+		var off: Array = UiScan.disabled_button(want)
+		if not off.is_empty():
+			var shown: Control = off[0]
+			var by: String = off[1]
+			_miss(row, "click", want, "a button matches it (%s (%s) by %s), shown but disabled: the click does nothing"
+				% [shown.name, Find.class_of(shown), "its " + by if by.begins_with("caption") else by])
+			return
 		_miss(row, "click", want, "no visible control that takes a click matches it, by name, class or caption")
 		return
 	var label := "%s (%s)" % [found.name, Find.class_of(found)]

@@ -54,12 +54,13 @@ The task:
 
 Plays and inputs:
 
-- A task play: `name`, `seconds`, `every`, `inputs`, `scene`, `args` and `after`. `scene` and `args` have no default:
+- A task play: `name`, `seconds`, `every`, `inputs`, `scene`, `args`, `after` and `fresh`. `scene` and `args` have no default:
   a play's own key, when it is there, takes the place of the task's `play_scene` / `play_args` for that play
   (`"scene": null` opens the project's main scene). `after`: 1 to 8 names of task plays of the task (a probe's play, a
   judge's own plays); the validator refuses a name that is none (`look` and `drive` are none), a name twice, the play
   itself, a cycle, and two names of which neither runs after the other through its own `after`
-  (`play_after_errors`).
+  (`play_after_errors`). `fresh`: true or left out; the play starts with the game's saved data cleared, as every play
+  without `after` does, and the validator refuses it beside `after` (`task_play_errors`).
 - Play arguments (`play_args`, a play's `args`): each `^-?[A-Za-z0-9_.:=,/-]{1,60}$`, at most 16. They follow `--` and
   the probe's own `-taskProbe <spec>` on the command line, so the engine never reads one as its own flag: the game
   reads them with `OS.get_cmdline_user_args()`. The validator refuses the probe's own (any flag starting with
@@ -68,8 +69,10 @@ Plays and inputs:
 - Inputs (section 4): `key` (key and axis rows) is a control path,
   `^<(Keyboard|Mouse|Gamepad)>/[A-Za-z0-9/]{1,40}$` (`<Keyboard>/escape` is the back button in a mobile game's
   play); a widget click's
-  `widget` is a wildcard on a name, or a class name (`^[A-Za-z0-9_.*?() -]{1,120}$`); a touch's spot is `[fx, fy]` or
-  `{"widget": "<name>"}` (the same pattern); `teleport_to`'s `distance` defaults to 2 m.
+  `widget` is a wildcard on a name, a class name, or a button's caption as the screen shows it, in any language,
+  spaces and punctuation included: any text of 1 to 120 characters without a control character
+  (`^[^\x00-\x1f\x7f]{1,120}$`); a touch's spot is `[fx, fy]` or `{"widget": "<text>"}` (the same pattern); a widget
+  click's `optional` and `disabled` are true or left out; `teleport_to`'s `distance` defaults to 2 m.
 - Touches (`tap`, `drag`): one finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and
   every touch is over by the play's end (the validator's `TOUCH_GAP`).
 - The stages of a contact: `pin` (an object select, `hold` above 0 up to 120 s, `front` 0 to 1000 m or `at` a point,
@@ -206,7 +209,8 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
 - **objects** (`queries/objects.gd`):
   - `extent_*`: half the world-aligned box around what the node and the nodes below it draw, the shown ones
     (`Find.box`, `Find.own_box`): a `VisualInstance3D`'s `get_aabb()` in the world (a light aside), a 2D node's
-    `get_rect()` (a sprite), a `Control`'s rectangle. No value when it draws nothing;
+    `get_rect()` (a sprite), a `Control`'s rectangle. 0 when it draws nothing shown (an empty node, a light, a hidden
+    object), never no value;
   - `hidden`: 1 when it isn't shown, or it has nodes that draw and none of them is shown; `collision`: 1 when a
     `PhysicsBody3D` or `PhysicsBody2D` in it (an area never) has a `CollisionShape` or `CollisionPolygon` that isn't
     disabled, 0 when it isn't shown; `simulating`: a `RigidBody3D` or `RigidBody2D` in it that isn't frozen;
@@ -263,7 +267,7 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   emitting and shown. `mesh` reads a `MeshInstance3D`'s, a `MeshInstance2D`'s or a `MultiMeshInstance3D`'s mesh by
   its resource name, else its file's name without the extension (`Find.resource_name`; a mesh saved inside a scene
   has neither). A field reads the node itself: `extent_*` its own box (`Find.own_box`, a `CollisionShape`'s shape
-  too); `simulating` a rigid body that isn't frozen, or a shape of one; `intensity` a `Light3D`'s `light_energy` or
+  too; 0 for a node with none, a light); `simulating` a rigid body that isn't frozen, or a shape of one; `intensity` a `Light3D`'s `light_energy` or
   a `Light2D`'s `energy`, `on` that it is shown and its energy is above 0 (a `Light2D` also enabled); `active` shown
   and, by its class, emitting, playing, not disabled or on.
 - **lit, glow, has.lit** (`find.gd` `light_of`, `light_of_object`, `material_light`, `drawn_with`, `part_drawn`): read
@@ -526,7 +530,8 @@ is exactly `TaskProbe.` and 12 hex digits and the folder is that name's; the eng
 folder before every play too (`godot.Project.play`, `seeds.forget_saves`) and with the copy (section 5).
 
 Plays after others (`check.Side._task_play`, `tasks.chain`). A play's start depends on its own `after` alone. One
-that names none always starts clean. One that names some starts on exactly the saves of its chain: the plays it
+that names none always starts clean; a task play may say so, `"fresh": true`, which changes nothing in how it is
+played and is never given with `after` (the validator's `task_play_errors`). One that names some starts on exactly the saves of its chain: the plays it
 names and the plays those name, each after its own, in order (a play named twice runs once, where it is first
 needed), a failed one counting as run. The side keeps which plays' saves the copy holds now (`Side.saves`: the last
 play that started clean and those played after it with `keep_saves`); when they aren't exactly the chain, the chain
@@ -579,18 +584,25 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   `widgets` state), of some size, not disabled and not ignoring the mouse, whose name (a wildcard) or class matches.
   Failing a name and a class, the shown caption of a button (`UiScan.by_caption`): a `BaseButton` a player can press
   of some size whose shown text (a `Button`'s or `LinkButton`'s own text while it is drawn, each `Label` or
-  `RichTextLabel` drawn below it, alone and all together in order; never a tooltip, nor text drawn see-through) reads
-  the same as `widget`, both compared as the other engines' probes compare them (`UiScan.label_key`: lower case, each
-  run of anything but letters and digits one `_`, none at either end, so `begin_run` reads "Begin Run"). Of several,
-  the first in reading order (top to bottom, then left to right), and `probe.log` notes how many read it. A name or a
+  `RichTextLabel` drawn below it, alone and all together in order; never a tooltip, nor text drawn see-through) is
+  `widget` as written, character for character (any script, spaces and punctuation included: "开始游戏", "  AGAIN!");
+  only when no button shows it so, one whose caption reads the same as `widget` compared as the other engines' probes
+  compare them (`UiScan.label_key`: lower case, each run of anything but letters and digits one `_`, none at either
+  end, so `begin_run` reads "Begin Run"; a letter of a script without case, an ideograph, a kana, a hangul syllable,
+  is a letter, `UiScan.is_word`). Of several, the first in reading order (top to bottom, then left to right), and `probe.log` notes how many read it. A name or a
   class wins over a caption. The mouse moves to its centre, the left button goes down, and up in the next frame: real events, so a Control drawn
   over it takes them instead. For a `BaseButton` the probe listens for its `pressed` signal: when it hasn't fired two
   frames after the release, the click is a row of `inputs_missed`, as is a click nothing matches. `probe.log` names the
   widget clicked, its class and how it was found (`clicked PushButton (Button) by name`, `by class`, `by its caption
   "Begin Run"`). A click nothing matches is the row `{"t", "kind": "click", "target": <its widget>, "why": "no visible
-  control that takes a click matches it, by name, class or caption"}` (the checker's `check.NO_CONTROL`). A task's
-  click may say `"optional": true` (a confirmation a game shows only sometimes): the probe sends it as any click, and
-  the checker reads that row of it as no miss (`check.missed`); a control it found that didn't press is still a miss.
+  control that takes a click matches it, by name, class or caption"}` (the checker's `check.NO_CONTROL`), but one a
+  disabled button would take, shown where a player could press it, by its name, class or caption (`UiScan.
+  disabled_button`): nothing is pressed (a player's click on it does nothing) and the row's why is `a button matches it
+  (<name> (<class>) by <how>), shown but disabled: the click does nothing` (it holds the checker's `check.DISABLED`). A
+  task's click may say `"optional": true` (a confirmation a game shows only sometimes): the probe sends it as any
+  click, and the checker reads its NO_CONTROL row as no miss (`check.missed`); a control it found that didn't press,
+  or found disabled, is still a miss. A click may say `"disabled": true` (a button the game disables by design): the
+  checker reads its row that says `shown but disabled` as landed; any other miss of it is still a miss.
 - cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
@@ -606,7 +618,8 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   `hold` and `over` only when set; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
   point `[fx, fy]` (fractions of the frame, y down), or `{"widget": name}`, the centre of the first visible Control
   of some size whose name (a wildcard) matches, else the first whose class does, else the first button in reading order
-  whose shown caption reads it, as a widget click's (`UiScan.named`, `UiScan.by_caption`; it needn't be enabled).
+  whose shown caption is it as written, else reads it alike, as a widget click's (`UiScan.named`,
+  `UiScan.by_caption`; it needn't be enabled).
   `probe.log` says what the finger went down on and how it was found. The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
   `InputEventScreenDrag` events (a drag's path walked evenly over `over` seconds, at once without it), and lifts once
   its path and its `hold` are over, never in the frame it went down. Fingers 0 to 9 may be down together. With
@@ -733,7 +746,8 @@ so the engine imports nothing there), each made fresh before its job.
   (`--headless`) lists none.
 - `inputs_sent`: how many input rows were sent. `inputs_missed` (always there): a row `{"t", "kind", "target", "why"}`
   for each input that didn't land: `tap` and `drag` (a spot whose widget isn't on screen, a finger still down, a bad
-  finger or path), `click` (no visible control that takes a click matches, or a button that didn't press), `shot` (a
+  finger or path), `click` (no visible control that takes a click matches, a button that matches shown but disabled,
+  or a button that didn't press), `shot` (a
   bad name), `scene` (a scene the project lacks), `pin`, `damage` and `set` (a stage nothing took; `target` is the
   select as JSON, the node's name once one matched, or a set's path).
 - Samples fall on frames: the first at 1/30 s (the clock's first frame), then every `every` s, on the frame that

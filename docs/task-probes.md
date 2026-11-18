@@ -134,6 +134,11 @@ thing instead of removing it still pass? If not, move the probe to what the play
     `NOTIFICATION_WM_CLOSE_REQUEST`, then the tree exits (`_exit_tree`), so what a writer saves there is saved; what
     it would save only later (a deferred call, a thread) may not be, so a writer is best made to save during its
     play.
+  - `fresh` (optional, `true` only): the play starts with the game's saved data cleared, `{"name": "first_launch",
+    "seconds": 10, "fresh": true}`, as every play without `after` already does: it says so for a play whose
+    instruction asks for a first launch, and changes nothing in how it is played. Never with `after`
+    (`tools/validate-game.py` refuses the two together: a play starts either clean or on what others saved). Two
+    plays of one name, one `fresh` and one not, differ, and the validator refuses them as any two that differ.
   - `inputs` (at most 400; a play with none leaves the key out), each at time `t` (seconds of play, 0-120). They reach
     the game as the engine's own input events (`InputEventKey`, `InputEventMouseButton`, `InputEventMouseMotion`,
     `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventScreenTouch`, `InputEventScreenDrag`), so the
@@ -159,13 +164,19 @@ thing instead of removing it still pass? If not, move the probe to what the play
       to 1) until set again, and a stick's y is up-positive (see the lessons on mouse axes in section 5);
     - a widget click: `{"t": 6.0, "widget": "RetryButton", "click": true}` clicks the first visible (as the `widgets`
       field reads it, so a fully transparent button counts) Control that takes a click (not disabled, not ignoring
-      the mouse) whose name (a wildcard) or class matches, else the button whose shown text reads `widget`: case,
-      spacing and punctuation aside, as the other engines' probes compare them (each run of anything but letters and
-      digits one `_`), so `{"widget": "begin_run", "click": true}` clicks a button reading "Begin Run" whatever its
-      node is called. A caption is text a player reads on the button: its own text, or a label drawn on it; never a
-      tooltip, nor text drawn see-through (an invisible hit area is still clicked by its name). A name or a class wins
-      over a caption; of several buttons that read it, the first in reading order (top to bottom, then left to
-      right). It clicks as a player's click presses it: the mouse moves to its
+      the mouse) whose name (a wildcard) or class matches, else the button whose shown text is `widget`. `widget` is
+      any text of 1 to 120 characters without a control character: write a caption exactly as the screen shows it,
+      in the game's own language, spaces and punctuation included (`{"widget": "开始游戏", "click": true}`,
+      `{"widget": "  AGAIN!", "click": true}`). A button whose caption is `widget` character for character is taken
+      first; only when none is, one whose caption reads the same with case, spacing and punctuation aside, as the
+      other engines' probes compare them (each run of anything but letters and digits one `_`; a letter of a language
+      without case, Chinese, Japanese, Korean, is a letter), so `{"widget": "begin_run", "click": true}` clicks a
+      button reading "Begin Run" whatever its node is called, and `设置_声音` one reading "设置 · 声音". Of two buttons
+      reading "Again" and "  AGAIN!", `Again` clicks the one reading "Again", `again` the first of the two in reading
+      order. A caption
+      is text a player reads on the button: its own text, or a label drawn on it; never a tooltip, nor text drawn
+      see-through (an invisible hit area is still clicked by its name). A name or a class wins over a caption; of
+      several buttons that read it, the first in reading order (top to bottom, then left to right). It clicks as a player's click presses it: the mouse moves to its
       centre, the left button goes down and, a frame later, up. They are real mouse events, so a Control drawn over
       it takes them instead, as it would a player's. The play's `probe.log` names what it clicked, its class and how
       it was found: `clicked RetryButton (Button) by name`, `clicked Button2 (Button) by its caption "Begin Run"`.
@@ -177,8 +188,17 @@ thing instead of removing it still pass? If not, move the probe to what the play
       "click": true, "optional": true}` is for a control a game shows only in some states (a confirmation shown only
       when something was saved). When no shown control matches an optional click, nothing is pressed, the play goes
       on and the click is no miss (the probe still lists it in `inputs_missed`; the checker and the Lab's grader
-      leave it out); a control it matches that takes no press is a miss all the same. Never mark a click optional to
-      cover one the play needs: a play that makes the state itself clicks it as required;
+      leave it out); a control it matches that takes no press is a miss all the same, and so is a button it finds
+      shown but disabled. Never mark a click optional to cover one the play needs: a play that makes the state itself
+      clicks it as required. A click on a button shown but disabled (one a click would take by its name, class or
+      caption, where a player could press it) presses nothing, as a player's does, and is a miss that says so
+      (`a button matches it (Locked (Button) by its caption "Locked Door"), shown but disabled: the click does
+      nothing`), unless the click says `"disabled": true`: `{"t": 3.0, "widget": "Locked Door", "click": true,
+      "disabled": true}` is for a button the game disables by design (a locked choice the instruction asks to stay
+      locked), and its click lands when that button is shown disabled (the probe still lists it; the checker and the
+      Lab's grader leave it out). A `disabled` click that finds no such button (none matches, or the button is
+      enabled and pressed) is no excuse: the first is a miss, the second a press like any. Mark a click disabled only
+      where the instruction says its control must be disabled;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
     - a mouse move: `{"t": 1.0, "move": [300, -40], "over": 1.5}` moves the mouse by [dx, dy] pixels of the frame
@@ -336,8 +356,9 @@ A task play may touch the screen as a phone's player does. Two inputs, each with
 A spot is a point of the screen `[fx, fy]` in fractions 0-1 from its top left, or `{"widget": "MoveStick"}`: the centre
 of the first visible, laid-out widget of that name (a wildcard) or type, whatever its kind (a button, a stick, a
 panel): a `Control` node, found as a `widgets` select finds one (section 2.6), by its node name first, then by its
-class, then by the caption a button shows, as a widget click finds one (section 1.1: `{"widget": "tap_me"}` touches a
-button reading "Tap Me"); a widget whose centre is scrolled out of its container's view is not found, as for a click.
+class, then by the caption a button shows, as a widget click finds one (section 1.1: exactly as the screen shows it
+first, in any language, `{"widget": "确定"}`, then read alike, `{"widget": "tap_me"}` touching a button reading
+"Tap Me"; a touch needn't find it enabled); a widget whose centre is scrolled out of its container's view is not found, as for a click.
 Name the widget where you can: its place differs between landscape and portrait, its name
 and its caption do not. A
 widget's spot is where it is when the finger goes down.
@@ -584,7 +605,8 @@ and `player_on_screen` is 1 when the player's centre is inside the rectangle the
     world);
   - `extent_x`, `extent_y`, `extent_z`: **the world-aligned half-size of what the object draws** (m): the box around
     the shown nodes in it that draw, each by its own bounds (a mesh, a sprite, a Control's rectangle; lights and
-    plain `Node3D`s have none). No value when the object draws nothing. World-aligned, so a rotated object's extent
+    plain `Node3D`s have none). 0 when the object draws nothing shown (an empty node, a light, a hidden object),
+    never no value. World-aligned, so a rotated object's extent
     mixes its own axes (an object turned 90 degrees reports its width as `extent_z`);
   - `active` (1 when it is shown); `hidden` (1 when it isn't shown, or it has nodes that draw and none of them is
     shown); `collision` (a physics body in it, never an area, has a collision shape or polygon that isn't disabled;
@@ -729,7 +751,7 @@ not the node the `owner` select matched).
   `{"probe": "components", "select": {"component": "MeshInstance3D", "near": {"point": {"xyz": [x, y, z]},
   "radius": r}}, "field": "world_yaw", "to_angle": -90, "of": "max"}` with `<=` a tolerance;
 - `extent_x`, `extent_y`, `extent_z` (the world-aligned half-size of what the node itself draws or, for a collision
-  shape, of its shape, m) and `simulating` (a rigid body that isn't frozen, or a collision shape of one);
+  shape, of its shape, m; 0 for a node that draws nothing, a light) and `simulating` (a rigid body that isn't frozen, or a collision shape of one);
 - `intensity` (a `Light3D`'s `light_energy`, a `Light2D`'s `energy`) and `on` (1 when the light lights the scene:
   shown, of an energy above 0; a `Light2D` also enabled). A lamp switched off by energy 0 or by hiding the light
   reads 0 when the select says `"inactive": true`; without it, a hidden light is no longer selected (no row: `count`
@@ -1322,12 +1344,14 @@ How it is graded, and its limits:
   `query_errors`). The usual reasons a select matched nothing, and where to look: [task-check.md](task-check.md),
   "Common reasons and fixes", under "no value in the window".
 - **An input that didn't land is listed.** A play's `probe.json` names every input that reached nothing in
-  `inputs_missed` (a touch whose widget isn't on screen, a click no control took (an `optional` click that found
-  nothing on screen aside: section 1.1), a scene the project lacks, a
+  `inputs_missed` (a touch whose widget isn't on screen, a click no control took or one on a button shown but
+  disabled (an `optional` click that found nothing on screen, and a `disabled` click on its button shown disabled,
+  aside: section 1.1), a scene the project lacks, a
   stage of a contact nothing took: section 1.4): read it in the fix's play before trusting what the play measured.
   A missed stage of a contact (`pin`, `damage`, `set`) fails every probe of its play on that side, with "a stage of
   the play didn't land: <kind> <target> at <t> s: <why>": what the play read is of a contact that never happened.
-  Any input of a task play that didn't land (a named screenshot and an optional click that found nothing aside)
+  Any input of a task play that didn't land (a named screenshot, an optional click that found nothing and a disabled
+  click on its button shown disabled aside)
   fails every probe of that play on that side, as the Lab's grade reads it ("the play's input did not land: ...");
   on the reference it is a **task error**: the task's own fix can't be driven by its play, and the task is invalid.
 - **A select that reads nothing on the reference is a task error.** An `objects`, `widgets`, `components` or `ui`

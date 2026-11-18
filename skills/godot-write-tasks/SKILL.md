@@ -407,6 +407,9 @@ looks up and a positive yaw turns left.
 - **A play never relies on state it doesn't make.** Each play starts from a fresh save: an existing save, a filled
   profile, an expired timer or an unlocked level is there only when the play makes it with a player's own steps, when
   the plays its `after` names made it, or when the instruction states it and how QA's play reaches it.
+- **A first launch may say `"fresh": true`, never beside `after`.** Every play without `after` already starts with
+  the game's saved data cleared; `fresh` says so for a play the instruction sets on a first launch, so a reader sees
+  the play's start without knowing the checker. A play starts either clean or on what others saved, never both.
 - **A play keeps its own preconditions true.** No input on the frame the game resets a state (a key at a
   scenario's, a scene's or a shift's start lands while it resets: send it a few seconds in). A teleport moves the
   player alone: never teleport past what the game moves with the player or holds it to (a carried object, a tether,
@@ -420,6 +423,16 @@ looks up and a positive yaw turns left.
   only when something exists): when nothing on screen matches it, the play goes on. A miss is how a play says it
   never reached its moment, so a click the play needs stays required: a play that makes the state itself clicks its
   control as required, and a matched control that takes no press is a miss either way.
+- **A control is named by the words the player sees, in the game's own language.** A widget click or a tap on a
+  widget may give a button's caption exactly as the screen shows it (`{"widget": "开始游戏", "click": true}`), spaces
+  and punctuation included: that is how a player finds it, and any build that keeps the words keeps the click. A
+  caption written exactly wins; only when no button shows it so does one that reads the same with case, spaces and
+  punctuation aside take it, so write it as shown when two buttons read alike.
+- **Mark a click `"disabled": true` only where the instruction says the control must be disabled.** A click on a
+  button shown but disabled presses nothing and is a miss, as a player's click there does nothing; `disabled` is for a
+  button the game locks by design (a choice the instruction says stays locked), and its click lands when that button
+  is shown disabled. A miss is how a play learns its control was not usable, so a click the play needs to press is
+  never marked; `optional` never covers a disabled button either.
 - **A window is timed from the event it measures**: from the input that sets the event off, in play time, with a
   margin for how long the reference took (read in its samples), never a fixed second picked without looking where
   the event fell.
@@ -428,7 +441,8 @@ looks up and a positive yaw turns left.
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
   slider, a virtual stick pushed over and held). A spot is a point of the screen `[fx, fy]` in fractions from its top
   left, or `{"widget": "<node name>"}`: the centre of the first visible `Control` of that name (a wildcard) or class,
-  else of the button whose shown text reads it (`{"widget": "tap_me"}` for a button reading "Tap Me").
+  else of the button whose shown text is it as written (`{"widget": "确定"}`), else reads it alike (`{"widget":
+  "tap_me"}` for a button reading "Tap Me").
   Name the control where you can: its place differs between landscape and portrait, its name does not. Touches of
   different fingers may overlap; one finger's touches are at least 0.1 s apart and over by the play's end (the
   validator refuses otherwise); a touch whose control isn't on screen is a miss the play reports, and nothing is
@@ -887,10 +901,13 @@ task's solution.
 | No input on the frame the game resets a state; no teleport past what moves with the player or a limit the instruction gives | the input is lost, or the player arrives without what the moment needs |
 | Each action once, while its control is there | a second click on a control that is gone is a miss |
 | A click or a tap goes to a control by its caption or name, never fixed screen coordinates | another build lays the screen out otherwise |
+| A caption is written exactly as the screen shows it, in the game's own language | it is the words a player finds the control by |
+| A click is marked `disabled` only where the instruction says its control must be disabled | a click on a disabled button does nothing, and the miss says the play's control was not usable |
+| A first-launch play may say `"fresh": true`, never with `after` | it states the clean start every play without `after` has |
 | A control out of a list's view is brought into view by the play first; a click on a control shown only in some states is `optional`, or made in a play that makes that state | a click never scrolls, and every required click must land |
 | A play relies on no state it doesn't make: a save, a profile, an expired timer come from its own steps, its `after` plays or the instruction | every play starts from a fresh save |
 | A window is timed from the input that sets its event off, with a margin read from the reference's samples | a fixed second misses an event that falls a little later |
-| Every input of a task play lands on the reference (`inputs_missed` empty, an optional click that found nothing aside) | an input that misses on the task's own fix makes the task ungradable |
+| Every input of a task play lands on the reference (`inputs_missed` empty, an optional click that found nothing and a disabled click on its disabled button aside) | an input that misses on the task's own fix makes the task ungradable |
 | A budget (`render`) is read in a task play of its own that goes to the view and reads nothing else | other readings and inputs change what is drawn |
 | A template game's task sets `play_args` and leaves `play_scene` null; `play_scene` only for a scene no scenario loads | naming the scenario's scene too loads it twice |
 | One finger's touches are at least 0.1 s apart; controls are touched by name | a touch that begins before the last lifts misses; a place differs between orientations, a name doesn't |

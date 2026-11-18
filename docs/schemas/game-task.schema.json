@@ -1,5 +1,5 @@
 {
-  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale, whether it went on and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`). An audio measure may read the sounds that start (`started_audible`, `sounds`, `repeats`) and select by a place (`near`). A task play may name the task plays that run before it on the same side (`after`), for a play that reads what another saves. An object or a component may be read for the light it gives off (`lit`, `glow`), and a select may ask for a part that is lit (`has.lit`). A probe may read text from a named shot of its own task play by the visual checks' model (`seen`: `shot`, a name or a list of 2 to 4, `rect`, `read` text, number or clock, `match`, `agg`; Lab game grader 1.13.0): it is a visual check, counted and switched with the judges. A widget click may be `optional`: a click on a control a game shows only in some states, no miss when nothing on screen matches it (a matched control that takes no press still is).",
+  "$comment": "godot-game-factory's task format, GameTask (game-task/1: Godot 4.7, metres, Y up): one task a game ships with, on its orphan tasks branch (Tasks/<name>.json) and, split into the agent's and the grader's parts, in its dataset. The deterministic `probe` check kind is described for task authors in docs/task-probes.md, and every task is seeded; a build check's `fails_at_start` marks a start whose scripts don't load. tools/validate-game.py checks every task in a game repo's tasks branch and in a dataset against this schema and the rules it cannot express. A task play may send touches (`tap`, `drag`: a finger down at a point of the screen or a widget's centre, held, moved, several fingers at once), and a probe may read what the renderer drew (`render`: draw calls, triangles, texture memory). A task play may also stage a contact (`pin`, `damage`, `set`); an object select may leave the player out (`player` false); a probe may read the game's lowest time scale, whether it went on and its pause (`world`), and an object's short stops and the damage a staged hit did (`frozen`, `damage_taken`). An audio measure may read the sounds that start (`started_audible`, `sounds`, `repeats`) and select by a place (`near`). A task play may name the task plays that run before it on the same side (`after`), for a play that reads what another saves. An object or a component may be read for the light it gives off (`lit`, `glow`), and a select may ask for a part that is lit (`has.lit`). A probe may read text from a named shot of its own task play by the visual checks' model (`seen`: `shot`, a name or a list of 2 to 4, `rect`, `read` text, number or clock, `match`, `agg`; Lab game grader 1.13.0): it is a visual check, counted and switched with the judges. A widget click may be `optional`: a click on a control a game shows only in some states, no miss when nothing on screen matches it (a matched control that takes no press still is). A widget click, and a touch on a widget, may name a button by its caption exactly as the screen shows it, in any language, spaces and punctuation included (matched as written first, then alike ignoring case, spaces and punctuation). A widget click may be `disabled`: a click on a button the game disables by design, landed when that button is shown but disabled (without the mark, that is a miss). A task play may say `fresh`: it starts with the game's saved data cleared, as every play without `after` does, and never has `after`.",
   "$defs": {
     "AtCamera": {
       "additionalProperties": false,
@@ -564,12 +564,25 @@
     },
     "Click": {
       "additionalProperties": false,
-      "description": "A click on the first visible Control that takes one (not disabled) whose name (a wildcard) or class\nmatches, as a player's click presses it: the mouse at its centre, the left button down and up. `optional`: a click on\nwhat a game shows only sometimes (a confirmation it asks only when a save exists): when no shown Control matches it,\nthe play goes on and the click is no input that missed; one that matches but takes no press is still a miss.",
+      "description": "A click on the first visible Control that takes one (not disabled) whose name (a wildcard) or class\nmatches, else the first button whose shown caption reads it, as a player's click presses it: the mouse at its\ncentre, the left button down and up. A caption is matched as written first (exactly as the screen shows it, in any\nscript, spaces and punctuation included), then in lower case with every run of other characters one `_`.\n`optional`: a click on what a game shows only sometimes (a confirmation it asks only when a save exists): when no\nshown Control matches it, the play goes on and the click is no input that missed; one that matches but takes no\npress is still a miss. `disabled`: a click on a button the game disables by design (a locked choice): it has\nlanded when that button is shown disabled, and does nothing, as a player's click on it; without it, that is a miss.",
       "properties": {
         "click": {
           "const": true,
           "title": "Click",
           "type": "boolean"
+        },
+        "disabled": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disabled"
         },
         "optional": {
           "anyOf": [
@@ -591,7 +604,7 @@
           "type": "number"
         },
         "widget": {
-          "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,120}$",
           "title": "Widget",
           "type": "string"
         }
@@ -2157,10 +2170,10 @@
     },
     "OnWidget": {
       "additionalProperties": false,
-      "description": "The centre of the first visible widget of that name (a wildcard) or type, whatever its kind: a Control node (a\nbutton, a stick, a panel), as a widgets select finds one.",
+      "description": "The centre of the first visible widget of that name (a wildcard) or type, whatever its kind: a Control node (a\nbutton, a stick, a panel), as a widgets select finds one; else of the first button whose caption reads it, as a\nclick's (exactly as shown first, in any script).",
       "properties": {
         "widget": {
-          "pattern": "^[A-Za-z0-9_.*?() -]{1,120}$",
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,120}$",
           "title": "Widget",
           "type": "string"
         }
@@ -3691,7 +3704,7 @@
     },
     "TaskPlay": {
       "additionalProperties": false,
-      "description": "A task-defined scripted play: `inputs` (keys, axes, widget clicks, cursor moves, teleports, waits, touches, the stages of a contact)\nsent at their times during `seconds`; its own `scene` instead of the task's play_scene (null: the project's\nmain scene) and `args` on its command line instead of the task's play_args (a flag, -name, then its values,\nbut never the grader's own: the engine flags in docs/task-probes.md section 1.1, -taskProbe*), each only when\nthe play has the key; and samples every `every` seconds (default 0.5).\n`after`: the task plays (probe or judge plays of the task) that run and end on the same side before it starts,\nfor a play that reads what another writes (a save); one that failed still counts as run. It starts on the saved data\nthose plays and the plays they name left, and on nothing else's; every other play starts clean.",
+      "description": "A task-defined scripted play: `inputs` (keys, axes, widget clicks, cursor moves, teleports, waits, touches, the stages of a contact)\nsent at their times during `seconds`; its own `scene` instead of the task's play_scene (null: the project's\nmain scene) and `args` on its command line instead of the task's play_args (a flag, -name, then its values,\nbut never the grader's own: the engine flags in docs/task-probes.md section 1.1, -taskProbe*), each only when\nthe play has the key; and samples every `every` seconds (default 0.5).\n`after`: the task plays (probe or judge plays of the task) that run and end on the same side before it starts,\nfor a play that reads what another writes (a save); one that failed still counts as run. It starts on the saved data\nthose plays and the plays they name left, and on nothing else's; every other play starts clean.\n`fresh`: the play starts with the game's save state cleared, which every play without `after` already does; it says\nso, and is never given with `after`.",
       "properties": {
         "after": {
           "anyOf": [
@@ -3733,6 +3746,19 @@
           ],
           "default": null,
           "title": "Every"
+        },
+        "fresh": {
+          "anyOf": [
+            {
+              "const": true,
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fresh"
         },
         "inputs": {
           "items": {

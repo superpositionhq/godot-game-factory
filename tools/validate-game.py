@@ -785,7 +785,7 @@ DENIED_PLAY_ARGS = {'headless', 'path', 'log-file', 'fixed-fps', 'disable-vsync'
                     'size', 'resolution', 'rendering-method', 'rendering-driver', 'write-movie'}
 DENIED_PLAY_PREFIXES = ('taskprobe',)
 # a task play's `scene` and `args` take the task's place only when present, so they have no default here
-TASK_PLAY_DEFAULTS = {'inputs': [], 'every': None, 'after': None}
+TASK_PLAY_DEFAULTS = {'inputs': [], 'every': None, 'after': None, 'fresh': None}
 
 
 def denied_play_args(args):
@@ -884,11 +884,14 @@ def task_play_errors(n, play, plays):
     look/drive, no input at or after its end, no touch that ends after it or begins less than TOUCH_GAP after its
     finger lifts, no pin on the player or both `front` of it and `at` a point, no flag of the checker's own, a scene
     path without dotted segments, waits of at most 300 s in all, its named shots each named once (20 at most), a
-    view's pitch within -89 to 89, scene loads without dotted segments, and identical to every other task play of its
-    name in the task (`plays`: those seen so far, by name)."""
+    view's pitch within -89 to 89, scene loads without dotted segments, `fresh` never with `after`, and identical to
+    every other task play of its name in the task (`plays`: those seen so far, by name)."""
     errs, pname = [], play.get('name')
     if pname in ('look', 'drive'):
         errs.append(f"check {n}: a task play can't be named {pname}")
+    if play.get('fresh') is True and play.get('after'):
+        errs.append(f"check {n}: play {pname} is fresh (it starts with the game's save state cleared) and runs after "
+                    "other plays (it starts on what they saved): name one or the other")
     secs = play.get('seconds')
     if isinstance(secs, (int, float)) and any(isinstance(i, dict) and isinstance(i.get('t'), (int, float))
                                               and i['t'] >= secs for i in play.get('inputs') or []):

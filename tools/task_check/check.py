@@ -524,24 +524,35 @@ def route_seconds(inputs):
 
 # what the probe's inputs.gd says of a widget click no shown Control matches (`_click`); a test holds the two alike
 NO_CONTROL = "no visible control that takes a click matches it, by name, class or caption"
+# the words its why holds for a click whose button is shown but disabled (`_click`); a test holds the two alike
+DISABLED = "shown but disabled"
 
 
 def missed(probe, play=None):
     """The inputs a play sent that didn't land (probe.json `inputs_missed`: a click no control took, a touch on a
     control that isn't shown, a stage that reached nothing), named screenshots left out (a shot not taken changed
-    nothing the game did); [] when there are none or the play can't say. With task play `play` (its dict), less an
-    `optional` click that found no shown Control to press: what it would press was not there, and the play went on.
-    An optional click that found its Control and didn't press it is still a miss."""
+    nothing the game did); [] when there are none or the play can't say. With task play `play` (its dict), less the
+    clicks their own marks excuse, each only for its own reason: an `optional` click that found no shown Control to
+    press (what it would press was not there, and the play went on), and a `disabled` click whose button the probe
+    found shown but disabled (it landed, and did nothing, as a player's). An optional click that found its Control
+    and didn't press it, or found it disabled, is still a miss; so is a disabled click no button matched."""
     rows = probe.get("inputs_missed") if isinstance(probe, dict) else None
     rows = [r for r in rows if isinstance(r, dict) and r.get("kind") != "shot"] if isinstance(rows, list) else []
     if not rows or not isinstance(play, dict):
         return rows
-    optional = [(float(i["t"]), i["widget"]) for i in play.get("inputs") or []
-                if isinstance(i, dict) and i.get("click") and i.get("optional") is True
-                and isinstance(i.get("t"), int | float) and isinstance(i.get("widget"), str)]
-    return [r for r in rows if not (r.get("kind") == "click" and r.get("why") == NO_CONTROL and any(
-        isinstance(r.get("t"), int | float) and abs(float(r["t"]) - t) < 1e-6 and r.get("target") == widget
-        for t, widget in optional))]
+    marked = [(float(i["t"]), i["widget"], i.get("optional") is True, i.get("disabled") is True)
+              for i in play.get("inputs") or []
+              if isinstance(i, dict) and i.get("click") and (i.get("optional") is True or i.get("disabled") is True)
+              and isinstance(i.get("t"), int | float) and isinstance(i.get("widget"), str)]
+
+    def excused(r):
+        why = r.get("why") if isinstance(r.get("why"), str) else ""
+        return r.get("kind") == "click" and isinstance(r.get("t"), int | float) and any(
+            abs(float(r["t"]) - t) < 1e-6 and r.get("target") == widget
+            and ((optional and why == NO_CONTROL) or (disabled and DISABLED in why))
+            for t, widget, optional, disabled in marked)
+
+    return [r for r in rows if not excused(r)]
 
 
 def missed_text(rows, limit=3):
@@ -643,7 +654,8 @@ class Grade:
         """None when task play `play`'s inputs all landed in this side's play (or `play` is look or drive, or it
         wasn't played); else (why it is a task error, or None; the detail when it isn't): an input that didn't land is
         the task's error when the reference's play missed one too (its own fix can't be driven by its play), else this
-        side's fail, as the Lab's grade reads it. An `optional` click that found nothing to press is no miss (missed)."""
+        side's fail, as the Lab's grade reads it. An `optional` click that found nothing to press, and a `disabled` click
+        whose button is shown but disabled, is no miss (missed)."""
         if isinstance(play, str) or not self.side.built():
             return None
         rows = missed(self.side.probe_play(play).probe, play)

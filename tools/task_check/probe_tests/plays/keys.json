@@ -29,6 +29,8 @@
     {"id": "crates_all", "kind": "objects", "select": {"tag": "crate", "inactive": true}, "fields": ["active", "hidden"]},
     {"id": "player", "kind": "objects", "select": {"player": true}, "fields": ["collision", "extent_y", "prop:health", "prop:player.health", "prop:position.y", "prop:CollisionShape3D", "scale", "speed", "x", "yaw", "z"]},
     {"id": "wide", "kind": "objects", "select": {"name": "Crate2"}, "fields": ["extent_x", "scale"]},
+    {"id": "lamp_object", "kind": "objects", "select": {"name": "Lamp"}, "fields": ["extent_x"]},
+    {"id": "lamp_part", "kind": "components", "select": {"component": "OmniLight3D"}, "fields": ["extent_y"]},
     {"id": "spinner", "kind": "components", "select": {"component": "Spinner"}, "fields": ["active", "extent_x", "prop:turns", "spin", "visible"]},
     {"id": "spin_object", "kind": "objects", "select": {"component": "MeshInstance3D", "name": "Spin*"}, "fields": ["spin"]},
     {"id": "coins", "kind": "objects", "select": {"component": "coin", "where": [{"prop": "worth", "op": "==", "value": 5}]}, "fields": ["prop:info.kind", "prop:info.sides", "prop:info.sides[1]", "prop:worth"]},

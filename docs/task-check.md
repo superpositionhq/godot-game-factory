@@ -116,7 +116,8 @@ real time and every other play runs as fast as the machine renders.
 
 Plays run in the order the task's checks first ask for them, except that a task play with `after` runs once every
 play it names has run on the same side, a failed one too, and starts on the saved data they left
-([task-probes.md](task-probes.md), section 1.1). Every other play starts clean: the checker deletes the copy's user
+([task-probes.md](task-probes.md), section 1.1). Every other play starts clean (a play may say so with
+`"fresh": true`, never beside `after`): the checker deletes the copy's user
 data folder before it, and the probe empties `user://` as the game starts. When another play ran between a play and
 the plays it names, those are played again first for their saves (`playing play_<name> again` in the log; their
 files are kept as `play_<name>_again`, their checks keep their first play's result, and a replay that ended
@@ -193,8 +194,8 @@ A task is **VALID** when all of this holds:
   probe and a required probe of weight 0 (a guard) read the same on purpose;
 - no check is a **task error**: a probe whose select (`objects`, `widgets`, `components`, `ui`) reads nothing in the
   reference's play, a play that ran to its end (unless the measure reads 0 of nothing and 0 passes: "the crates are
-  gone"), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot and an
-  `optional` click that found nothing on screen aside).
+  gone"), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot, an
+  `optional` click that found nothing on screen and a `disabled` click on its button shown disabled aside).
   No version of the game can be graded by such a check;
 - every required `judge` names a play of its own (`plays`, or a `route`), is scored by you on both sides, and the
   reference passes it (below); every required `seen` probe is read by you on both sides (below);

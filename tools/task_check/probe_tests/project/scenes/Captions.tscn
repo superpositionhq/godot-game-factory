@@ -113,3 +113,45 @@ text = "Bottom Row"
 [node name="PanelBottom" type="Panel" parent="List/Rows"]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
+
+[node name="Zh" type="Button" parent="."]
+offset_left = 100.0
+offset_top = 600.0
+offset_right = 400.0
+offset_bottom = 680.0
+focus_mode = 0
+text = "开始游戏"
+
+[node name="ZhLoose" type="Button" parent="."]
+offset_left = 100.0
+offset_top = 800.0
+offset_right = 400.0
+offset_bottom = 880.0
+focus_mode = 0
+text = "设置 · 声音"
+
+[node name="Locked" type="Button" parent="."]
+offset_left = 1400.0
+offset_top = 800.0
+offset_right = 1700.0
+offset_bottom = 880.0
+focus_mode = 0
+disabled = true
+text = "Locked Door"
+
+[node name="Sealed" type="Button" parent="."]
+offset_left = 900.0
+offset_top = 900.0
+offset_right = 1200.0
+offset_bottom = 980.0
+focus_mode = 0
+disabled = true
+text = "Sealed Gate"
+
+[node name="ZhTap" type="Button" parent="."]
+offset_left = 1400.0
+offset_top = 950.0
+offset_right = 1700.0
+offset_bottom = 1030.0
+focus_mode = 0
+text = "确定"
