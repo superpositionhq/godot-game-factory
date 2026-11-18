@@ -107,7 +107,7 @@ func _field(n: Node, f: String, dt: float) -> Variant:
 			return null
 		"extent_x", "extent_y", "extent_z":
 			# an object that draws nothing shown (no shown part with a box: an empty node, a light, a hidden one) reads 0,
-			# as the Unreal grader reads an empty actor's extent (game grader 1.14.0), never no value
+			# an object that draws nothing has an extent of 0, never no value
 			var around: Variant = Find.box(n)
 			return 0.0 if around == null else (around as AABB).size[f.substr(7)] / 2.0
 		"active":
