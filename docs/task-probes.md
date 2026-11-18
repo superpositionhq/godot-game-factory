@@ -170,7 +170,11 @@ thing instead of removing it still pass? If not, move the probe to what the play
       it takes them instead, as it would a player's. The play's `probe.log` names what it clicked, its class and how
       it was found: `clicked RetryButton (Button) by name`, `clicked Button2 (Button) by its caption "Begin Run"`.
       No match, or a button that didn't press: nothing else happens, and the click is listed in `probe.json`
-      `inputs_missed`. A button whose action already happened is usually gone: click once;
+      `inputs_missed`. A button whose action already happened is usually gone: click once. A click never scrolls: a
+      control scrolled out of its container's view is clicked at its centre, outside the view, where it takes
+      nothing (a button's miss is listed; another Control's is not), so bring it into view with the play's own
+      inputs first. Every click is required: a click that only lands on some builds (a confirmation shown only when
+      something was saved) misses where it finds nothing, so give the play the state that shows it;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
     - a mouse move: `{"t": 1.0, "move": [300, -40], "over": 1.5}` moves the mouse by [dx, dy] pixels of the frame
@@ -1320,10 +1324,13 @@ How it is graded, and its limits:
   Any input of a task play that didn't land (a named screenshot aside) fails every probe of that play on that side,
   as the Lab's grade reads it ("the play's input did not land: ..."); on the reference it is a **task error**: the
   task's own fix can't be driven by its play, and the task is invalid.
-- **A select that reads nothing on the reference is a task error.** An `objects`, `widgets` or `components` probe
-  whose select matches nothing (or nothing with a value for its field) in the whole of the reference's play, a play
+- **A select that reads nothing on the reference is a task error.** An `objects`, `widgets`, `components` or `ui`
+  probe whose select matches nothing (or nothing with a value for its field) in the whole of the reference's play, a play
   that ran to its end, can be passed by no build: the task is invalid. A measure that reads 0 of nothing (a `count`,
   or `of` `count`, `any`, `all` or `sum`) is not, where 0 passes its threshold ("the crates are gone").
+- **The same reading on both sides is no pass.** A probe that carries weight, outside `still_works`, and reads the
+  same value on the start and the fix measures nothing the change moves, whatever its threshold (a literal too): the
+  task check calls it uncalibrated, never a pass. A still-works probe and a weight-0 guard read the same on purpose.
 - **`needs`** names only earlier checks; check names are unique in the task.
 
 ### 3.1 A start that doesn't load: `fails_at_start`
@@ -1371,7 +1378,9 @@ One subject per judge; a rubric item about "every screen" only with plays that o
   over the ground, a trail behind a blade) is a judge's, with a short play and many `shots`.
 - A play's named shots (`shot` inputs, section 1.1) are shown too, every one, in the order taken, beside its `shots`
   evenly spaced ones; the check's plays times its `shots`, plus their named shots, are 20 at most.
-- A check without `plays` is shown `look` and `drive`, as before.
+- A check without `plays` is shown `look` and `drive`, which never reach what a rubric asks: `tools/validate-game.py`
+  refuses a required judge with neither `plays` nor a `route` (and warns of an optional one), and the task check never
+  calls such a task VALID. An item the pictures don't show scores 0: cannot be seen is a fail, never a pass.
 
 - A check with a `route` (a project file of key inputs `[{t, key, press}]`) is also shown that route, played by the
   grader on the graded copy (and on the start for a `before` check), 8 screenshots, after its other plays, within the
@@ -1409,11 +1418,13 @@ Before any agent is given a task, the checker grades the start and the fix with 
   `"required": false` ones included (the score is the weighted share of checks passed);
 - every required `still_works` probe passes at the start;
 - every calibrated probe, required or not, measures differently on the start and the fix (a probe that can't be
-  calibrated stops the Lab's check of the task, whichever it is);
+  calibrated stops the Lab's check of the task, whichever it is), and so does every probe that carries weight outside
+  `still_works`, whatever its threshold;
 - no probe is a task error (section 3): a select that reads nothing on the fix, a task play whose input doesn't land on
   the fix;
-- every required `judge` check, scored by the task's writer from the screenshots the check saves (section 3.2),
-  passes on the fix and fails on the start, item by item (a judge of what still looks as it did passes on both);
+- every required `judge` check names plays of its own and, scored by the task's writer from the screenshots the check
+  saves (section 3.2), passes on the fix and fails on the start, item by item (a judge of what still looks as it did
+  passes on both); an item the pictures don't show scores 0;
 - no `code_judge` is required (a model reads the change in the Lab, and nothing checks it before);
 - every required `seen` probe, read by the task's writer from the crops the check saves (section 2.22), fails on the
   start and passes on the fix; in the Lab its readings of both must also agree 3 times out of 3.
@@ -1423,10 +1434,10 @@ passes on the fix, the play's inputs landed (`inputs_missed` empty, `probe.log`)
 rows), and a judge's frames show the moment asked about. A threshold comes from the instruction, from the start or
 from calibration (section 1.2), never a number picked because the fix passes it. The fix does everything the instruction asks, in a place a play reaches.
 
-A task with no fix is checked on its start alone: the start builds, fails every required probe outside `still_works`
-(thresholds literal or relative to the start) and passes its still-works probes. Only a draft has no fix: the
-validator refuses a task without `seed.reference`. A task that fails the task check is not run; a run on an invalid
-task is void.
+A task with no fix is never valid: its oracle side can't be played, so nothing shows its checks can be passed. The
+task check still plays its start and says what it does (it builds, fails every required probe outside `still_works`,
+passes its still-works probes), and the validator refuses a task without `seed.reference`. A task that fails the task
+check is not run; a run on an invalid task is void.
 
 ## 5. Lessons
 
