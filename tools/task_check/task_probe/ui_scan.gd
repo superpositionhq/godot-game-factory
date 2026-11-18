@@ -73,8 +73,10 @@ static func visible(c: Control) -> bool:
 
 static func reachable(c: Control) -> bool:
 	## where an input may land, as a player presses it: shown (itself and everything above it, its canvas layer too),
-	## the modulate of it and every canvas item above it above the floor, inside the frame (one of no size counts).
-	## Its own self_modulate and clipping don't count: an invisible hit area over art is pressed like any button.
+	## the modulate of it and every canvas item above it above the floor, inside the frame (one of no size counts), and
+	## its centre, where a click or a touch goes, inside every Control above it that clips what it holds (a list
+	## scrolled so it is out of view: the engine gives a press outside a clipping Control to nothing inside it).
+	## Its own self_modulate and clip_contents don't count: an invisible hit area over art is pressed like any button.
 	if not c.is_visible_in_tree():
 		return false
 	var above := 1.0
@@ -87,7 +89,22 @@ static func reachable(c: Control) -> bool:
 	var r := box(c)
 	if r.size.x <= 0.0 or r.size.y <= 0.0:
 		return true
-	return in_frame(c)
+	return in_frame(c) and not clipped_out(c)
+
+
+static func clipped_out(c: Control) -> bool:
+	## whether its centre lies outside a Control above it that clips what it holds (clip_contents, as a ScrollContainer
+	## has it), in that Control's own rectangle as the engine tests a press
+	var centre_at := c.get_global_transform_with_canvas() * (c.size / 2.0)
+	var at := c.get_parent()
+	while at is Control:
+		var holder := at as Control
+		if holder.clip_contents:
+			var local := holder.get_global_transform_with_canvas().affine_inverse() * centre_at
+			if not Rect2(Vector2.ZERO, holder.size).has_point(local):
+				return true
+		at = at.get_parent()
+	return false
 
 
 static func drawn(c: Control) -> bool:

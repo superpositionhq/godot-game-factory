@@ -413,8 +413,8 @@ looks up and a positive yaw turns left.
   a signal's range, any limit the instruction gives); walk or drive there instead.
 - **A play never repeats an action that already happened.** A second click on Continue or Retry after the first
   worked finds no button (it is gone) and is a miss in `inputs_missed`: each click once, while its control is there.
-- **A click never scrolls.** A control below a list's visible area is clicked at its centre, outside the view, and
-  takes nothing: the play brings it into view first with a player's own inputs.
+- **A click never scrolls.** A control whose centre is below a list's visible area can't be reached, and the click
+  is a miss: the play brings it into view first with a player's own inputs.
 - **An optional click is for a control that appears only in some states**, never to hide a click that should land.
   `"optional": true` on a widget click is for a control the game shows only sometimes (a confirmation that appears
   only when something exists): when nothing on screen matches it, the play goes on. A miss is how a play says it

@@ -331,7 +331,9 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   inside the frame, and not wholly outside a `clip_contents` Control above it; a Control of no size counts as on
   screen, and another Control covering it is not looked at. A widget click and a touch on a widget find their
   Control by `UiScan.reachable` instead: shown and the `modulate` alphas above the floor, inside the frame (a
-  Control of no size counts), its own `self_modulate` and clipping not counted, so an invisible hit area a player
+  Control of no size counts), its centre inside every `clip_contents` Control above it (the engine gives a press
+  outside a clipping Control to nothing in it, so a control scrolled out of a list's view is not reachable), its own
+  `self_modulate` and `clip_contents` not counted, so an invisible hit area a player
   presses is pressed. How text is read: task-probes.md 2.6.
 - **pieces** (`queries/pieces.gd`): over every node in the tree (`Find.all_nodes`, not the probe's own): a
   `MeshInstance3D` whose mesh has faces (`Mesh.get_faces().size() / 3` triangles, read once a mesh a sample) is one

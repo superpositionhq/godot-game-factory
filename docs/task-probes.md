@@ -171,9 +171,9 @@ thing instead of removing it still pass? If not, move the probe to what the play
       it was found: `clicked RetryButton (Button) by name`, `clicked Button2 (Button) by its caption "Begin Run"`.
       No match, or a button that didn't press: nothing else happens, and the click is listed in `probe.json`
       `inputs_missed`. A button whose action already happened is usually gone: click once. A click never scrolls: a
-      control scrolled out of its container's view is clicked at its centre, outside the view, where it takes
-      nothing (a button's miss is listed; another Control's is not), so bring it into view with the play's own
-      inputs first. A click is required unless it says `"optional": true`: `{"t": 2.0, "widget": "ConfirmButton",
+      control whose centre is scrolled out of its container's view (outside a Control above it that clips what it
+      holds) is not one a click can reach, and the click is a miss, so bring it into view with the play's own inputs
+      first. A click is required unless it says `"optional": true`: `{"t": 2.0, "widget": "ConfirmButton",
       "click": true, "optional": true}` is for a control a game shows only in some states (a confirmation shown only
       when something was saved). When no shown control matches an optional click, nothing is pressed, the play goes
       on and the click is no miss (the probe still lists it in `inputs_missed`; the checker and the Lab's grader
@@ -337,7 +337,8 @@ A spot is a point of the screen `[fx, fy]` in fractions 0-1 from its top left, o
 of the first visible, laid-out widget of that name (a wildcard) or type, whatever its kind (a button, a stick, a
 panel): a `Control` node, found as a `widgets` select finds one (section 2.6), by its node name first, then by its
 class, then by the caption a button shows, as a widget click finds one (section 1.1: `{"widget": "tap_me"}` touches a
-button reading "Tap Me"). Name the widget where you can: its place differs between landscape and portrait, its name
+button reading "Tap Me"); a widget whose centre is scrolled out of its container's view is not found, as for a click.
+Name the widget where you can: its place differs between landscape and portrait, its name
 and its caption do not. A
 widget's spot is where it is when the finger goes down.
 

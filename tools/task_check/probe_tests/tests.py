@@ -250,7 +250,7 @@ def check_captions(c, found):
     pressed = re.findall(r"^PRESSED (\w+)", game_log, re.M)
     note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
     c.eq("each control the play named by its shown text is pressed once, in the order sent", pressed,
-         ["Button2", "Start", "AgainHigh", "PlayNow", "Button4"])
+         ["Button2", "Start", "AgainHigh", "PlayNow", "Button4", "ListTop", "PanelTop"])
     c.true("a click by a caption, whatever its case and spacing: probe.log says how it was found",
            'clicked Button2 (Button) by its caption "Begin Run"' in note, note[-1500:])
     c.true("a name wins over another button's caption", "clicked Start (Button) by name" in note, note[-1500:])
@@ -260,9 +260,16 @@ def check_captions(c, found):
     c.true("a label on a button with no text of its own is its caption",
            'clicked PlayNow (TextureButton) by its caption "Play  Now"' in note, note[-1500:])
     c.true("a tap by a caption", 'finger 0 goes down on Button4 (Button) by its caption "Tap Me"' in note, note[-1500:])
-    c.eq("text that isn't shown, and no match, are misses", [(m["t"], m["kind"], m["target"])
-                                                              for m in probe.get("inputs_missed", [])],
-         [(2.5, "click", "hidden_word"), (3.0, "click", "nothing_here")])
+    c.true("a button and a panel in a list's view are clicked", "clicked ListTop (Button) by name" in note
+           and "clicked PanelTop (Panel) by name" in note, note[-1500:])
+    nothing = "no visible control that takes a click matches it, by name, class or caption"
+    c.eq("text that isn't shown, no match, a button and a panel scrolled out of the list's view (their centre outside "
+         "it: a click there would land outside it), and an optional click with no match (the probe sends it as any; "
+         "the checker leaves its miss out) are misses, each of no control",
+         [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])],
+         [(2.5, "click", "hidden_word", nothing), (3.0, "click", "nothing_here", nothing),
+          (4.1, "click", "ListBottom", nothing), (4.3, "click", "PanelBottom", nothing),
+          (4.5, "click", "maybe_later", nothing)])
 
 
 def check_second(c, found):

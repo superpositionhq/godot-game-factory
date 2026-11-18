@@ -10,7 +10,12 @@
     {"t": 2.0, "widget": "play_now", "click": true},
     {"t": 2.5, "widget": "hidden_word", "click": true},
     {"t": 3.0, "widget": "nothing_here", "click": true},
-    {"t": 3.5, "tap": {"widget": "TAP_ME"}, "finger": 0}
+    {"t": 3.5, "tap": {"widget": "TAP_ME"}, "finger": 0},
+    {"t": 3.7, "widget": "ListTop", "click": true},
+    {"t": 3.9, "widget": "PanelTop", "click": true},
+    {"t": 4.1, "widget": "ListBottom", "click": true},
+    {"t": 4.3, "widget": "PanelBottom", "click": true},
+    {"t": 4.5, "widget": "maybe_later", "click": true, "optional": true}
   ],
   "queries": []
 }
