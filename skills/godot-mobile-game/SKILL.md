@@ -155,10 +155,12 @@ player as the product, the rule here is the one that applies.
   virtual stick's area, the open playfield). The checker's own `drive` play is by touch on a mobile game: a left thumb at the
   lower left pushed along the route, a tap at the lower right. A brief written for a mobile game never asks for a
   key or a mouse. A touch whose control isn't on screen is a miss (`inputs_missed`): on the reference it makes the
-  task INVALID (its own fix can't be driven by the play), on the start it fails that play's checks. So is a touch on
-  a control whose centre is scrolled out of its container's view (outside a scroll container or any parent that clips
-  its contents, at any depth), as a player can't touch what is scrolled out of view: drag the list first with a
-  finger, then tap the control (godot-write-tasks, "A click never scrolls"). Read both sides'
+  task INVALID (its own fix can't be driven by the play), on the start it fails that play's checks. A tap on a control
+  that only the lists it sits in hide scrolls them to it and lands, as a player's thumb scrolls to it, so never
+  script a swipe just to bring a control into view; a control hidden any other way, and a drag's control out of view,
+  is a miss (godot-write-tasks, "A click scrolls its own list"). A tap on a control under a dialog, a popup or an
+  overlay is a miss that says it is covered: close it first with the player's own touch (godot-write-tasks, "A
+  covered control can't be clicked"). Read both sides'
   `probe.log` in the no-op and oracle check (godot-write-tasks, "The no-op and the oracle, on your own machine").
 - Good mobile threads to look for in your history: a control that was too small or badly placed and took rounds to
   fix, a layout broken in the game's orientation, a view over a budget brought back under it (the `render` reading

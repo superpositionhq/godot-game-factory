@@ -5,7 +5,9 @@ extends RefCounted
 ## press, a drag, several fingers at once) and the phone's back button; and the grader's own stages: cursor moves,
 ## teleports of the player (held there for a while when asked), waits in real time, named screenshots, scene loads,
 ## view turns, and the stages of a contact: an object pinned at a place, a hit through the game's take_damage, a
-## property set.
+## property set. A click or a tap on a Control that only its own scroll areas hide scrolls them to it, as a player
+## would, and presses in the next frame; one on a Control something else is over presses nothing. A shot may wait for
+## an event (`when`): it is taken in the first frame at or after its time in which the event's reading meets its expect.
 
 const Find := preload("find.gd")
 const UiScan := preload("ui_scan.gd")
@@ -41,6 +43,10 @@ const PAD_AXES := {
 }
 ## the control that is the phone's back button in a mobile game's play (the spec says `touch`)
 const BACK := "<keyboard>/escape"
+const COVERED := "covered by another control"  ## the why of a click or a tap something else takes (check.COVERED)
+const NEVER := "its event never happened"  ## the why of a shot whose event didn't come in time (check.NEVER)
+const UNPRESSED := "its scroll area was scrolled to it, but the play ended before the press"
+const UNREAD := "its event can't be read (probe.log)"  ## a shot whose event's query or match can't be made
 const WARM := 0.2  ## seconds before an input's time from which its has.lit selects are looked at every frame
 const LIT_WAIT := 1.0  ## seconds an input whose has.lit select waits for a part's first drawing is held back at most
 
@@ -68,6 +74,8 @@ var _hits: Dictionary = {}  # the node whose take_damage a damage stage called, 
 var _wait_for := 0.0
 var _wait_frames := 0
 var _wait_start := 0
+var _again: Dictionary = {}  # a click or a tap whose Control was scrolled into view: sent once more in the next frame
+var _awaited: Array[Dictionary] = []  # shots waiting for their event: {name, t, until, field, of, op, value, match, query}
 
 
 func _init(owner: Node, spec: Variant, touch: bool = false) -> void:
@@ -129,9 +137,15 @@ static func _kind(row: Dictionary) -> String:
 
 func send(elapsed: float) -> void:
 	## every input due at play time `elapsed`, then the part due by now of what is under way (a finger's path, a
-	## click's release); stops at a wait (the inputs after it wait for its end)
+	## click's release); stops at a wait (the inputs after it wait for its end), and at a click or a tap that scrolled
+	## its Control into view: that one is sent once more first in the next frame, once the layout has followed, and the
+	## inputs after it wait for it, so their order stays
 	_step(elapsed)
-	while not waiting and _next < rows.size() and _at(rows[_next]) <= elapsed + 1e-9:
+	if not _again.is_empty():
+		var row := _again
+		_again = {}
+		_send_one(row, elapsed, true)
+	while _again.is_empty() and not waiting and _next < rows.size() and _at(rows[_next]) <= elapsed + 1e-9:
 		var row := rows[_next]
 		if _lit_waits.get(_next, false) and elapsed < _at(row) + LIT_WAIT:
 			break  # who it picks isn't known before the part's first drawing is read: sent in a later frame
@@ -198,7 +212,15 @@ static func _keep(n: Node, spot: Vector3) -> void:
 
 
 func finish() -> void:
-	## the play is over: no finger and no button stays down
+	## the play is over: no finger and no button stays down. A click or a tap still to be sent once more after its scroll
+	## is a miss (UNPRESSED), and so is every shot still waiting for its event (NEVER).
+	if not _again.is_empty():
+		var kind := _kind(_again)
+		_miss(_again, kind, Find.text(_again, "widget") if kind == "click" else _spot_name(_again.get("tap")), UNPRESSED)
+		_again = {}
+	for awaited in _awaited:
+		_never(awaited)
+	_awaited.clear()
 	for touch in _touching:
 		if touch["down"]:
 			_touch_event(touch["finger"], touch["last"], false)
@@ -224,12 +246,13 @@ func _miss(row: Dictionary, kind: String, target: String, why: String) -> void:
 	probe.note("missed: %s %s at %.2f s: %s" % [kind, target, _at(row), why])
 
 
-func _send_one(row: Dictionary, elapsed: float) -> void:
+func _send_one(row: Dictionary, elapsed: float, again: bool = false) -> void:
+	## one input; `again`: a click or a tap sent once more after its Control was scrolled into view (it scrolls no more)
 	match _kind(row):
 		"click":
-			_click(row, elapsed)
+			_click(row, elapsed, again)
 		"tap", "drag":
-			_touch(row, elapsed)
+			_touch(row, elapsed, again)
 		"cursor":
 			var xy := Find.numbers(row.get("cursor"), 2)
 			_move_cursor(UiScan.fraction(xy[0], xy[1]), Vector2.ZERO)
@@ -259,7 +282,9 @@ func _send_one(row: Dictionary, elapsed: float) -> void:
 		"set":
 			_write(row)
 		"shot":
-			if not probe.shot(Find.text(row, "shot")):
+			if row.get("when") is Dictionary:
+				_await_event(row)
+			elif not probe.shot(Find.text(row, "shot")):
 				_miss(row, "shot", Find.text(row, "shot"), "its name isn't a letter or _ first, then letters, digits, _")
 		"scene":
 			if not probe.load_scene(Find.text(row, "scene")):
@@ -427,13 +452,17 @@ func _control(path: String, value: float, is_axis: bool) -> void:
 		probe.error("inputs: no device for " + path)
 
 
-func _click(row: Dictionary, _elapsed: float) -> void:
+func _click(row: Dictionary, _elapsed: float, again: bool = false) -> void:
 	## a click on a widget: the mouse moved to its centre, the left button pressed, and let go in the next frame
 	## (`widget`: a Control's name or class, else the shown caption of a button, UiScan.by_caption: a name or a class
 	## wins over a caption, a caption as written over one alike; a matching button shown but disabled is a miss that
-	## says so, UiScan.disabled_button). The control is chosen as if nothing clipped it; when the one chosen is
-	## scrolled out of its container's view (UiScan.clipped_out), nothing is sent and the click is a miss that says so
-	## (scrolled_out), whatever its marks.
+	## says so, UiScan.disabled_button). The control is chosen as if nothing clipped it. When the one chosen is scrolled
+	## out of its container's view (UiScan.clipped_out) and its own scroll areas alone hide it, they scroll to it
+	## (UiScan.scroll_into_view) and the click is made once more in the next frame (`again`: it scrolls no more); when
+	## nothing can show it, or it is still out of view, nothing is sent and the click is a miss that says so
+	## (scrolled_out), whatever its marks. When no Control matches on screen, one the scroll areas it lies in alone hide
+	## is scrolled to (UiScan.scrolled_away). When a press at its centre would go to something else (UiScan.press_reaches),
+	## nothing is sent and the click is a miss, COVERED, whatever its marks.
 	var want := Find.text(row, "widget")
 	var found: Control = null
 	var how := ""
@@ -458,17 +487,40 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 			var shown: Control = off[0]
 			var by: String = off[1]
 			if UiScan.clipped_out(shown):
+				if not again and _scroll_to(row, shown, "click", want):
+					return
 				_miss(row, "click", want, scrolled_out(shown, by))
+				return
+			var lid := _over(shown)
+			if lid != "":
+				probe.note("%s (%s) matches '%s', shown but disabled, and %s is over it: not clicked"
+					% [shown.name, Find.class_of(shown), want, lid])
+				_miss(row, "click", want, COVERED)
 				return
 			_miss(row, "click", want, "a button matches it (%s (%s) by %s), shown but disabled: the click does nothing"
 				% [shown.name, Find.class_of(shown), "its " + by if by.begins_with("caption") else by])
 			return
+		if not again:
+			# nothing on screen matches: one only its scroll areas hide is scrolled to, as a player scrolls a list to
+			# it, and the click is made once more in the next frame
+			var away: Array = UiScan.scrolled_away(want, true)
+			if not away.is_empty() and _scroll_to(row, away[0] as Control, "click", want):
+				return
 		_miss(row, "click", want, "no visible control that takes a click matches it, by name, class or caption")
 		return
 	if UiScan.clipped_out(found):
-		# its centre is outside the view of a container above it: a press there reaches nothing in that view, so
-		# nothing is sent, and neither `optional` nor `disabled` excuses the miss (the play scrolls first)
+		# its centre is outside the view of a container above it: its own scroll areas scroll to it when they alone hide
+		# it; otherwise (a Control that only clips, or still out of view once scrolled) a press there reaches nothing in
+		# that view, so nothing is sent, and neither `optional` nor `disabled` excuses the miss
+		if not again and _scroll_to(row, found, "click", want):
+			return
 		_miss(row, "click", want, scrolled_out(found, how))
+		return
+	var over := _over(found)
+	if over != "":
+		# a player's press at its centre goes to what is over it: nothing is sent, and no mark excuses the miss
+		probe.note("%s (%s) matches '%s', but %s is over it: not clicked" % [found.name, Find.class_of(found), want, over])
+		_miss(row, "click", want, COVERED)
 		return
 	var label := "%s (%s)" % [found.name, Find.class_of(found)]
 	var taken := [false]
@@ -480,6 +532,24 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 	_button(MOUSE_BUTTON_LEFT, true)
 	_clicks.append({"row": row, "label": label, "frames": 0, "watched": watched, "taken": taken})
 	probe.note("clicked %s by %s" % [label, "its " + how if how.begins_with("caption") else how])
+
+
+func _scroll_to(row: Dictionary, c: Control, kind: String, want: String) -> bool:
+	## a click or a tap on `c`, which only its scroll areas hide: they scroll to it (UiScan.scroll_into_view) and the
+	## input is sent once more in the next frame (_again); false when nothing can show it (nothing moved)
+	var moved := UiScan.scroll_into_view(c)
+	if moved == "":
+		return false
+	probe.note("scrolled %s to show %s (%s) for the %s on '%s'" % [moved, c.name, Find.class_of(c), kind, want])
+	_again = row
+	return true
+
+
+static func _over(c: Control) -> String:
+	## what a press at `c`'s centre goes to instead of it (UiScan.press_reaches); "" when it comes to `c` or that can't
+	## be told
+	var read: Array = UiScan.press_reaches(c, UiScan.press_point(c))
+	return read[1] if read[0] == 1 else ""
 
 
 static func scrolled_out(c: Control, by: String) -> String:
@@ -540,9 +610,12 @@ static func _spot_label(value: Variant) -> String:
 	return "(%s)" % _spot_name(value)
 
 
-func _touch(row: Dictionary, elapsed: float) -> void:
+func _touch(row: Dictionary, elapsed: float, again: bool = false) -> void:
 	## a finger going down: its spots are found now (a widget's centre as it is laid out at this moment), then it is
-	## sent a part each frame until it lifts
+	## sent a part each frame until it lifts. A tap on a widget that only its own scroll areas hide scrolls them to it
+	## and is made once more in the next frame (`again`), as a click is; one on a widget something else is over
+	## (UiScan.press_reaches) is a miss, COVERED. A drag scrolls nothing and is not asked what is over its widget: its
+	## spots are taken as they are.
 	var drag := row.has("drag")
 	var kind := "drag" if drag else "tap"
 	var spots: Array = row.get("drag") if drag and row.get("drag") is Array else [row.get("tap")]
@@ -557,6 +630,20 @@ func _touch(row: Dictionary, elapsed: float) -> void:
 		if touch["finger"] == finger and not touch["finished"]:
 			_miss_touch(row, kind, _spot_name(spots[0]), "finger %d is still down from an earlier touch" % finger)
 			return
+	var on_widget := not drag and spots[0] is Dictionary
+	if on_widget and not again:
+		var want := Find.text(spots[0], "widget")
+		var seen: Array = UiScan.spot_widget(want)
+		var hidden: Control = null
+		if not seen.is_empty():
+			if UiScan.clipped_out(seen[0] as Control):
+				hidden = seen[0]
+		else:
+			var away: Array = UiScan.scrolled_away(want, false)
+			if not away.is_empty():
+				hidden = away[0]
+		if hidden != null and _scroll_to(row, hidden, "tap", want):
+			return
 	var points: Array[Vector2] = []
 	for spot: Variant in spots:
 		var at: Variant = _spot(spot)
@@ -564,6 +651,14 @@ func _touch(row: Dictionary, elapsed: float) -> void:
 			_miss_touch(row, kind, _spot_name(spot), _no_spot(spot))
 			return
 		points.append(at)
+	if on_widget:
+		var tapped := UiScan.named(Find.text(spots[0], "widget"))
+		var over := _over(tapped) if tapped != null else ""
+		if over != "":
+			probe.note("%s (%s) matches '%s', but %s is over it: not tapped"
+				% [tapped.name, Find.class_of(tapped), _spot_name(spots[0]), over])
+			_miss_touch(row, kind, _spot_name(spots[0]), COVERED)
+			return
 	var touch := {
 		"kind": kind, "finger": finger, "points": points, "start": elapsed, "last": points[0], "down": true, "finished": false,
 		"over": clampf(Find.num(row, "over"), 0.0, 120.0) if drag else 0.0, "hold": clampf(Find.num(row, "hold"), 0.0, 120.0),
@@ -607,6 +702,173 @@ func _touch_event(finger: int, at: Vector2, down: bool) -> void:
 	event.position = at
 	event.pressed = down
 	_parse(event)
+
+
+# ---------------------------------------------------------------- shots that wait for an event
+
+
+func _await_event(row: Dictionary) -> void:
+	## a `shot` input with `when` (the checker writes it {"query", "field", "of", "match", "op", "value", "within"}):
+	## from its time it waits for its event, `within` seconds at most when it says (else to the play's end), reading its
+	## own query (made as the play's are, TaskProbe.own_query) every frame of the clock (watch_events). One whose query
+	## or match can't be made is a miss at once (UNREAD).
+	var when := Find.obj(row, "when")
+	var name := Find.text(row, "shot")
+	var field := Find.text(when, "field")
+	var of := Find.text(when, "of")
+	var op := Find.text(when, "op")
+	var waits := {
+		"name": name, "t": _at(row), "field": field if field != "" else "count", "of": of if of != "" else "count",
+		"op": op if op != "" else ">=", "value": Find.num(when, "value", 1.0), "match": null, "query": null,
+		"until": _at(row) + Find.num(when, "within") if Find.has_num(when, "within") else INF,
+	}
+	var pattern := Find.text(when, "match")
+	if pattern != "":
+		var re := RegEx.new()
+		if re.compile(pattern, false) != OK:
+			probe.error("inputs: the shot %s's event: the match regex %s doesn't compile" % [name, pattern])
+			_miss(row, "shot_when", name, UNREAD)
+			return
+		waits["match"] = re
+	waits["query"] = probe.own_query("when_" + name, Find.obj(when, "query"))
+	if waits["query"] == null:
+		_miss(row, "shot_when", name, UNREAD)
+		return
+	_awaited.append(waits)
+	probe.note("the shot %s waits for its event (%s %s %s) %s" % [name, waits["field"], waits["op"], waits["value"],
+		"until %.2f s" % waits["until"] if Find.has_num(when, "within") else "until the play's end"])
+
+
+func watch_events(elapsed: float) -> void:
+	## after the game logic of a frame of the play's clock: a shot whose event's reading meets its expect now is taken in
+	## this frame (at its end, as drawn); one whose time is up without it is a miss (NEVER)
+	if _awaited.is_empty():
+		return
+	var still: Array[Dictionary] = []
+	for waits in _awaited:
+		var read: Variant = _event_reading(waits, elapsed)
+		if read != null and _meets(read, waits["op"], waits["value"]):
+			probe.note("the shot %s's event: %s reads %s" % [waits["name"], waits["field"], read])
+			if not probe.shot(waits["name"]):
+				missed.append({"t": waits["t"], "kind": "shot", "target": waits["name"],
+					"why": "its name isn't a letter or _ first, then letters, digits, _"})
+		elif elapsed > float(waits["until"]) + 1e-9:
+			_never(waits)
+		else:
+			still.append(waits)
+	_awaited = still
+
+
+func _never(waits: Dictionary) -> void:
+	missed.append({"t": waits["t"], "kind": "shot_when", "target": waits["name"], "why": NEVER})
+	probe.note("missed: shot_when %s at %.2f s: %s" % [waits["name"], waits["t"], NEVER])
+
+
+static func _event_reading(waits: Dictionary, elapsed: float) -> Variant:
+	## the event's reading now, as the checker reduces one sample of its measure (probes.series): a count, how many its
+	## query matched; any other field each row's number (a boolean 1 or 0, a string 1 or 0 by `match`, others left out)
+	## combined by `of`, or, when more matched than the rows hold, from the sample's summary of every match. Null when
+	## nothing gives a value.
+	var sample := {"t": elapsed}
+	waits["query"].sample(elapsed, sample)
+	if sample.get("pending", false) or not (sample.get("rows") is Array):
+		return null
+	var rows: Array = sample["rows"]
+	var total := float(rows.size())
+	if Find.has_num(sample, "total") and Find.num(sample, "total") > rows.size():
+		total = Find.num(sample, "total")
+	var field: String = waits["field"]
+	var of: String = waits["of"]
+	if field == "count":
+		return total
+	if total > rows.size() and waits["match"] == null and of != "first":
+		var summed: Variant = _from_summary(Find.obj(Find.obj(sample, "full"), field), of)
+		if not (summed is bool):
+			return summed
+	var values: Array[float] = []
+	for item: Variant in rows:
+		if not (item is Dictionary) or not (item as Dictionary).has(field):
+			continue
+		var v: Variant = item[field]
+		if v is bool:
+			values.append(1.0 if v else 0.0)
+		elif (v is float or v is int) and not is_nan(float(v)) and not is_inf(float(v)):
+			values.append(float(v))
+		elif v is String and waits["match"] != null:
+			values.append(1.0 if (waits["match"] as RegEx).search(v) != null else 0.0)
+	return _combined(values, of)
+
+
+static func _from_summary(full: Dictionary, of: String) -> Variant:
+	## `of` over every match from a sample's summary of one field (n, nonzero, sum, min, max); false when the summary
+	## lacks a count (the rows are read instead, as the checker's probes.every_match does)
+	if not (Find.has_num(full, "n") and Find.has_num(full, "nonzero") and Find.has_num(full, "sum")):
+		return false
+	var n := Find.num(full, "n")
+	var nonzero := Find.num(full, "nonzero")
+	var sum := Find.num(full, "sum")
+	match of:
+		"count":
+			return nonzero
+		"any":
+			return 1.0 if nonzero > 0.0 else 0.0
+		"all":
+			return 1.0 if n > 0.0 and nonzero == n else 0.0
+		"sum":
+			return sum
+	if n == 0.0:
+		return null
+	if of == "mean":
+		return sum / n
+	return Find.num(full, of) if Find.has_num(full, of) else null  # min, max
+
+
+static func _combined(values: Array[float], of: String) -> Variant:
+	## one sample's row values combined by `of`, as the checker's probes.combine
+	match of:
+		"count":
+			return float(values.filter(func(v: float) -> bool: return v != 0.0).size())
+		"any":
+			return 1.0 if values.any(func(v: float) -> bool: return v != 0.0) else 0.0
+		"all":
+			return 1.0 if not values.is_empty() and values.all(func(v: float) -> bool: return v != 0.0) else 0.0
+		"sum":
+			var sum := 0.0
+			for v in values:
+				sum += v
+			return sum
+	if values.is_empty():
+		return null
+	match of:
+		"min":
+			return values.min()
+		"max":
+			return values.max()
+		"mean":
+			var whole := 0.0
+			for v in values:
+				whole += v
+			return whole / values.size()
+	return values[0]  # first
+
+
+static func _meets(value: float, op: String, limit: float) -> bool:
+	## a reading against its expect, as the checker compares one (== and != within 1e-9, as probes.holds)
+	var same := absf(value - limit) <= maxf(1e-9, 1e-9 * maxf(absf(value), absf(limit)))
+	match op:
+		">":
+			return value > limit
+		">=":
+			return value >= limit
+		"<":
+			return value < limit
+		"<=":
+			return value <= limit
+		"==":
+			return same
+		"!=":
+			return not same
+	return false
 
 
 # ---------------------------------------------------------------- teleports

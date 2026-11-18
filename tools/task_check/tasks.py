@@ -141,12 +141,17 @@ def measure(m):
     measure's `rect` (the whole frame when unset), an audio measure's `select` ({} when unset), a ui measure's
     `select` ({} when unset), `of` ("count") and `match` (None), a pieces measure's `select` ({} when unset), a ground
     measure's `xz`, `box`, `select` (None when unset) and `grid` (8), a drawn measure's `near` and `line` (None when
-    unset), and a seen measure's `rect`, `match` and `agg` (None when unset)."""
+    unset), and a seen measure's `rect`, `match` and `agg` (None when unset). A sampled measure's `since` is kept only
+    where set, as an event (event)."""
     out = dict(m)
     kind = out["probe"]
     if kind in SAMPLED:
         for k in ("window", "at", "agg", "to_angle", "to_axis"):
             out.setdefault(k, None)
+        if out.get("since") is not None:
+            out["since"] = event(out["since"])
+        else:
+            out.pop("since", None)
         if kind in ("objects", "widgets", "components"):
             out.setdefault("of", "count")
             out.setdefault("match", None)
@@ -179,6 +184,13 @@ def measure(m):
     return out
 
 
+def event(e):
+    """A measure's `since` or a shot's `when` (docs/task-probes.md): its measure with its defaults (measure), its
+    `expect` ({op, value}, the value a number) and `within` (None when unset)."""
+    return {"measure": measure(e["measure"]), "expect": {"op": e["expect"]["op"], "value": float(e["expect"]["value"])},
+            "within": float(e["within"]) if e.get("within") is not None else None}
+
+
 def spot(value):
     """A touch's place as the probe reads it: a point of the screen [fx, fy], or {"widget": name}."""
     return {"widget": value["widget"]} if isinstance(value, dict) else _floats(value)
@@ -187,7 +199,8 @@ def spot(value):
 def inputs(rows):
     """A task play's inputs as the probe reads them: keys, axes, clicks (`optional` and `disabled` only when set), cursor moves, teleports (`yaw` 0 when unset:
     a teleport always turns the player), teleports next to an object (`distance` 2 m and `offset` 0 when unset, `face`
-    only when set), either with `hold` only when set, waits in real time, named shots, scene loads, view turns,
+    only when set), either with `hold` only when set, waits in real time, named shots (`when`, an event, only when
+    set), scene loads, view turns,
     touches (`tap`, `drag`: `finger` 0 unless said, `hold` and `over` only when set), and the stages of a contact
     (docs/task-probes.md, section 1.4): an object pinned (`offset` 0 when unset, `front` and `at` only when set), a hit
     through the game's damage method (`from` only when set), a property set (`all` false unless said)."""
@@ -205,6 +218,8 @@ def inputs(rows):
             row.update(wait=float(r["wait"]))
         elif "shot" in r:
             row.update(shot=r["shot"])
+            if r.get("when") is not None:
+                row["when"] = event(r["when"])
         elif "scene" in r:
             row.update(scene=r["scene"])
         elif "view" in r:

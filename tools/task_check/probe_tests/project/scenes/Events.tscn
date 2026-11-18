@@ -1,0 +1,26 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/events.gd" id="1"]
+
+[node name="Events" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1")
+
+[node name="Score" type="Label" parent="."]
+offset_left = 100.0
+offset_top = 100.0
+offset_right = 500.0
+offset_bottom = 160.0
+text = "SCORE 0"
+
+[node name="Banner" type="Label" parent="."]
+visible = false
+offset_left = 100.0
+offset_top = 300.0
+offset_right = 500.0
+offset_bottom = 360.0
+text = "YOU WIN"
