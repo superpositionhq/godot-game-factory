@@ -195,7 +195,8 @@ A task is **VALID** when all of this holds:
 - no check is a **task error**: a probe whose select (`objects`, `widgets`, `components`, `ui`) reads nothing in the
   reference's play, a play that ran to its end (unless the measure reads 0 of nothing and 0 passes: "the crates are
   gone"), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot, an
-  `optional` click that found nothing on screen and a `disabled` click on its button shown disabled aside).
+  `optional` click that found nothing on screen and a `disabled` click on its button shown disabled aside; a click on
+  a control scrolled out of its container's view is never set aside).
   No version of the game can be graded by such a check;
 - every required `judge` names a play of its own (`plays`, or a `route`), is scored by you on both sides, and the
   reference passes it (below); every required `seen` probe is read by you on both sides (below);

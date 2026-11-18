@@ -181,15 +181,21 @@ thing instead of removing it still pass? If not, move the probe to what the play
       it takes them instead, as it would a player's. The play's `probe.log` names what it clicked, its class and how
       it was found: `clicked RetryButton (Button) by name`, `clicked Button2 (Button) by its caption "Begin Run"`.
       No match, or a button that didn't press: nothing else happens, and the click is listed in `probe.json`
-      `inputs_missed`. A button whose action already happened is usually gone: click once. A click never scrolls: a
-      control whose centre is scrolled out of its container's view (outside a Control above it that clips what it
-      holds) is not one a click can reach, and the click is a miss, so bring it into view with the play's own inputs
-      first. A click is required unless it says `"optional": true`: `{"t": 2.0, "widget": "ConfirmButton",
+      `inputs_missed`. A button whose action already happened is usually gone: click once. A click never scrolls: the
+      control is found as above, and when its centre, where the press goes, is outside the visible part of any
+      Control above it that clips what it holds (a `ScrollContainer`'s view, at any depth of nesting), nothing is
+      sent and the click is a miss that says `scrolled out of its container's view` (`a control matches it
+      (ListBottom (Button) by name), scrolled out of its container's view: a press at its centre lands outside the
+      view`). The click is not passed on to the next control that matches, and neither `optional` nor `disabled`
+      (below) excuses this miss: a player can't press what is scrolled out of view, so the play scrolls the list
+      first with the player's own input (the wheel, a drag, the keys the game scrolls with). A button wholly out of
+      the view shows no caption, so a click that names only its caption finds nothing (a miss of no control, which
+      `optional` excuses). A click is required unless it says `"optional": true`: `{"t": 2.0, "widget": "ConfirmButton",
       "click": true, "optional": true}` is for a control a game shows only in some states (a confirmation shown only
       when something was saved). When no shown control matches an optional click, nothing is pressed, the play goes
       on and the click is no miss (the probe still lists it in `inputs_missed`; the checker and the Lab's grader
       leave it out); a control it matches that takes no press is a miss all the same, and so is a button it finds
-      shown but disabled. Never mark a click optional to cover one the play needs: a play that makes the state itself
+      shown but disabled or a control it finds scrolled out of its container's view. Never mark a click optional to cover one the play needs: a play that makes the state itself
       clicks it as required. A click on a button shown but disabled (one a click would take by its name, class or
       caption, where a player could press it) presses nothing, as a player's does, and is a miss that says so
       (`a button matches it (Locked (Button) by its caption "Locked Door"), shown but disabled: the click does
@@ -197,7 +203,8 @@ thing instead of removing it still pass? If not, move the probe to what the play
       "disabled": true}` is for a button the game disables by design (a locked choice the instruction asks to stay
       locked), and its click lands when that button is shown disabled (the probe still lists it; the checker and the
       Lab's grader leave it out). A `disabled` click that finds no such button (none matches, or the button is
-      enabled and pressed) is no excuse: the first is a miss, the second a press like any. Mark a click disabled only
+      enabled and pressed) is no excuse: the first is a miss, the second a press like any; nor is a disabled button
+      scrolled out of its container's view, a miss as any control there. Mark a click disabled only
       where the instruction says its control must be disabled;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
@@ -358,7 +365,9 @@ of the first visible, laid-out widget of that name (a wildcard) or type, whateve
 panel): a `Control` node, found as a `widgets` select finds one (section 2.6), by its node name first, then by its
 class, then by the caption a button shows, as a widget click finds one (section 1.1: exactly as the screen shows it
 first, in any language, `{"widget": "确定"}`, then read alike, `{"widget": "tap_me"}` touching a button reading
-"Tap Me"; a touch needn't find it enabled); a widget whose centre is scrolled out of its container's view is not found, as for a click.
+"Tap Me"; a touch needn't find it enabled); a widget whose centre is scrolled out of its container's view is no
+spot, as for a click: nothing is touched and the touch is a miss that says it is scrolled out of its container's view
+(never the next widget that matches).
 Name the widget where you can: its place differs between landscape and portrait, its name
 and its caption do not. A
 widget's spot is where it is when the finger goes down.
@@ -1344,10 +1353,11 @@ How it is graded, and its limits:
   `query_errors`). The usual reasons a select matched nothing, and where to look: [task-check.md](task-check.md),
   "Common reasons and fixes", under "no value in the window".
 - **An input that didn't land is listed.** A play's `probe.json` names every input that reached nothing in
-  `inputs_missed` (a touch whose widget isn't on screen, a click no control took or one on a button shown but
+  `inputs_missed`: a touch whose widget isn't on screen, a click no control took or one on a button shown but
   disabled (an `optional` click that found nothing on screen, and a `disabled` click on its button shown disabled,
-  aside: section 1.1), a scene the project lacks, a
-  stage of a contact nothing took: section 1.4): read it in the fix's play before trusting what the play measured.
+  aside: section 1.1), a click or a touch on a control scrolled out of its container's view (no mark excuses it), a
+  scene the project lacks, a stage of a contact nothing took (section 1.4). Read it in the fix's play before trusting
+  what the play measured.
   A missed stage of a contact (`pin`, `damage`, `set`) fails every probe of its play on that side, with "a stage of
   the play didn't land: <kind> <target> at <t> s: <why>": what the play read is of a contact that never happened.
   Any input of a task play that didn't land (a named screenshot, an optional click that found nothing and a disabled

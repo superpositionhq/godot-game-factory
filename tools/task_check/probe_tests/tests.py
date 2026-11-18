@@ -247,7 +247,7 @@ def check_touch(c, found):
 
 
 def check_captions(c, found):
-    if not ended(c, found, 7.5):
+    if not ended(c, found, 8.5):
         return
     probe = found["probe"]
     game_log = found["log"][:len(found["log"]) - len(found["output"])]  # the log file alone (its output echoes it)
@@ -276,20 +276,29 @@ def check_captions(c, found):
     c.true("a tap by a Chinese caption", 'finger 0 goes down on ZhTap (Button) by its caption "确定"' in note,
            note[-1500:])
     nothing = "no visible control that takes a click matches it, by name, class or caption"
-    c.eq("text that isn't shown, no match, a button and a panel scrolled out of the list's view (their centre outside "
-         "it: a click there would land outside it), and an optional click with no match (the probe sends it as any; "
-         "the checker leaves its miss out) are misses, each of no control; a click on a button shown but disabled, "
-         "marked `disabled` or not, is a miss that says so (the checker reads the marked one as landed), and presses "
-         "nothing",
+
+    def out(name, cls="Button", by="name"):
+        return (f"a control matches it ({name} ({cls}) by {by}), scrolled out of its container's view: a press at its "
+                "centre lands outside the view")
+
+    c.eq("text that isn't shown, no match, and an optional click with no match (the probe sends it as any; the checker "
+         "leaves its miss out) are misses of no control, as is an optional click by the caption of a button wholly out "
+         "of the list's view (it shows no caption); a click on a button shown but disabled, marked `disabled` or not, is "
+         "a miss that says so (the checker reads the marked one as landed); a click or a tap on a control whose centre "
+         "is out of the list's view (wholly out, or partly in view) is a miss that says it is scrolled out, whatever "
+         "its marks, and is never passed on to another match; none of them presses anything",
          [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])],
          [(2.5, "click", "hidden_word", nothing), (3.0, "click", "nothing_here", nothing),
-          (4.1, "click", "ListBottom", nothing), (4.3, "click", "PanelBottom", nothing),
+          (4.1, "click", "ListBottom", out("ListBottom")), (4.3, "click", "PanelBottom", out("PanelBottom", "Panel")),
           (4.5, "click", "maybe_later", nothing),
           (5.4, "click", "Locked Door", 'a button matches it (Locked (Button) by its caption "Locked Door"), shown but '
                                        "disabled: the click does nothing"),
           (5.7, "click", "Sealed", "a button matches it (Sealed (Button) by name), shown but disabled: the click does "
-                                   "nothing")])
-
+                                   "nothing"),
+          (6.2, "click", "ListEdge", out("ListEdge")),
+          (6.3, "click", "Edge Row", out("ListEdge", by='its caption "Edge Row"')),
+          (6.4, "click", "ListBottom", out("ListBottom")), (6.5, "click", "Bolted", out("Bolted")),
+          (6.6, "click", "Bottom Row", nothing), (6.8, "tap", "ListBottom", out("ListBottom"))])
 
 def check_second(c, found):
     if not ended(c, found, 5.5):

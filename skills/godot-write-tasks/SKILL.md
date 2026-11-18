@@ -416,13 +416,21 @@ looks up and a positive yaw turns left.
   a signal's range, any limit the instruction gives); walk or drive there instead.
 - **A play never repeats an action that already happened.** A second click on Continue or Retry after the first
   worked finds no button (it is gone) and is a miss in `inputs_missed`: each click once, while its control is there.
-- **A click never scrolls.** A control whose centre is below a list's visible area can't be reached, and the click
-  is a miss: the play brings it into view first with a player's own inputs.
+- **A click never scrolls.** A click, a tap or a drag names a control; the probe finds it as always (by name, class,
+  caption, or the disabled button), then checks where the press would go, the control's centre. When that centre is
+  outside the visible part of any container above it that clips its contents (a scroll container, at any depth of
+  nesting), nothing is sent and the input is a miss that says the control is "scrolled out of its container's view".
+  The probe never skips it for the next control that matches, and neither `optional` nor `disabled` excuses this
+  miss: a player can't press what is scrolled out of view. So scroll the list first with the player's own input (the
+  wheel, a drag, the keys the game scrolls with), then click or tap the control once it is in view. (A button wholly
+  out of view shows no caption, so a click naming only its caption finds nothing; an `optional` click so written is
+  excused as any click that finds nothing.)
 - **An optional click is for a control that appears only in some states**, never to hide a click that should land.
   `"optional": true` on a widget click is for a control the game shows only sometimes (a confirmation that appears
   only when something exists): when nothing on screen matches it, the play goes on. A miss is how a play says it
   never reached its moment, so a click the play needs stays required: a play that makes the state itself clicks its
-  control as required, and a matched control that takes no press is a miss either way.
+  control as required, and a matched control that takes no press, or that is scrolled out of its container's view,
+  is a miss either way.
 - **A control is named by the words the player sees, in the game's own language.** A widget click or a tap on a
   widget may give a button's caption exactly as the screen shows it (`{"widget": "开始游戏", "click": true}`), spaces
   and punctuation included: that is how a player finds it, and any build that keeps the words keeps the click. A
@@ -904,7 +912,8 @@ task's solution.
 | A caption is written exactly as the screen shows it, in the game's own language | it is the words a player finds the control by |
 | A click is marked `disabled` only where the instruction says its control must be disabled | a click on a disabled button does nothing, and the miss says the play's control was not usable |
 | A first-launch play may say `"fresh": true`, never with `after` | it states the clean start every play without `after` has |
-| A control out of a list's view is brought into view by the play first; a click on a control shown only in some states is `optional`, or made in a play that makes that state | a click never scrolls, and every required click must land |
+| A click, a tap or a drag on a control whose centre is scrolled out of its container's view (outside any clipping parent, at any depth) is a miss, whatever `optional` or `disabled` say: scroll the list first with the player's own input, then press the control | a player can't press what is scrolled out of view, and the probe never takes the next match instead |
+| A click on a control shown only in some states is `optional`, or made in a play that makes that state | every required click must land |
 | A play relies on no state it doesn't make: a save, a profile, an expired timer come from its own steps, its `after` plays or the instruction | every play starts from a fresh save |
 | A window is timed from the input that sets its event off, with a margin read from the reference's samples | a fixed second misses an event that falls a little later |
 | Every input of a task play lands on the reference (`inputs_missed` empty, an optional click that found nothing and a disabled click on its disabled button aside) | an input that misses on the task's own fix makes the task ungradable |

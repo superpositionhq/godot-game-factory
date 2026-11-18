@@ -386,6 +386,36 @@ class TaskErrors(unittest.TestCase):
         script = (Path(check.__file__).parent / "task_probe" / "inputs.gd").read_text(encoding="utf-8")
         self.assertIn(f'), {check.DISABLED}: the click does nothing"', script)
 
+    def test_a_click_on_a_control_scrolled_out_of_view_is_a_miss_no_mark_excuses(self):
+        """A click whose control is scrolled out of its container's view sent nothing: a miss, optional, disabled or
+        neither, on the reference a task error. Only an optional click that found nothing at all stays excused."""
+        out = {"t": 0.5, "kind": "click", "target": "Bottom",
+               "why": "a control matches it (Bottom (Button) by name), scrolled out of its container's view: a press "
+                      "at its centre lands outside the view"}
+        nothing = dict(out, why=check.NO_CONTROL)
+
+        def play_with(**mark):
+            return {"name": "pick", "seconds": 5, "inputs": [dict({"t": 0.5, "widget": "Bottom", "click": True},
+                                                                  **mark)]}
+        for mark in ({}, {"optional": True}, {"disabled": True}, {"optional": True, "disabled": True}):
+            self.assertEqual(check.missed({"inputs_missed": [out]}, play_with(**mark)), [out], mark)
+        self.assertEqual(check.missed({"inputs_missed": [nothing]}, play_with(optional=True)), [])
+        task = task_with(probe(play=play_with(optional=True), measure={"probe": "player", "field": "y", "agg": "max"},
+                               expect={"op": ">=", "value": 0}))
+        passed, detail = first_row(task, "reference", None,
+                                   side("reference", FakeProject(answering(missed=[out])), task))
+        self.assertFalse(passed)
+        self.assertIn("task error: ", detail)
+        self.assertIn("an input did not land (click Bottom at 0.5 s", detail)
+
+    def test_the_probes_words_for_a_scrolled_out_control_are_the_checkers(self):
+        """check.SCROLLED_OUT is in what the probe's inputs.gd writes of a click or a touch whose control is scrolled
+        out of its container's view, and that why holds neither of the words the marks excuse."""
+        script = (Path(check.__file__).parent / "task_probe" / "inputs.gd").read_text(encoding="utf-8")
+        self.assertIn(f'), {check.SCROLLED_OUT}: a press at its centre lands ', script)
+        self.assertNotEqual(check.SCROLLED_OUT, check.NO_CONTROL)
+        self.assertNotIn(check.DISABLED, check.SCROLLED_OUT)
+
 
 def git(repo, *args, data=None):
     return subprocess.run(["git", "-C", str(repo), *args], input=data, capture_output=True, check=True).stdout

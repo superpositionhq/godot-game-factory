@@ -1,5 +1,5 @@
 {
-  "seconds": 7,
+  "seconds": 8,
   "shots": 0,
   "every": 0.5,
   "scene": "res://scenes/Captions.tscn",
@@ -21,7 +21,13 @@
     {"t": 5.1, "widget": "设置_声音", "click": true},
     {"t": 5.4, "widget": "Locked Door", "click": true, "disabled": true},
     {"t": 5.7, "widget": "Sealed", "click": true},
-    {"t": 6.0, "tap": {"widget": "确定"}, "finger": 0}
+    {"t": 6.0, "tap": {"widget": "确定"}, "finger": 0},
+    {"t": 6.2, "widget": "ListEdge", "click": true},
+    {"t": 6.3, "widget": "Edge Row", "click": true, "optional": true},
+    {"t": 6.4, "widget": "ListBottom", "click": true, "optional": true},
+    {"t": 6.5, "widget": "Bolted", "click": true, "disabled": true},
+    {"t": 6.6, "widget": "Bottom Row", "click": true, "optional": true},
+    {"t": 6.8, "tap": {"widget": "ListBottom"}, "finger": 1}
   ],
   "queries": []
 }

@@ -99,6 +99,12 @@ text = "Top Row"
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 
+[node name="ListEdge" type="Button" parent="List/Rows"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+focus_mode = 0
+text = "Edge Row"
+
 [node name="Gap" type="Control" parent="List/Rows"]
 custom_minimum_size = Vector2(0, 400)
 layout_mode = 2
@@ -113,6 +119,13 @@ text = "Bottom Row"
 [node name="PanelBottom" type="Panel" parent="List/Rows"]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
+
+[node name="Bolted" type="Button" parent="List/Rows"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+focus_mode = 0
+disabled = true
+text = "Bolted Hatch"
 
 [node name="Zh" type="Button" parent="."]
 offset_left = 100.0

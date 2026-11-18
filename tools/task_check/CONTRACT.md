@@ -333,12 +333,14 @@ past the 200 rows through the sample's `total` and `full`) is the checker's (`pr
   window. `visible` (`UiScan.visible`): `is_visible_in_tree()` (a hidden canvas layer included), its own
   `self_modulate` alpha times the `modulate` alphas down to it above 0.004 (`Find.ALPHA_FLOOR`, `UiScan.alpha`),
   inside the frame, and not wholly outside a `clip_contents` Control above it; a Control of no size counts as on
-  screen, and another Control covering it is not looked at. A widget click and a touch on a widget find their
+  screen, and another Control covering it is not looked at. A widget click and a touch on a widget choose their
   Control by `UiScan.reachable` instead: shown and the `modulate` alphas above the floor, inside the frame (a
-  Control of no size counts), its centre inside every `clip_contents` Control above it (the engine gives a press
-  outside a clipping Control to nothing in it, so a control scrolled out of a list's view is not reachable), its own
-  `self_modulate` and `clip_contents` not counted, so an invisible hit area a player
-  presses is pressed. How text is read: task-probes.md 2.6.
+  Control of no size counts), its own `self_modulate` not counted, so an invisible hit area a player presses is
+  pressed. Clipping plays no part in that choice; the Control chosen is then tested by `UiScan.clipped_out`: when
+  its centre, where the press goes, lies outside a `clip_contents` Control above it at any depth (a
+  `ScrollContainer`'s view), in that Control's own rectangle as the engine tests a press, nothing is sent and the
+  input is a miss (section 4), never passed on to the next match. A widget wholly outside such a Control is not on
+  screen (`visible`); one partly inside is. How text is read: task-probes.md 2.6.
 - **pieces** (`queries/pieces.gd`): over every node in the tree (`Find.all_nodes`, not the probe's own): a
   `MeshInstance3D` whose mesh has faces (`Mesh.get_faces().size() / 3` triangles, read once a mesh a sample) is one
   piece at its global position; a `MultiMeshInstance3D` is one piece an instance it draws (the first
@@ -602,7 +604,12 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   task's click may say `"optional": true` (a confirmation a game shows only sometimes): the probe sends it as any
   click, and the checker reads its NO_CONTROL row as no miss (`check.missed`); a control it found that didn't press,
   or found disabled, is still a miss. A click may say `"disabled": true` (a button the game disables by design): the
-  checker reads its row that says `shown but disabled` as landed; any other miss of it is still a miss.
+  checker reads its row that says `shown but disabled` as landed; any other miss of it is still a miss. A click
+  scrolls nothing: when the Control it found (by name, class or caption, or the disabled button it found) has its
+  centre outside a `clip_contents` Control above it (`UiScan.clipped_out`), nothing is pressed and the row's why is
+  `a control matches it (<name> (<class>) by <how>), scrolled out of its container's view: a press at its centre
+  lands outside the view` (it holds the checker's `check.SCROLLED_OUT`): a miss neither mark excuses. A button wholly
+  out of the view shows no caption, so a click by its caption alone finds nothing: the NO_CONTROL row.
 - cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which
@@ -619,7 +626,8 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   point `[fx, fy]` (fractions of the frame, y down), or `{"widget": name}`, the centre of the first visible Control
   of some size whose name (a wildcard) matches, else the first whose class does, else the first button in reading order
   whose shown caption is it as written, else reads it alike, as a widget click's (`UiScan.named`,
-  `UiScan.by_caption`; it needn't be enabled).
+  `UiScan.by_caption`; it needn't be enabled); a widget so found whose centre is outside a `clip_contents` Control
+  above it (`UiScan.clipped_out`) is no spot, and the touch misses with the click's words for it.
   `probe.log` says what the finger went down on and how it was found. The finger goes down with an `InputEventScreenTouch` (`index` the finger), moves with
   `InputEventScreenDrag` events (a drag's path walked evenly over `over` seconds, at once without it), and lifts once
   its path and its `hold` are over, never in the frame it went down. Fingers 0 to 9 may be down together. With

@@ -72,11 +72,11 @@ static func visible(c: Control) -> bool:
 
 
 static func reachable(c: Control) -> bool:
-	## where an input may land, as a player presses it: shown (itself and everything above it, its canvas layer too),
-	## the modulate of it and every canvas item above it above the floor, inside the frame (one of no size counts), and
-	## its centre, where a click or a touch goes, inside every Control above it that clips what it holds (a list
-	## scrolled so it is out of view: the engine gives a press outside a clipping Control to nothing inside it).
-	## Its own self_modulate and clip_contents don't count: an invisible hit area over art is pressed like any button.
+	## the Controls a widget click and a touch on a widget choose among: shown (itself and everything above it, its
+	## canvas layer too), the modulate of it and every canvas item above it above the floor, inside the frame (one of
+	## no size counts). Its own self_modulate doesn't count: an invisible hit area over art is pressed like any button.
+	## Clipping plays no part in the choice: the input takes the Control it would take anyway, and whether a player's
+	## press can get to that one is asked of it afterwards (clipped_out).
 	if not c.is_visible_in_tree():
 		return false
 	var above := 1.0
@@ -89,12 +89,15 @@ static func reachable(c: Control) -> bool:
 	var r := box(c)
 	if r.size.x <= 0.0 or r.size.y <= 0.0:
 		return true
-	return in_frame(c) and not clipped_out(c)
+	return in_frame(c)
 
 
 static func clipped_out(c: Control) -> bool:
-	## whether its centre lies outside a Control above it that clips what it holds (clip_contents, as a ScrollContainer
-	## has it), in that Control's own rectangle as the engine tests a press
+	## whether a press on it can't get to it: its centre, where a click or a touch goes, lies outside a Control above it
+	## (at any depth) that clips what it holds (clip_contents, as a ScrollContainer has it), tested in that Control's
+	## own rectangle as the engine tests a press, which it gives to nothing inside a clipping Control when it falls
+	## outside it. A control scrolled out of its container's view is so, and so is one partly in view whose centre is
+	## out of it. Nothing is scrolled for the input: a play brings the control into view first, as a player would.
 	var centre_at := c.get_global_transform_with_canvas() * (c.size / 2.0)
 	var at := c.get_parent()
 	while at is Control:
@@ -211,9 +214,10 @@ static func usable(c: Control) -> Variant:
 static func named(want: String) -> Control:
 	## the first Control a player can press (reachable) of some size whose name (a wildcard) matches, else the first
 	## whose class does, else the first button whose shown text reads `want` (by_caption): where a touch on that widget
-	## lands
+	## lands; null when none matches, and when the one that matches is scrolled out of its container's view
+	## (clipped_out: the touch is a miss, never taken by the next match)
 	var found: Array = spot_widget(want)
-	return found[0] if not found.is_empty() else null
+	return found[0] if not found.is_empty() and not clipped_out(found[0] as Control) else null
 
 
 static func spot_widget(want: String) -> Array:

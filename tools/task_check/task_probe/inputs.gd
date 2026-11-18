@@ -431,7 +431,9 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 	## a click on a widget: the mouse moved to its centre, the left button pressed, and let go in the next frame
 	## (`widget`: a Control's name or class, else the shown caption of a button, UiScan.by_caption: a name or a class
 	## wins over a caption, a caption as written over one alike; a matching button shown but disabled is a miss that
-	## says so, UiScan.disabled_button)
+	## says so, UiScan.disabled_button). The control is chosen as if nothing clipped it; when the one chosen is
+	## scrolled out of its container's view (UiScan.clipped_out), nothing is sent and the click is a miss that says so
+	## (scrolled_out), whatever its marks.
 	var want := Find.text(row, "widget")
 	var found: Control = null
 	var how := ""
@@ -439,13 +441,13 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 		if (String(c.name).matchn(want) or Find.is_a(c, want)) and UiScan.reachable(c) and UiScan.rect(c) != null \
 				and UiScan.usable(c) != 0.0 and c.mouse_filter != Control.MOUSE_FILTER_IGNORE:
 			found = c
-			how = "by name" if String(c.name).matchn(want) else "by class"
+			how = "name" if String(c.name).matchn(want) else "class"
 			break
 	if found == null:
 		var read: Array = UiScan.by_caption(want, true)
 		if not read.is_empty():
 			found = read[0]
-			how = "by its " + read[1]
+			how = read[1]
 			if read[2] != "":
 				probe.note("click: " + read[2])
 	if found == null:
@@ -455,10 +457,18 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 		if not off.is_empty():
 			var shown: Control = off[0]
 			var by: String = off[1]
+			if UiScan.clipped_out(shown):
+				_miss(row, "click", want, scrolled_out(shown, by))
+				return
 			_miss(row, "click", want, "a button matches it (%s (%s) by %s), shown but disabled: the click does nothing"
 				% [shown.name, Find.class_of(shown), "its " + by if by.begins_with("caption") else by])
 			return
 		_miss(row, "click", want, "no visible control that takes a click matches it, by name, class or caption")
+		return
+	if UiScan.clipped_out(found):
+		# its centre is outside the view of a container above it: a press there reaches nothing in that view, so
+		# nothing is sent, and neither `optional` nor `disabled` excuses the miss (the play scrolls first)
+		_miss(row, "click", want, scrolled_out(found, how))
 		return
 	var label := "%s (%s)" % [found.name, Find.class_of(found)]
 	var taken := [false]
@@ -469,7 +479,15 @@ func _click(row: Dictionary, _elapsed: float) -> void:
 	_move_cursor(UiScan.centre(found), Vector2.ZERO)
 	_button(MOUSE_BUTTON_LEFT, true)
 	_clicks.append({"row": row, "label": label, "frames": 0, "watched": watched, "taken": taken})
-	probe.note("clicked %s %s" % [label, how])
+	probe.note("clicked %s by %s" % [label, "its " + how if how.begins_with("caption") else how])
+
+
+static func scrolled_out(c: Control, by: String) -> String:
+	## the why of a click or a touch whose control is scrolled out of its container's view (UiScan.clipped_out); `by`:
+	## how it was found, "name", "class" or 'caption "<text>"'. The words "scrolled out of its container's view" are
+	## the checker's check.SCROLLED_OUT.
+	return "a control matches it (%s (%s) by %s), scrolled out of its container's view: a press at its centre lands " \
+		% [c.name, Find.class_of(c), "its " + by if by.begins_with("caption") else by] + "outside the view"
 
 
 # ---------------------------------------------------------------- touches
@@ -492,6 +510,15 @@ static func _spot_name(value: Variant) -> String:
 		return Find.text(value, "widget")
 	var xy := Find.numbers(value, 2)
 	return "%.3f, %.3f" % [xy[0], xy[1]] if xy.size() == 2 else str(value)
+
+
+static func _no_spot(value: Variant) -> String:
+	## why a spot has no place: its widget is scrolled out of its container's view (as a click's), or none matches
+	if value is Dictionary:
+		var found: Array = UiScan.spot_widget(Find.text(value, "widget"))
+		if not found.is_empty() and UiScan.clipped_out(found[0] as Control):
+			return scrolled_out(found[0] as Control, found[1])
+	return "no visible widget matches '%s'" % _spot_name(value)
 
 
 func _miss_touch(row: Dictionary, kind: String, target: String, why: String) -> void:
@@ -534,7 +561,7 @@ func _touch(row: Dictionary, elapsed: float) -> void:
 	for spot: Variant in spots:
 		var at: Variant = _spot(spot)
 		if at == null:
-			_miss_touch(row, kind, _spot_name(spot), "no visible widget matches '%s'" % _spot_name(spot))
+			_miss_touch(row, kind, _spot_name(spot), _no_spot(spot))
 			return
 		points.append(at)
 	var touch := {

@@ -526,6 +526,9 @@ def route_seconds(inputs):
 NO_CONTROL = "no visible control that takes a click matches it, by name, class or caption"
 # the words its why holds for a click whose button is shown but disabled (`_click`); a test holds the two alike
 DISABLED = "shown but disabled"
+# the words its why holds for a click or a touch whose control is scrolled out of its container's view (`scrolled_out`):
+# a miss neither mark excuses, since a player can't press what the view doesn't show; a test holds the two alike
+SCROLLED_OUT = "scrolled out of its container's view"
 
 
 def missed(probe, play=None):
@@ -535,7 +538,8 @@ def missed(probe, play=None):
     clicks their own marks excuse, each only for its own reason: an `optional` click that found no shown Control to
     press (what it would press was not there, and the play went on), and a `disabled` click whose button the probe
     found shown but disabled (it landed, and did nothing, as a player's). An optional click that found its Control
-    and didn't press it, or found it disabled, is still a miss; so is a disabled click no button matched."""
+    and didn't press it, or found it disabled, is still a miss; so is a disabled click no button matched, and a click
+    of either mark whose control is scrolled out of its container's view (SCROLLED_OUT: the play scrolls first)."""
     rows = probe.get("inputs_missed") if isinstance(probe, dict) else None
     rows = [r for r in rows if isinstance(r, dict) and r.get("kind") != "shot"] if isinstance(rows, list) else []
     if not rows or not isinstance(play, dict):
