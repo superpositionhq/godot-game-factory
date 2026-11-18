@@ -1035,6 +1035,22 @@ class Units(unittest.TestCase):
                          ['check p: play thumbs has a touch that ends after the play (10 s)'])
         self.assertEqual(errs({'t': 3, 'key': '<Keyboard>/escape', 'press': True}), [])   # the back button is a key
 
+    def test_an_optional_click(self):
+        """A widget click may say `"optional": true` (a control a game shows only in some states), and nothing else:
+        not false, not on another input."""
+        def schema_errs(*inputs):
+            c = {'name': 'p', 'kind': 'probe', 'describe': 'x', 'measure': {'probe': 'player', 'field': 'x'},
+                 'expect': {'op': '>=', 'value': 1}, 'play': {'name': 'menu', 'seconds': 10, 'inputs': list(inputs)}}
+            t = task('a' * 40, 'b' * 40, milestones=[{'name': 'm', 'checks': [c]}])
+            return list(vg.check_schema(t, vg.SCHEMAS['game-task']))
+        self.assertEqual(schema_errs({'t': 2, 'widget': 'Confirm', 'click': True, 'optional': True},
+                                     {'t': 3, 'widget': 'Begin', 'click': True}), [])
+        for bad in ({'t': 2, 'widget': 'Confirm', 'click': True, 'optional': False},
+                    {'t': 2, 'widget': 'Confirm', 'click': True, 'optional': 'yes'},
+                    {'t': 2, 'key': '<Keyboard>/w', 'press': True, 'optional': True},
+                    {'t': 2, 'tap': {'widget': 'Confirm'}, 'optional': True}):
+            self.assertNotEqual(schema_errs(bad), [], bad)
+
     def test_required_quality_judges(self):
         """A required judge is noted as one that should be optional, but for the judges of the brief's looks: a `judge`
         named `looks_as_asked` and a `judge` in `still_works`."""

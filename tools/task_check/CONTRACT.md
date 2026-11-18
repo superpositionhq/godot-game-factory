@@ -585,7 +585,10 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   over it takes them instead. For a `BaseButton` the probe listens for its `pressed` signal: when it hasn't fired two
   frames after the release, the click is a row of `inputs_missed`, as is a click nothing matches. `probe.log` names the
   widget clicked, its class and how it was found (`clicked PushButton (Button) by name`, `by class`, `by its caption
-  "Begin Run"`).
+  "Begin Run"`). A click nothing matches is the row `{"t", "kind": "click", "target": <its widget>, "why": "no visible
+  control that takes a click matches it, by name, class or caption"}` (the checker's `check.NO_CONTROL`). A task's
+  click may say `"optional": true` (a confirmation a game shows only sometimes): the probe sends it as any click, and
+  the checker reads that row of it as no miss (`check.missed`); a control it found that didn't press is still a miss.
 - cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
   point (the cursor starts at the frame's centre); a following `<Mouse>/leftButton` press and release clicks there.
   An event's position is the point in the frame's own units through the root window's `get_final_transform()`, which

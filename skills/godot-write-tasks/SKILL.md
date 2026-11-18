@@ -414,9 +414,12 @@ looks up and a positive yaw turns left.
 - **A play never repeats an action that already happened.** A second click on Continue or Retry after the first
   worked finds no button (it is gone) and is a miss in `inputs_missed`: each click once, while its control is there.
 - **A click never scrolls.** A control below a list's visible area is clicked at its centre, outside the view, and
-  takes nothing: the play brings it into view first with a player's own inputs. And every click must land: there is
-  no optional click, so a control that shows only in some states (a confirmation that appears only when a save
-  exists) is clicked only in a play that makes that state itself.
+  takes nothing: the play brings it into view first with a player's own inputs.
+- **An optional click is for a control that appears only in some states**, never to hide a click that should land.
+  `"optional": true` on a widget click is for a control the game shows only sometimes (a confirmation that appears
+  only when something exists): when nothing on screen matches it, the play goes on. A miss is how a play says it
+  never reached its moment, so a click the play needs stays required: a play that makes the state itself clicks its
+  control as required, and a matched control that takes no press is a miss either way.
 - **A window is timed from the event it measures**: from the input that sets the event off, in play time, with a
   margin for how long the reference took (read in its samples), never a fixed second picked without looking where
   the event fell.
@@ -884,10 +887,10 @@ task's solution.
 | No input on the frame the game resets a state; no teleport past what moves with the player or a limit the instruction gives | the input is lost, or the player arrives without what the moment needs |
 | Each action once, while its control is there | a second click on a control that is gone is a miss |
 | A click or a tap goes to a control by its caption or name, never fixed screen coordinates | another build lays the screen out otherwise |
-| A control out of a list's view is brought into view by the play first; a click that lands only in some states is made only in a play that makes that state | a click never scrolls, and every click must land |
+| A control out of a list's view is brought into view by the play first; a click on a control shown only in some states is `optional`, or made in a play that makes that state | a click never scrolls, and every required click must land |
 | A play relies on no state it doesn't make: a save, a profile, an expired timer come from its own steps, its `after` plays or the instruction | every play starts from a fresh save |
 | A window is timed from the input that sets its event off, with a margin read from the reference's samples | a fixed second misses an event that falls a little later |
-| Every input of a task play lands on the reference (`inputs_missed` empty) | an input that misses on the task's own fix makes the task ungradable |
+| Every input of a task play lands on the reference (`inputs_missed` empty, an optional click that found nothing aside) | an input that misses on the task's own fix makes the task ungradable |
 | A budget (`render`) is read in a task play of its own that goes to the view and reads nothing else | other readings and inputs change what is drawn |
 | A template game's task sets `play_args` and leaves `play_scene` null; `play_scene` only for a scene no scenario loads | naming the scenario's scene too loads it twice |
 | One finger's touches are at least 0.1 s apart; controls are touched by name | a touch that begins before the last lifts misses; a place differs between orientations, a name doesn't |

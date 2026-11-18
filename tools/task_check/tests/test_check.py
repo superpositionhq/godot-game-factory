@@ -2,6 +2,7 @@
 result file; a commit materialized from a real git repo; the files and command lines a build and a play hand Godot."""
 
 import contextlib
+import copy
 import gc
 import io
 import itertools
@@ -307,6 +308,43 @@ class TaskErrors(unittest.TestCase):
         shot = [{"t": 2.0, "kind": "shot", "target": "menu", "why": "not written"}]
         self.assertTrue(first_row(task, "reference", None, side("reference", FakeProject(answering(missed=shot)), task))[0],
                         "a named screenshot not taken changes nothing the game did")
+
+    def test_an_optional_click_that_found_nothing_to_press_is_no_miss_and_any_other_miss_still_is(self):
+        """A click on what a game shows only sometimes (`optional`): when no shown Control matches it, the play went
+        on and nothing missed; a click that isn't optional, or an optional one whose Control took no press, missed."""
+        play = {"name": "open_menu", "seconds": 5, "inputs": [{"t": 0.5, "widget": "Confirm", "click": True,
+                                                               "optional": True},
+                                                              {"t": 2, "widget": "Begin", "click": True}]}
+        self.assertEqual(tasks.inputs(play["inputs"]), [{"t": 0.5, "widget": "Confirm", "click": True, "optional": True},
+                                                        {"t": 2.0, "widget": "Begin", "click": True}],
+                         "the probe is sent the click as written")
+        task = task_with(probe(play=play, measure={"probe": "player", "field": "y", "agg": "max"},
+                               expect={"op": ">=", "value": 0}))
+        nothing = {"t": 0.5, "kind": "click", "target": "Confirm", "why": check.NO_CONTROL}
+        self.assertEqual(first_row(task, "reference", None,
+                                   side("reference", FakeProject(answering(missed=[nothing])), task))[0], True)
+        untaken = {"t": 0.5, "kind": "click", "target": "Confirm (Button)",
+                   "why": "the click at its centre didn't press it (another control is over it, or it takes no click)"}
+        good = side("reference", FakeProject(answering()), task)
+        passed, detail = first_row(task, "start", side("start", FakeProject(answering(missed=[untaken])), task), good)
+        self.assertFalse(passed)
+        self.assertIn("the play's input did not land: click Confirm (Button) at 0.5 s", detail)
+        begin = {"t": 2.0, "kind": "click", "target": "Begin", "why": check.NO_CONTROL}
+        passed, detail = first_row(task, "start", side("start", FakeProject(answering(missed=[nothing, begin])), task),
+                                   good)
+        self.assertFalse(passed, "a click that isn't optional still misses beside one that is")
+        self.assertIn("the play's input did not land: click Begin at 2 s", detail)
+        self.assertNotIn("Confirm", detail)
+        plain = copy.deepcopy(task)
+        del plain["milestones"][-1]["checks"][0]["play"]["inputs"][0]["optional"]
+        passed, detail = first_row(plain, "start", side("start", FakeProject(answering(missed=[nothing])), plain), good)
+        self.assertFalse(passed)
+        self.assertIn("the play's input did not land: click Confirm at 0.5 s", detail)
+
+    def test_the_probes_words_for_a_click_that_found_nothing_are_the_checkers(self):
+        """check.NO_CONTROL is what the probe's inputs.gd writes of a widget click no shown Control matches."""
+        script = (Path(check.__file__).parent / "task_probe" / "inputs.gd").read_text(encoding="utf-8")
+        self.assertIn(f'_miss(row, "click", want, "{check.NO_CONTROL}")', script)
 
 
 def git(repo, *args, data=None):

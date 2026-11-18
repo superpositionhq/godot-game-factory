@@ -173,8 +173,12 @@ thing instead of removing it still pass? If not, move the probe to what the play
       `inputs_missed`. A button whose action already happened is usually gone: click once. A click never scrolls: a
       control scrolled out of its container's view is clicked at its centre, outside the view, where it takes
       nothing (a button's miss is listed; another Control's is not), so bring it into view with the play's own
-      inputs first. Every click is required: a click that only lands on some builds (a confirmation shown only when
-      something was saved) misses where it finds nothing, so give the play the state that shows it;
+      inputs first. A click is required unless it says `"optional": true`: `{"t": 2.0, "widget": "ConfirmButton",
+      "click": true, "optional": true}` is for a control a game shows only in some states (a confirmation shown only
+      when something was saved). When no shown control matches an optional click, nothing is pressed, the play goes
+      on and the click is no miss (the probe still lists it in `inputs_missed`; the checker and the Lab's grader
+      leave it out); a control it matches that takes no press is a miss all the same. Never mark a click optional to
+      cover one the play needs: a play that makes the state itself clicks it as required;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there;
     - a mouse move: `{"t": 1.0, "move": [300, -40], "over": 1.5}` moves the mouse by [dx, dy] pixels of the frame
@@ -1317,13 +1321,14 @@ How it is graded, and its limits:
   `query_errors`). The usual reasons a select matched nothing, and where to look: [task-check.md](task-check.md),
   "Common reasons and fixes", under "no value in the window".
 - **An input that didn't land is listed.** A play's `probe.json` names every input that reached nothing in
-  `inputs_missed` (a touch whose widget isn't on screen, a click no control took, a scene the project lacks, a
+  `inputs_missed` (a touch whose widget isn't on screen, a click no control took (an `optional` click that found
+  nothing on screen aside: section 1.1), a scene the project lacks, a
   stage of a contact nothing took: section 1.4): read it in the fix's play before trusting what the play measured.
   A missed stage of a contact (`pin`, `damage`, `set`) fails every probe of its play on that side, with "a stage of
   the play didn't land: <kind> <target> at <t> s: <why>": what the play read is of a contact that never happened.
-  Any input of a task play that didn't land (a named screenshot aside) fails every probe of that play on that side,
-  as the Lab's grade reads it ("the play's input did not land: ..."); on the reference it is a **task error**: the
-  task's own fix can't be driven by its play, and the task is invalid.
+  Any input of a task play that didn't land (a named screenshot and an optional click that found nothing aside)
+  fails every probe of that play on that side, as the Lab's grade reads it ("the play's input did not land: ...");
+  on the reference it is a **task error**: the task's own fix can't be driven by its play, and the task is invalid.
 - **A select that reads nothing on the reference is a task error.** An `objects`, `widgets`, `components` or `ui`
   probe whose select matches nothing (or nothing with a value for its field) in the whole of the reference's play, a play
   that ran to its end, can be passed by no build: the task is invalid. A measure that reads 0 of nothing (a `count`,
