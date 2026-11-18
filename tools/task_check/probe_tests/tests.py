@@ -963,9 +963,15 @@ def check_mouse(c, found):
     dial, menu, pad, block = point(0.2, 0.2), point(0.7, 0.2), point(0.2, 0.7), point(0.7, 0.7)
     c.eq("inputs sent", probe.get("inputs_sent"), 15)
     c.eq("no input missed", probe.get("inputs_missed"), [])
+    # a display may report the moved pointer once more after a press too: every motion is at the cursor, each press
+    # follows one, and the presses are the two sent
+    seen = squeezed(printed(found, "DIAL"))
+    motion, press = f"DIAL motion at={point(0.1, 0.1)} window={dial}", f"DIAL press at={point(0.1, 0.1)} window={dial}"
     c.eq("a control the game draws and reads itself gets the motion and the press at the cursor, in its own units "
-         "and the window's, from a cursor input and from a widget click", squeezed(printed(found, "DIAL")),
-         [f"DIAL motion at={point(0.1, 0.1)} window={dial}", f"DIAL press at={point(0.1, 0.1)} window={dial}"] * 2)
+         "and the window's, from a cursor input and from a widget click",
+         [[line for line in seen if line != motion], seen[:1],
+          all(seen[i - 1] == motion for i, line in enumerate(seen) if line == press and i)],
+         [[press] * 2, [motion], True])
     c.eq("the game's _input gets every motion at a cursor's point",
          sorted({line for line in printed(found, "GAME") if " motion " in line}),
          sorted({f"GAME motion at={p}" for p in (dial, menu, pad, block)}))
