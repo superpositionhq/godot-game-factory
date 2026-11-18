@@ -305,6 +305,28 @@ func _load_queries() -> void:
 		_measures[id] = []
 
 
+func own_query(id: String, item: Dictionary) -> Query:
+	## A query an input reads itself (a shot that waits for its event: inputs.gd watch_events), made and loaded as the
+	## play's are (_load_queries) but never sampled with them nor written to `measures`; null, with an error, when its
+	## kind is unknown.
+	var kind := Find.text(item, "kind")
+	var file := "res://addons/task_probe/queries/%s.gd" % kind
+	if not kind.is_valid_identifier() or not ResourceLoader.exists(file):
+		error("query '%s': unknown kind '%s'" % [id, kind])
+		return null
+	var q: Query = (load(file) as GDScript).new()
+	q.id = id
+	q.kind = kind
+	q.def = item
+	q.probe = self
+	if item.get("fields") is Array:
+		for f: Variant in item["fields"]:
+			if f is String and f != "" and not q.fields.has(f):
+				q.fields.append(f)
+	q.load_query()
+	return q
+
+
 func _current_scene() -> String:
 	var scene := get_tree().current_scene
 	return scene.scene_file_path if scene != null else ""
@@ -479,6 +501,7 @@ func late() -> void:
 	if not _counted:
 		return  # a frame of a wait or of a scene change: the clock stands still
 	var t := elapsed()
+	_inputs.watch_events(t)  # a shot whose event came in this frame is taken at its end
 	if t >= _next_sample - 1e-9:
 		_next_sample += _every
 		_take_sample(t)

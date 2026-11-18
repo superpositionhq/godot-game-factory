@@ -1,6 +1,9 @@
 extends RefCounted
 ## The UI as widgets, ui, a widget click and a touch on a widget read it: the Control nodes of the game's window.
 ## A rectangle is in fractions of the frame, y down from the top, whatever anchor, container or canvas layer placed it.
+## Two questions a player's press raises are answered here too: how the scroll areas a control sits in move to bring it
+## into view (scroll_steps, scroll_into_view), as a player scrolls a list to an item, and whether a press at a point
+## reaches a control or something over it takes the press (press_reaches, picked_at: the engine's GUI picking, redone).
 
 const Find := preload("find.gd")
 
@@ -77,14 +80,7 @@ static func reachable(c: Control) -> bool:
 	## no size counts). Its own self_modulate doesn't count: an invisible hit area over art is pressed like any button.
 	## Clipping plays no part in the choice: the input takes the Control it would take anyway, and whether a player's
 	## press can get to that one is asked of it afterwards (clipped_out).
-	if not c.is_visible_in_tree():
-		return false
-	var above := 1.0
-	var at: Node = c
-	while at is CanvasItem:
-		above *= (at as CanvasItem).modulate.a
-		at = at.get_parent()
-	if above <= Find.ALPHA_FLOOR:
+	if not shown_anywhere(c):
 		return false
 	var r := box(c)
 	if r.size.x <= 0.0 or r.size.y <= 0.0:
@@ -92,18 +88,31 @@ static func reachable(c: Control) -> bool:
 	return in_frame(c)
 
 
+static func shown_anywhere(c: Control) -> bool:
+	## shown (itself and everything above it, its canvas layer too), and the modulate of it and every canvas item above
+	## it above the floor, wherever it lies: inside the frame or not, in its scroll area's view or not
+	if not c.is_visible_in_tree():
+		return false
+	var above := 1.0
+	var at: Node = c
+	while at is CanvasItem:
+		above *= (at as CanvasItem).modulate.a
+		at = at.get_parent()
+	return above > Find.ALPHA_FLOOR
+
+
 static func clipped_out(c: Control) -> bool:
 	## whether a press on it can't get to it: its centre, where a click or a touch goes, lies outside a Control above it
 	## (at any depth) that clips what it holds (clip_contents, as a ScrollContainer has it), tested in that Control's
 	## own rectangle as the engine tests a press, which it gives to nothing inside a clipping Control when it falls
 	## outside it. A control scrolled out of its container's view is so, and so is one partly in view whose centre is
-	## out of it. Nothing is scrolled for the input: a play brings the control into view first, as a player would.
-	var centre_at := c.get_global_transform_with_canvas() * (c.size / 2.0)
+	## out of it. A click or a tap first scrolls the scroll areas that alone hide it (scroll_into_view) and asks again.
+	var point := press_point(c)
 	var at := c.get_parent()
 	while at is Control:
 		var holder := at as Control
 		if holder.clip_contents:
-			var local := holder.get_global_transform_with_canvas().affine_inverse() * centre_at
+			var local := holder.get_global_transform_with_canvas().affine_inverse() * point
 			if not Rect2(Vector2.ZERO, holder.size).has_point(local):
 				return true
 		at = at.get_parent()
@@ -276,17 +285,26 @@ static func is_mark(code: int) -> bool:
 		or (code >= 0x1F000 and code <= 0x1FAFF)
 
 
-static func captions(c: Control) -> Array[String]:
+static func captions(c: Control, wherever: bool = false) -> Array[String]:
 	## the text a player reads on a button, shown: its own (a Button's, a LinkButton's), each Label or RichTextLabel
 	## drawn below it, alone, and all of those together in order. Text that isn't shown (the button drawn see-through,
-	## a hidden label) and a TextureButton's tooltip are no caption.
+	## a hidden label) and a TextureButton's tooltip are no caption. `wherever`: the text it shows wherever it lies,
+	## outside the frame or out of its scroll area's view too: what it reads once it is scrolled into view
+	## (scrolled_away)
 	var found: Array[String] = []
-	var own: Variant = own_text(c) if visible(c) and (c is Button or c is LinkButton) else null
+	var shows := (shown_anywhere(c) and alpha(c) > Find.ALPHA_FLOOR) if wherever else visible(c)
+	var own: Variant = own_text(c) if shows and (c is Button or c is LinkButton) else null
 	if own != null and own != "":
 		found.append(own)
 	var below: Array[String] = []
 	for n: Node in c.find_children("*", "Control", true, false):
-		if (n is Label or n is RichTextLabel) and drawn(n as Control):
+		if not (n is Label or n is RichTextLabel):
+			continue
+		var label := n as Control
+		var reads := drawn(label)
+		if wherever:
+			reads = shown_anywhere(label) and alpha(label) > Find.ALPHA_FLOOR and rect(label) != null
+		if reads:
 			var shown: Variant = own_text(n as Control)
 			if shown != null and shown != "":
 				below.append(shown)
@@ -361,10 +379,315 @@ static func to_window(at: Vector2) -> Vector2:
 
 static func centre(c: Control) -> Vector2:
 	## its centre, as an input event names it
-	return to_window(c.get_global_transform_with_canvas() * (c.size / 2.0))
+	return to_window(press_point(c))
 
 
 static func fraction(fx: float, fy: float) -> Vector2:
 	## a point of the frame in fractions, as an input event names it
 	var frame := frame_size()
 	return to_window(Vector2(clampf(fx, 0.0, 1.0) * frame.x, clampf(fy, 0.0, 1.0) * frame.y))
+
+
+# ---------------------------------------------------------------- scrolling a control into view
+
+
+static func press_point(c: Control) -> Vector2:
+	## where a click or a touch on it goes, in the frame's own units: its centre
+	return c.get_global_transform_with_canvas() * (c.size / 2.0)
+
+
+static func scroll_steps(c: Control) -> Array:
+	## how the scroll areas above `c` move to bring the point a press on it goes to (press_point) into their view, as a
+	## player scrolls a list to an item: [[ScrollContainer, scroll_horizontal, scroll_vertical], ...], the innermost
+	## first. Every Control above `c` that clips what it holds (clip_contents) and leaves that point out must be a
+	## ScrollContainer. Each one moves the least way that shows `c` whole in its view (its rectangle less the scroll bars
+	## it shows), or, for a `c` larger than that view, the way that puts `c`'s centre at the view's; only along the ways
+	## it scrolls (not SCROLL_MODE_DISABLED) and no further than its scroll bars go. One further out is read with what
+	## those inside it moved, so nested lists all move at once. [] when no move is needed, and when no move shows the
+	## point: a Control that only clips leaves it out, an area can't move that way or that far, or the point would end
+	## outside the frame. Nothing is moved here (scroll_into_view).
+	var r := box(c)
+	var point := press_point(c)
+	var shift := Vector2.ZERO  # how far `c` has moved in the frame through the moves of the areas inside this one
+	var steps: Array = []
+	var at := c.get_parent()
+	while at is Control:
+		var holder := at as Control
+		at = at.get_parent()
+		if not holder.clip_contents:
+			continue
+		var to_local := holder.get_global_transform_with_canvas().affine_inverse()
+		var own := Rect2(Vector2.ZERO, holder.size)
+		if own.has_point(to_local * (point + shift)):
+			continue
+		var area := holder as ScrollContainer
+		if area == null:
+			return []  # it only clips: nothing a player does scrolls it
+		var seen := to_local * Rect2(r.position + shift, r.size)
+		var view := _scroll_view(area)
+		var h := _scroll_value(area.get_h_scroll_bar(), area.scroll_horizontal,
+			_scroll_by(seen.position.x, seen.end.x, view.position.x, view.end.x),
+			area.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED)
+		var v := _scroll_value(area.get_v_scroll_bar(), area.scroll_vertical,
+			_scroll_by(seen.position.y, seen.end.y, view.position.y, view.end.y),
+			area.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED)
+		var by := Vector2(h - area.scroll_horizontal, v - area.scroll_vertical)
+		if by == Vector2.ZERO:
+			return []
+		# what the area holds moves back by what it scrolls, in the area's own units
+		shift -= holder.get_global_transform_with_canvas().basis_xform(by)
+		if not own.has_point(to_local * (point + shift)):
+			return []
+		steps.append([area, h, v])
+	if steps.is_empty() or not Rect2(Vector2.ZERO, frame_size()).has_point(point + shift):
+		return []
+	return steps
+
+
+static func _scroll_view(area: ScrollContainer) -> Rect2:
+	## the part of a ScrollContainer's own rectangle what it holds shows in: less the scroll bars it shows
+	var view := Rect2(Vector2.ZERO, area.size)
+	var side := area.get_v_scroll_bar()
+	if side.visible:
+		view.size.x -= side.size.x
+		if area.is_layout_rtl():
+			view.position.x += side.size.x
+	var under := area.get_h_scroll_bar()
+	if under.visible:
+		view.size.y -= under.size.y
+	return view
+
+
+static func _scroll_by(lo: float, hi: float, view_lo: float, view_hi: float) -> float:
+	## how far the content scrolls along one way so that [lo, hi] shows in [view_lo, view_hi]: 0 when it shows whole;
+	## else the least move that shows it whole, or one that centres it when it is larger than the view
+	if hi - lo > view_hi - view_lo:
+		return (lo + hi) / 2.0 - (view_lo + view_hi) / 2.0
+	if lo < view_lo:
+		return lo - view_lo
+	if hi > view_hi:
+		return hi - view_hi
+	return 0.0
+
+
+static func _scroll_value(bar: ScrollBar, now: int, by: float, scrolls: bool) -> int:
+	## a scroll value moved `by`, kept where its scroll bar can go (its least, to its content less its page); `now`
+	## when the area doesn't scroll that way
+	if not scrolls or is_zero_approx(by):
+		return now
+	var most := maxf(bar.min_value, bar.max_value - bar.page)
+	return roundi(clampf(now + by, bar.min_value, most))
+
+
+static func scroll_into_view(c: Control) -> String:
+	## the scroll areas above `c` set as scroll_steps says, each as its own scroll bar would set it; the layout follows
+	## when the frame ends, so a press on `c` is made in the next frame. What moved, for probe.log ("Inner
+	## (ScrollContainer), Outer (ScrollContainer)"), or "" when nothing can show it (nothing moved)
+	var moved := PackedStringArray()
+	for step: Array in scroll_steps(c):
+		var area: ScrollContainer = step[0]
+		area.scroll_horizontal = step[1]
+		area.scroll_vertical = step[2]
+		moved.append("%s (%s)" % [area.name, Find.class_of(area)])
+	return ", ".join(moved)
+
+
+static func scrolled_away(want: String, click: bool) -> Array:
+	## [the first Control a click (`click`) or a tap on `want` would take but for the scroll areas it lies in, how it was
+	## found ("name", "class" or 'caption "<text>"')], or []: shown wherever it lies (outside the frame too) and of some
+	## size, by its name (a wildcard), else its class, else a button whose caption, read wherever it lies, is `want` as
+	## written, else reads it label_key alike; for a click, one that takes a click (enabled, not ignoring the mouse) or
+	## a button shown but disabled (its click, once scrolled to, says so); only one scroll_steps can show. Asked only
+	## when nothing on screen matches.
+	if want == "":
+		return []
+	for by_class in [false, true]:
+		for c in controls():
+			if (Find.is_a(c, want) if by_class else String(c.name).matchn(want)) and _can_scroll_to(c, click):
+				return [c, "class" if by_class else "name"]
+	var key := label_key(want)
+	var alike: Array = []
+	for c in controls():
+		if not (c is BaseButton) or not shown_anywhere(c) or rect(c) == null:
+			continue
+		var loose := ""
+		for caption in captions(c, true):
+			if caption == want and _can_scroll_to(c, click):
+				return [c, 'caption "%s"' % caption]
+			if loose == "" and key != "" and label_key(caption) == key:
+				loose = caption
+		if loose != "":
+			alike.append([c, loose])
+	for found: Array in alike:
+		if _can_scroll_to(found[0] as Control, click):
+			return [found[0], 'caption "%s"' % found[1]]
+	return []
+
+
+static func _can_scroll_to(c: Control, click: bool) -> bool:
+	if not shown_anywhere(c) or rect(c) == null:
+		return false
+	if click:
+		var takes := usable(c) != 0.0 and c.mouse_filter != Control.MOUSE_FILTER_IGNORE
+		if not takes and not (c is BaseButton and (c as BaseButton).disabled):
+			return false
+	return not scroll_steps(c).is_empty()
+
+
+# ---------------------------------------------------------------- what a press reaches
+
+
+static func press_reaches(c: Control, at: Vector2) -> Array:
+	## whether a press at `at` (the frame's own units) comes to `c`, as the engine's GUI hands a mouse button or a touch
+	## to a Control: [0, ""] when it does (the Control the GUI picks there is `c`, or one below `c` whose press climbs
+	## to it: none on the way stops it with MOUSE_FILTER_STOP); [1, what] when something else takes it ("parent/name
+	## (class)"): another Control picked there (one drawn over it, a higher canvas layer's, a sibling of any mouse
+	## filter but IGNORE, a scroll bar), a shown embedded window (a dialog, a popup) that holds the point, or a shown
+	## exclusive one wherever it is (it takes all input from the window below); [-1, ""] when that can't be told: `c`
+	## takes no press itself (its mouse filter IGNORE, or turned off by a mouse_behavior_recursive above it), or nothing
+	## is picked there. What it can't see: a Control on the way up that accepts the press itself, a game's _input that
+	## marks the press handled first, a native _has_point (a TextureButton's click mask: its rectangle is read), a
+	## press outside an open popup that only closes it, title bars, windows that aren't embedded, and what is inside a
+	## SubViewportContainer.
+	if _mouse_filter(c) == Control.MOUSE_FILTER_IGNORE:
+		return [-1, ""]
+	var root: Window = Find.probe.get_tree().root
+	var window := _window_at(root, at, c)
+	if window != null:
+		return [1, _what(window)]
+	var hit := picked_at(root, at)
+	if hit == null:
+		return [-1, ""]
+	if _press_climbs(hit, c):
+		return [0, ""]
+	return [1, _what(hit)]
+
+
+static func covered(c: Control) -> Variant:
+	## the widgets field `covered`: 1 when a press at its centre goes to something else first (press_reaches), 0 when
+	## it comes to it; null when that can't be told: it isn't on screen (visible), has no size, its centre lies outside a
+	## Control above it that clips (clipped_out) or outside the frame, it takes no press, or nothing is picked there
+	if not visible(c) or rect(c) == null or clipped_out(c):
+		return null
+	var at := press_point(c)
+	if not Rect2(Vector2.ZERO, frame_size()).has_point(at):
+		return null
+	var read: Array = press_reaches(c, at)
+	return null if read[0] < 0 else float(read[0])
+
+
+static func picked_at(root: Window, at: Vector2) -> Control:
+	## the Control the window's GUI gives a press at `at`, picked as the engine picks it: its root Controls (no Control
+	## above them through canvas items, or set top level) by canvas layer, then tree order, the last first, each one
+	## shown; in each, its children the last first (internal ones too: a ScrollContainer's scroll bars), a Control that
+	## clips only when the point is in it, a top-level child left for its own turn; the first Control whose mouse filter
+	## isn't IGNORE and that holds the point (its script's _has_point when it has one, else its rectangle). z_index plays
+	## no part, as in the engine's picking. Null when none does.
+	var roots: Array = []
+	var order := 0
+	for n: Node in root.find_children("*", "Control", true, false):
+		var c := n as Control
+		if Find.is_own(c) or c.get_viewport() != root or not _gui_root(c):
+			continue
+		var layer := c.get_canvas_layer_node()
+		roots.append([layer.layer if layer != null else 0, order, c])
+		order += 1
+	roots.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
+	for i in range(roots.size() - 1, -1, -1):
+		var top: Control = roots[i][2]
+		if not top.is_visible_in_tree():
+			continue
+		var found := _pick_below(top, at)
+		if found != null:
+			return found
+	return null
+
+
+static func _gui_root(c: Control) -> bool:
+	## whether the GUI picks from `c` as one of its roots: set top level, or no Control above it through canvas items (a
+	## Node2D between counts as the way up; a node that is no canvas item ends it)
+	var at: Node = c
+	while not (at as CanvasItem).is_set_as_top_level():
+		var parent := at.get_parent()
+		if not (parent is CanvasItem):
+			return true
+		if parent is Control:
+			return false
+		at = parent
+	return true
+
+
+static func _pick_below(item: CanvasItem, at: Vector2) -> Control:
+	if not item.visible:
+		return null
+	var xform := item.get_global_transform_with_canvas()
+	if is_zero_approx(xform.determinant()):
+		return null
+	var local := xform.affine_inverse() * at
+	var c := item as Control
+	if c == null or not c.clip_contents or _holds_point(c, local):
+		for i in range(item.get_child_count(true) - 1, -1, -1):
+			var child := item.get_child(i, true) as CanvasItem
+			if child == null or child.is_set_as_top_level():
+				continue
+			var found := _pick_below(child, at)
+			if found != null:
+				return found
+	if c == null or _mouse_filter(c) == Control.MOUSE_FILTER_IGNORE:
+		return null
+	return c if _holds_point(c, local) else null
+
+
+static func _holds_point(c: Control, local: Vector2) -> bool:
+	## whether a point in its own rectangle's units is in it: its script's _has_point when it has one, else its rectangle
+	if c.get_script() != null and c.has_method("_has_point"):
+		return bool(c.call("_has_point", local))
+	return Rect2(Vector2.ZERO, c.size).has_point(local)
+
+
+static func _mouse_filter(c: Control) -> int:
+	## the mouse filter the GUI picks by: its own, but IGNORE when a mouse_behavior_recursive set on it, or on the
+	## nearest Control above it that sets one, turns the mouse off (read by name: an engine without it reads nothing)
+	var at: Node = c
+	while at is Control:
+		var behaviour: Variant = at.get("mouse_behavior_recursive")
+		if behaviour is int and behaviour != 0:  # 0: inherited
+			if behaviour == 1:  # disabled
+				return Control.MOUSE_FILTER_IGNORE
+			break
+		at = at.get_parent()
+	return c.mouse_filter
+
+
+static func _press_climbs(hit: Control, c: Control) -> bool:
+	## whether a press the GUI gives `hit` comes to `c` as it climbs: `hit` is `c`, or below it, and none on the way up
+	## stops it (MOUSE_FILTER_STOP) or is set top level
+	var at: Node = hit
+	while at is CanvasItem:
+		if at == c:
+			return true
+		if at is Control and _mouse_filter(at as Control) == Control.MOUSE_FILTER_STOP:
+			return false
+		if (at as CanvasItem).is_set_as_top_level():
+			return false
+		at = at.get_parent()
+	return false
+
+
+static func _window_at(root: Window, at: Vector2, c: Control) -> Window:
+	## an embedded window that takes a press at `at` before the window's own Controls: of the shown ones that don't let
+	## the mouse through (and don't hold `c`), the last that holds the point or is exclusive
+	var found: Window = null
+	for n: Node in root.find_children("*", "Window", true, false):
+		var w := n as Window
+		if Find.is_own(w) or not w.visible or not w.is_embedded() or w.mouse_passthrough or w.is_ancestor_of(c):
+			continue
+		if w.exclusive or Rect2(Vector2(w.position), Vector2(w.size)).has_point(at):
+			found = w
+	return found
+
+
+static func _what(n: Node) -> String:
+	## what a press reached, for probe.log: "parent/name (class)", or "name (class)" with no parent
+	var parent := n.get_parent()
+	return "%s%s (%s)" % ["%s/" % parent.name if parent != null else "", n.name, Find.class_of(n)]

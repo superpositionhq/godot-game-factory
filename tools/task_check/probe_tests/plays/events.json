@@ -1,0 +1,20 @@
+{
+  "seconds": 4,
+  "shots": 0,
+  "every": 0.1,
+  "scene": "res://scenes/Events.tscn",
+  "inputs": [
+    {"t": 0.5, "shot": "lost", "when": {"query": {"id": "w_never", "kind": "widgets", "select": {"name": "Never"}, "fields": []}, "field": "count", "of": "count", "match": null, "op": ">=", "value": 1, "within": 1.0}},
+    {"t": 1.0, "key": "<Keyboard>/space", "press": true},
+    {"t": 1.0, "shot": "win", "when": {"query": {"id": "w_win", "kind": "widgets", "select": {"name": "Banner"}, "fields": []}, "field": "count", "of": "count", "match": null, "op": ">=", "value": 1, "within": 2.0}},
+    {"t": 1.0, "shot": "five", "when": {"query": {"id": "w_five", "kind": "ui", "select": {"kind": "text"}, "fields": ["text"]}, "field": "text", "of": "count", "match": "^SCORE 5$", "op": ">=", "value": 1}},
+    {"t": 1.0, "shot": "ten", "when": {"query": {"id": "w_ten", "kind": "objects", "select": {"name": "Events"}, "fields": ["prop:score"]}, "field": "prop:score", "of": "max", "match": null, "op": ">=", "value": 10}},
+    {"t": 1.1, "key": "<Keyboard>/space", "press": false},
+    {"t": 2.0, "shot": "late", "when": {"query": {"id": "w_late", "kind": "widgets", "select": {"name": "Never"}, "fields": []}, "field": "count", "of": "count", "match": null, "op": ">=", "value": 1}},
+    {"t": 2.5, "shot": "already", "when": {"query": {"id": "w_already", "kind": "widgets", "select": {"name": "Banner", "visible": false}, "fields": ["visible"]}, "field": "visible", "of": "any", "match": null, "op": ">=", "value": 1}}
+  ],
+  "queries": [
+    {"id": "banner", "kind": "widgets", "select": {"name": "Banner"}, "fields": []},
+    {"id": "score", "kind": "objects", "select": {"name": "Events"}, "fields": ["prop:score"]}
+  ]
+}

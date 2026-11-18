@@ -468,7 +468,7 @@ class Project:
         spec = {"format": SPEC_FORMAT, "out": out.as_posix(), "size": list(MOBILE_SIZE[mobile] if mobile else SHOT_SIZE),
                 "seconds": seconds, "shots": shots, "every": every, "fps": FPS, "scene": scene,
                 "sound": probes.hears(queries),
-                "player": player, "inputs": list(inputs or []),
+                "player": player, "inputs": probes.probe_inputs(inputs),
                 "queries": queries or {"format": probes.QUERIES_FORMAT, "every": every, "queries": []}}
         if keep_saves:  # the probe empties user:// when the game starts, unless the spec says this
             spec["keep_saves"] = True
