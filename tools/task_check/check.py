@@ -28,14 +28,16 @@ and starts on the saved data they left; every other play starts clean (Side._tas
 boot_<seconds>s (2 screenshots, no queries). Every task's boot is a 60 s idle play and
 "look" is the first 20 s of the same idle game, so when no look probe reads the log, a side that boots (the reference;
 a start is never booted) plays one 60 s idle play with look's queries for both (Side.idle): the boot check reads it
-whole, and look reads its first 20 s only (first_seconds), one game launch instead of two. A `package` check fails
-closed on every side, as the Lab's grade fails it (NO_PACKAGE: no Godot grader packages a game). A `judge` check's
-plays are played on both sides (with its `route`, read from the reference's copy and played on each, as the Lab plays
-it) and the screenshots its judge would see are saved under <name>/judge-shots/<check>/ (judges.py) for the task's
-writer to score blind (`judge_shots`); a required judge holds the verdict until both sides are scored and agree
-(judged). A `seen` probe (text the Lab's visual model reads from a named shot) is read by the task's writer
-instead: its crops are saved under <name>/seen-shots/<check>/ (seen.py), and once the writer has answered, their
-answer is the probe's measure on each side; until then the probe measures nothing, and a task with a required one
+whole, and look reads its first 20 s only (first_seconds), one game launch instead of two. A `package` check makes the
+game's release export (godot.Project.package: its own "Windows Desktop" preset, the probe in it) and plays the exported
+player for PACKAGED_SECONDS (1 screenshot) through the probe: it passes when the export left its player and the player
+ran to its time with no crash (Side.package); a machine without the release export template fails it, saying so. A
+`judge` check's plays are played on both sides (with its `route`, read from the reference's copy and played on each, as
+the Lab plays it) and the screenshots its judge would see are saved under <name>/judge-shots/<check>/ (judges.py) for
+the task's writer to score blind (`judge_shots`); a required judge holds the verdict until both sides are scored and
+agree (judged). A `seen` probe (text the Lab's visual model reads from a named shot) is read by the task's writer
+instead: its crops are saved under <name>/seen-shots/<check>/ (seen.py), and once the writer has answered, their answer
+is the probe's measure on each side; until then the probe measures nothing, and a task with a required one
 isn't VALID."""
 
 import json
@@ -67,9 +69,7 @@ MOBILE_DRIVE = [_push(1.0, [0.15, 0.6], 5.0), _push(6.0, [0.25, 0.75], 2.0), _pu
                 _push(15.0, [0.15, 0.6], 6.0)]
 JUDGES = ("judge", "code_judge")
 NOT_JUDGED = "not asked: a model's check, answered by the task's writer (judge-shots)"
-# a package check, as the Lab's grade words it: no Godot grader packages a game (a copy is played from source), so it
-# fails on every side, counted, and a required one keeps every run, the reference's too, from passing
-NO_PACKAGE = "not packaged: no Godot grader packages a game yet (a copy is played from source), so it fails closed"
+PACKAGED_SECONDS = 20  # a package check's play of the exported player
 TASK_ERROR = verdict.TASK_ERROR
 SELECTING = ("objects", "widgets", "components")  # the runtime measures that read what their select matches
 ROUTE_INPUTS, ROUTE_BYTES, ROUTE_SECONDS, ROUTE_SHOTS = 400, 1024 * 1024, 120, 8  # a judge's route, as the Lab reads it
@@ -128,7 +128,7 @@ class Built:
 
     def __init__(self, project, log=print):
         self.project, self.log = project, log
-        self._build = None
+        self._build = self._package = None
 
     def has_built(self):
         return self._build is not None
@@ -137,6 +137,12 @@ class Built:
         if self._build is None:
             self._build = self.project.build(timeout)
         return self._build
+
+    def package(self, timeout):
+        """The release export, made once for every task of the run that has this copy (its player is kept)."""
+        if self._package is None:
+            self._package = self.project.package(timeout)
+        return self._package
 
     def __getattr__(self, name):
         return getattr(self.project, name)
@@ -214,6 +220,7 @@ class Side:
         self.plan = probes.plan(task)
         self.player = tasks.player(task)
         self._build = None
+        self._packaged = None  # the package check's (passed, detail), once
         self.played = {}  # play name -> godot.Played
         self.saves = []  # the plays whose saved data the copy holds now: the last that started clean, and those after it
         self.replays = {}  # play name -> what differed when it was played again for its saves (replay_note)
@@ -268,7 +275,8 @@ class Side:
         for f, data in files.items():
             (folder / f).write_bytes(data)
 
-    def _play(self, name, seconds, shots, inputs=None, play=None, queries=None, every=None, waits=0.0, again=False):
+    def _play(self, name, seconds, shots, inputs=None, play=None, queries=None, every=None, waits=0.0, again=False,
+              packaged=False):
         """A play, once per name, on the scene and args `play` (a task play, or None for the checker's own) opens;
         `waits`: the real seconds its waits add (a task play's), which its timeout gets on top. A task play that
         names `after` starts on the saved data of the plays before it; every other play starts clean (the probe
@@ -281,7 +289,8 @@ class Side:
             scene, args = tasks.place(self.task, play)
             before, self.saves = self.saves, []  # a play that raises leaves no saves known
             found = self.project.play(seconds, shots, self.timeout + math.ceil(waits), scene=scene, inputs=inputs,
-                                      queries=queries, args=args, every=every, player=self.player, keep_saves=keeps)
+                                      queries=queries, args=args, every=every, player=self.player, keep_saves=keeps,
+                                      **({"packaged": True} if packaged else {}))
             self.saves = before + [name] if keeps else [name]
             waited = getattr(found, "waited", 0.0)
             ended = found.probe.get("ended") if isinstance(found.probe, dict) else None
@@ -355,6 +364,31 @@ class Side:
         crashed = fatal(p.log)
         return {"ok": p.probe is not None and p.probe.get("ended") == "time" and not crashed, "crashed": crashed,
                 "timed_out": p.timed_out, "log": godot.during(p.log)}
+
+    def package(self):
+        """(passed, detail) of a package check on this side, once: the release export (godot.Project.package), then
+        its player played for PACKAGED_SECONDS (1 screenshot) through the probe, passing when it ran to its time with
+        no crash."""
+        if self._packaged is None:
+            if not self.built():
+                self._packaged = False, f"{self.why_unbuilt()}, so it wasn't packaged"
+                return self._packaged
+            self.log(f"  {self.name}: making the release export")
+            r = self.project.package(self.build_timeout)
+            if self.evidence is not None and (r.exit_code != 0 or not r.playable):
+                self._keep("package", {"package.log": r.output.encode("utf-8")})
+            if getattr(r, "why", None):
+                self._packaged = False, f"packaging failed: {r.why}"
+            elif r.exit_code != 0 or not r.playable:
+                left = ": the export left no player" if r.exit_code == 0 else ""
+                self._packaged = False, ("packaging timed out" if r.timed_out
+                                         else f"packaging failed (exit {r.exit_code}){left}")
+            else:
+                p = self._play("packaged", PACKAGED_SECONDS, 1, packaged=True)
+                ok = p.probe is not None and p.probe.get("ended") == "time" and not fatal(p.log)
+                self._packaged = ok, (f"packaged and ran {PACKAGED_SECONDS} s" if ok
+                                      else "packaged, but the packaged game didn't run cleanly")
+        return self._packaged
 
     def probe_play(self, play):
         """The play a probe names ("look", "drive", a task play), played once with the queries of every probe it
@@ -519,8 +553,8 @@ def reads_nothing(measure, probe):
 
 
 class Grade:
-    """The checks of one side as a solution's grade would run them. `mode` "reference": every check but judges and
-    packaging, of the reference or of `side` (an agent's game, task-try.py); "start": its probes and a
+    """The checks of one side as a solution's grade would run them. `mode` "reference": every check but judges, of the
+    reference or of `side` (an agent's game, task-try.py); "start": its probes and a
     `fails_at_start` build check. Thresholds are shared between the grades (`thresholds`)."""
 
     def __init__(self, task, mode, start, reference, thresholds, side=None):
@@ -634,8 +668,8 @@ class Grade:
             found = [p for p in root.glob(check["glob"]) if p.is_file()
                      and not SKIP.intersection(p.relative_to(root).parts)]
             return len(found) >= check["min_count"], f"{len(found)} file(s) match"
-        if kind == "package":  # fails closed, as in the Lab's grade: counted, never left out
-            return False, NO_PACKAGE
+        if kind == "package":
+            return side.package()
         if kind == "probe":
             return self.probe_check(check)
         raise ValueError(f"no check kind {kind}")

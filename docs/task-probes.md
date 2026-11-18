@@ -1400,8 +1400,8 @@ Before any agent is given a task, the checker grades the start and the fix with 
 
 - the start builds (unless the task says it doesn't, section 3.1: then it must not);
 - the fix (the oracle) passes every required check: it builds, boots, passes every required probe, `log_absent`,
-  `file_exists` and `package` check (a `package` check always fails: no Godot grader packages a game, so a task never
-  requires one); its checks that aren't required only add notes;
+  `file_exists` and `package` check (a `package` check passes when the game's release export builds and its player
+  runs 20 s with no crash); its checks that aren't required only add notes;
 - the start (the no-op) fails every required probe outside `still_works`, of which there is at least one that isn't
   `seen` (or the `fails_at_start` build check);
 - a no-op scores zero: no check the start passes carries weight, so build, boot and `still_works` checks take

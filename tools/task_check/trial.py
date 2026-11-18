@@ -11,7 +11,7 @@ For one task and each run:
    factory's hooks on the same machine). Its transcript is kept.
 3. The workspace is graded as a solution: its build outputs and .godot removed, the task probe added, built fresh,
    played, every check but judges and seen probes (a model's reading in the Lab: not asked, and left out of the
-   number) run against the thresholds the start and the reference (a package check fails, as in the Lab's grade)
+   number) run against the thresholds the start and the reference (a package check exports and boots its release)
    give (both built and measured once for all runs, before the first agent starts, and deleted then: the reference copy
    is the answer, and it would lie two folders above the agent's). Each `judge` check's plays are then played on the
    agent's game and the screenshots its judge would see are saved under <name>/run<N>/judge-shots/<check>/agent/ with

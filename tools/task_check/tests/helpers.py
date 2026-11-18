@@ -69,11 +69,17 @@ class FakeProject:
     (probe dict or None, log); `platform`: how a mobile game is held (None: a desktop game). Records its builds and
     plays."""
 
-    def __init__(self, answer=None, build_exit=0, folder=".", platform=None):
+    def __init__(self, answer=None, build_exit=0, folder=".", platform=None, packaged=None):
         self.answer, self.build_exit, self.platform = answer, build_exit, platform
         self.folder = __import__("pathlib").Path(folder)
         self.label = "fake"
         self.plays, self.builds, self.files = [], 0, {}
+        # what `package` answers (a godot.Packaged; None: an export that left its player), and how many were asked
+        self.packaged, self.packages = packaged, 0
+
+    def package(self, timeout):
+        self.packages += 1
+        return self.packaged or godot.Packaged(0, "exported", 1.0, playable=True)
 
     def mobile(self):
         return self.platform
@@ -83,9 +89,10 @@ class FakeProject:
         return godot.Result(self.build_exit, "SCRIPT ERROR: Parse Error" if self.build_exit else "built", 1.0)
 
     def play(self, seconds, shots, timeout, scene=None, inputs=None, queries=None, args=(), every=None, player=None,
-             keep_saves=False):
+             keep_saves=False, packaged=False):
         self.plays.append({"seconds": seconds, "shots": shots, "scene": scene, "inputs": inputs, "queries": queries,
-                           "args": list(args), "every": every, "player": player, "keep_saves": keep_saves})
+                           "args": list(args), "every": every, "player": player, "keep_saves": keep_saves,
+                           **({"packaged": True} if packaged else {})})
         probe, log = self.answer(seconds, shots, queries) if self.answer else (None, "")
         files = {"probe.json": json.dumps(probe).encode()} if probe is not None else {}
         return godot.Played(0, False, "", 1.0, probe, log, files)

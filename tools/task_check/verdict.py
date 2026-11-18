@@ -16,8 +16,8 @@ every required check, as the Lab's own no-op and oracle check of a task holds th
   then the start must not build, and that is the start failing the task (it is never played);
 - with a reference: the reference passes every required check of every kind it is checked on (build, boot,
   log_absent, file_exists, package, every required probe); its checks that aren't required are notes, never decisive.
-  A `package` check fails on every side (no grader packages a Godot game: check.NO_PACKAGE), so a required one makes
-  the task INVALID;
+  A `package` check passes only when the game's release export builds and its player runs to its time
+  (check.Side.package), so a required one on a machine without the release export template makes the task INVALID;
 - the start fails every required probe outside still_works (or doesn't build by design), and at least one of those is
   not a `seen` probe: a seen probe is a visual check a model reads, never the outcome that shows the bug;
 - without a reference: the start fails every required probe outside still_works (or doesn't build by design);

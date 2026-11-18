@@ -623,7 +623,7 @@ What each failure means and what to do (the exact lines and more fixes: [docs/ta
 | `seen X: crops saved ..., answer needed`, `judge X: shots saved ..., answer needed` | the check can't decide it without you | answer it blind (step 5), then check again |
 | `no samples in the window (the play ended at N s)`, `a stage of the play didn't land`, `... an input did not land ...` | a play that never reaches its moment: it ended early, a stage found nothing, a click or touch found no control | read `probe.log` and `inputs_missed`; drive the play as a player would (the start control by the text the instruction quotes, a wait for the scene, a stage on something both sides have) |
 | a value just past its threshold, `... did not go as its first play`, a crop you can read only with a `?` | an unsteady reading: a window at the edge of the event, a sample at a moment that moves, text that changes while the shot is taken | read the samples, not only the reduced value; move the window into the steady part of the event, read a quantity with a clear gap between the sides, take the shot at a still moment; never ease what the instruction asks |
-| `reference fails X: not packaged: ...` | a package check: no grader packages a Godot game, so it fails for every build | never ask for an exported build; drop the check, or make it `"required": false` with `"weight": 0` |
+| `reference fails X: packaging failed ...`, `... packaged, but the packaged game didn't run cleanly` | the release export wasn't made (the engine's error, no `Windows Desktop` preset, or a machine without the release export template), or its player crashed or stopped before its time | read `reference/package/package.log` or the `packaged` play's log; fix the game's `Windows Desktop` preset or the crash; install the templates with `machine\get-godot.ps1` |
 | `<side>: the route X was NOT played: ...` (a judge's notes) | the judge's route file isn't in the reference, or isn't a route | score only what the pictures show; nothing stands in for the route |
 | `X is a required code_judge`, `no required probe outside still_works but seen ones` | a check nothing here can run, or no outcome probe for the start to fail | make code review `"required": false`; add a required probe of the outcome |
 
@@ -800,7 +800,7 @@ task's solution.
 | A keep that names a thing ("the boss bar still starts full") has a required `still_works` check reading that thing | a named keep is an ask about what must not break |
 | A sentence that can't be verified as written is reworded into what the reference demonstrably does and a check decides, never left unchecked or dropped when it can be checked | the task keeps asking as much, and every sentence stays graded |
 | Exactly five kinds of sentence need no check: an exported build's behaviour, given screen sizes, frame rate on given hardware, how a sound sounds, what the task does not change | the grader can't run them; everything else stays an ask |
-| The instruction never asks for an exported or packaged build | no grader packages a Godot game, so such an ask can never pass |
+| Of an exported build, the instruction asks at most that the release export builds and boots | a package check decides exactly that; nothing else of an exported build is graded |
 | Where the game starts on a title screen, the instruction says how a player gets in, or states the scene QA plays | a play must reach the game the way the instruction lets a player |
 | A mobile game's instruction speaks of touches and the back button only | a phone has no keyboard, mouse or gamepad |
 
@@ -837,7 +837,7 @@ task's solution.
 | A judge's views are the task's own tour (scene loads, `teleport_to` what the build made, view turns, named `shot` inputs), never a view list from the game's files | a build could dress only the spots it lists |
 | A look described by a list gets one rubric item per item the instruction asks for on its own | a judge of the whole look passes a build missing one |
 | A `code_judge` is never required | a model reads code review, and no check before submission can run it |
-| No `package` check is required | no grader packages a Godot game: a required one fails every run, the reference's too |
+| A `package` check asks one thing: the game's release export (its `Windows Desktop` preset) builds, and its player runs 20 s with no crash | that is all a shipped build is graded on, by the same export and play on every machine that checks it; a machine that can't make the export fails the check, never passes it |
 | A check's name says what it decides | the result files and every reader of the task go by it |
 
 **The plays**

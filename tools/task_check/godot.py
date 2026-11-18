@@ -15,7 +15,12 @@ Godot, its console exe (machine/lib/ggfroot.py `godot_exe`).
   queries). A desktop game is played at 960x540, a mobile game (its copy has a Platform.json) at the phone's size, by how
   it is held (MOBILE_SIZE), its spec saying `touch` too. desk.py starts the game on a Windows
   desktop of its own, so the play shows nothing on the user's screen and never takes the keyboard or the mouse
-  cursor."""
+  cursor;
+- package: the game's release export (package.py: a preset of the checker's own made from the game's "Windows
+  Desktop" preset, the probe addon in it), <godot> --headless --path <copy> --export-release "TaskProbe package"
+  <copy>/Logs/TaskProbe/package/<player>, the copy's export_presets.cfg put back byte for byte after it; a machine
+  without the release export template fails it with that reason. A packaged play (play(packaged=True)) runs that
+  player with a play's own flags and spec, as a play from source does but for `--path`."""
 
 import json
 import os
@@ -29,7 +34,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import probes, seeds
+from . import package, probes, seeds
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent / "machine" / "lib"))
@@ -97,6 +102,12 @@ class Result:
     waited: float = 0.0  # of `seconds`, waiting for a godot-heavy.ps1 slot before the job started
     cause: str | None = None  # a failed build's first cause, one line (_cause)
     stopped: str | None = None  # a failed build with no word about the game: how it stopped (Project.build)
+
+
+@dataclass
+class Packaged(Result):
+    playable: bool = False  # the exported player is there to play (Project.player)
+    why: str | None = None  # why nothing was exported (no release preset, no release template), or None
 
 
 def during(log):
@@ -329,6 +340,7 @@ class Project:
 
     def __init__(self, folder, machine, label):
         self.folder, self.machine, self.label = Path(folder), machine, label
+        self.player = None  # the player `package` exported, or None
 
     def logs(self):
         return self.folder / LOGS
@@ -400,14 +412,52 @@ class Project:
         return Result(code, cut(head + output), round(seconds + spent[0], 3), timed_out,
                       round(waited + spent[1], 3), cause, stopped)
 
+    def package(self, timeout):
+        """The game's release export (package.py), the copy's export_presets.cfg put back as it was after it, whatever
+        happened: a Packaged that exported when the engine exited 0, logged no failed export and left the player. A game
+        with no release preset, or a machine without the release template, exports nothing: its `why` says so."""
+        self.player = None
+        presets = self.folder / package.PRESETS_FILE
+        original = presets.read_bytes() if presets.is_file() else None
+        addon = self.folder / seeds.PROBE
+        files = sorted(p.relative_to(addon).as_posix() for p in addon.rglob("*") if p.is_file()) \
+            if addon.is_dir() else []
+        try:
+            derived = package.derive(None if original is None else original.decode("utf-8-sig", errors="replace"),
+                                     seeds.PROBE, files)
+        except package.NoRelease as exc:
+            return Packaged(1, str(exc), 0.0, why=str(exc))
+        missing = package.missing_template(self.machine.editor, ggfroot.engine()["templates"])
+        if missing:
+            return Packaged(1, missing, 0.0, why=missing)
+        out = self.logs() / "package"
+        seeds.remove(out)  # what an earlier export left is never this one's
+        out.mkdir(parents=True)
+        player = out / package.target()[2]
+        presets.write_bytes(derived.encode("utf-8"))
+        try:
+            found, output = self._headless("package", timeout, _fresh(self.logs() / "package.log"), "--export-release",
+                                           package.PRESET, player)
+        finally:
+            presets.write_bytes(original)  # the game's own, byte for byte (derive refuses a copy with none)
+        code = found.exit_code
+        if code == 0 and re.search(package.FAILED, output):
+            code = 1  # the engine may exit 0 from an export it logged as failed
+        self.player = player if code == 0 and player.is_file() else None
+        return Packaged(code, cut(output), found.seconds, found.timed_out, found.waited,
+                        playable=self.player is not None)
+
     def play(self, seconds, shots, timeout, scene=None, inputs=None, queries=None, args=(), every=None, player=None,
-             keep_saves=False):
+             keep_saves=False, packaged=False):
         """The game run from source for `seconds` of game time through the probe: on its own desktop, a frame of
         960x540 (a mobile game: the phone's size), a fixed 30 fps, `shots` screenshots, `inputs` sent at their times,
         `queries` (probes.query_file) sampled every `every` s, `scene` opened (None: the project's main scene),
         `player` (an object select, or None: the probe finds the player) as the player, `args` after the spec on the
         command line; a Played. The play starts from clean saved data (seeds.forget_saves), unless `keep_saves`: then
-        what the play before it on this copy saved is there (a task play run after others, check.Side)."""
+        what the play before it on this copy saved is there (a task play run after others, check.Side). `packaged`: the
+        player `package` exported is played instead of the copy from source."""
+        if packaged and self.player is None:
+            raise ValueError("no packaged player: package the copy first")
         logs = self.logs()
         out = logs / "play"
         seeds.remove(out)  # what an earlier play wrote is never this one's
@@ -428,8 +478,9 @@ class Project:
         asked.write_text(json.dumps(spec, indent=2), encoding="utf-8")
         if not keep_saves:
             seeds.forget_saves(self.folder)
-        argv = [sys.executable, DESK, self.machine.editor, "--path", self.folder, "--log-file", log_path, *PLAY_FLAGS,
-                *([scene] if scene else []), "--", "-taskProbe", asked, *args]
+        head = [self.player] if packaged else [self.machine.editor, "--path", self.folder]
+        argv = [sys.executable, DESK, *head, "--log-file", log_path, *PLAY_FLAGS, *([scene] if scene else []), "--",
+                "-taskProbe", asked, *args]
         found = self.machine.job(f"task-check play {self.label}", argv, self.folder, timeout, gpu=True)
         files = {p.name: p.read_bytes() for p in out.iterdir() if p.is_file()} if out.is_dir() else {}
         probe = None

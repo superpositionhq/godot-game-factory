@@ -138,20 +138,22 @@ class Verdict(unittest.TestCase):
                                "line(s)", "reference fails boots_clean: crashed"])
         self.assertEqual(notes, ["reference fails notes_left (file_exists): 0 file(s)"], "one not required is a note")
 
-    def test_a_required_package_check_is_never_valid(self):
-        """No Godot grader packages a game, so the Lab fails every package check closed: a required one fails every
-        run, the reference's too."""
+    def test_a_required_package_check_decides_as_any_required_check(self):
+        """A package check exports the game's release and boots it (test_package.py): a required one the reference
+        fails makes the task INVALID with its detail, one not required is a note."""
+        failed = "packaging failed (exit 1)"
         task = task_with(probe(), {"kind": "package", "name": "packages", "weight": 0},
                          {"kind": "package", "name": "packages_too", "required": False, "weight": 0})
-        ref = record(checked("hero_on_ground", "probe", True), checked("packages", "package", False, check.NO_PACKAGE),
-                     checked("packages_too", "package", False, check.NO_PACKAGE))
+        ref = record(checked("hero_on_ground", "probe", True), checked("packages", "package", False, failed),
+                     checked("packages_too", "package", False, failed))
         start = record(checked("hero_on_ground", "probe", False))
         valid, why, notes = verdict.verdict(task, ref, start)
-        self.assertEqual((valid, why), (False, [f"reference fails packages: {check.NO_PACKAGE}"]))
-        self.assertEqual(notes, [f"reference fails packages_too (package): {check.NO_PACKAGE}"])
-        grade = check.Grade(task, "reference", None, side("reference", FakeProject(measuring(0)), task), {})
-        self.assertEqual(grade.check({"kind": "package", "name": "packages"}), (False, check.NO_PACKAGE),
-                         "the checker never stands in a pass for a step it can't run")
+        self.assertEqual((valid, why), (False, [f"reference fails packages: {failed}"]))
+        self.assertEqual(notes, [f"reference fails packages_too (package): {failed}"])
+        ran = "packaged and ran 20 s"
+        ref = record(checked("hero_on_ground", "probe", True), checked("packages", "package", True, ran),
+                     checked("packages_too", "package", True, ran))
+        self.assertTrue(verdict.verdict(task, ref, start)[0])
 
     def test_any_probe_without_a_threshold_is_invalid_required_or_not(self):
         """The Lab's check stops on a probe it can't calibrate, whichever it is."""

@@ -99,7 +99,7 @@ puts the copies elsewhere, `--direct` runs Godot without the machine's job slots
    failed doesn't run and fails: `not run: needs X`): build, boot (a play of `seconds` that must run to its end
    without a crash: a log line matching `CrashHandlerException`, `Program crashed with signal`, `Dumping the
    backtrace` or `Out of memory`), `log_absent`, `file_exists` (the copy's files, without `.godot`, `Build`, `Logs`,
-   `android` and `.git`), `package` (it fails: no Godot grader packages a game, below), and every probe against its
+   `android` and `.git`), `package` (the game's release export made and booted, below), and every probe against its
    threshold. A probe no version of the game could pass is a **task error** (below).
 5. Checks the start on its probes (the no-op).
 6. Writes the result and deletes the scratch copies (unless `--keep`) and, kept or not, what their plays left outside
@@ -163,9 +163,13 @@ A task is **VALID** when all of this holds:
 - the start builds, or doesn't build exactly when a build check says `fails_at_start`;
 - **the oracle passes**: with a reference, the reference passes every **required** check of every kind the check
   runs: build, boot, `log_absent`, `file_exists`, `package` and every required probe. Its checks with
-  `"required": false` are notes. A `package` check fails on every side, the reference's too: the Lab's grade has no
-  package step for a Godot game (a copy is played from source), so it fails it closed, and a required one keeps every
-  run from passing. Leave packaging out of a task, or make it `"required": false` with `"weight": 0`;
+  `"required": false` are notes. A `package` check asks one thing: the game's release export builds and boots. The
+  checker makes the export from the game's own `Windows Desktop` preset (a preset of its own, `TaskProbe package`,
+  made from it with the probe addon put in; the game's `export_presets.cfg` is put back byte for byte after it),
+  plays the exported player for 20 s through the probe (one screenshot), and passes it only when the export left its
+  player and the player ran to its time with no crash. A mobile game's is the same desktop export, played at the
+  phone's size; no APK is made. A machine without the release export template fails the check, saying so
+  (`machine\get-godot.ps1` installs the templates): it never passes a step it can't run;
 - **the no-op fails**: the start fails every required probe outside `still_works` (or doesn't build by design): each
   is one issue of the thread, and one the start already passes rewards no work. A required check of `"weight": 0` is
   a guard wherever it sits (it rewards nothing), so the start may pass it; that lets a task hold more guards than
@@ -290,7 +294,8 @@ without), so this is for drafts only.
     threshold >= 1: no value in the window (...)`; a probe left without a threshold reads `uncalibrated: X: ...`
     instead. A detail starting `not asked` is a check that side doesn't run (judges on either side, which you score
     in their `judge-shots` folder; on the start, everything but its probes and a `fails_at_start` build check): it
-    shows as passed and counts for nothing. A package check's detail is `not packaged: ...`, a failure. A detail
+    shows as passed and counts for nothing. A package check's detail is `packaged and ran 20 s` when it passed, else
+    `packaging failed ...` or `packaged, but the packaged game didn't run cleanly`. A detail
     starting `task error:` is a check no version of the game can be graded by (VALID and INVALID);
   - `task_sha256` (the SHA-256 of the task file as the run read it: the file as committed on the `tasks` branch, or
     the `.json` given by path; a checkout with other line endings hashes differently), `task`, `game`, `at` (when,
@@ -414,9 +419,12 @@ to see whether the bug, or a play that only fits the reference, made it miss.
 **`X has no threshold: uncalibrated: ...`** for a probe that isn't required. The Lab's check stops on any probe it
 can't calibrate, so this is a reason too: give it a measure the change moves, a literal, or drop it.
 
-**`reference fails X: not packaged: ...`.** A required `package` check: no Godot grader packages a game, so it fails
-for every build, the reference's too. Leave packaging out of the task (the instruction never asks for an exported
-build: the grader can't run one), or make the check `"required": false` and `"weight": 0`.
+**`reference fails X: packaging failed ...`.** A required `package` check whose release export wasn't made: `(exit N)`
+is the engine's failure (its log is kept as `reference/package/package.log`), `: the export left no player` an export
+that wrote nothing, `: ... no preset named "Windows Desktop"` a game without its release preset, and `: this machine
+has no ... release export template` the machine's own lack (`machine\get-godot.ps1`). **`reference fails X: packaged,
+but the packaged game didn't run cleanly`**: the exported player crashed or stopped before its 20 s; its play is kept
+as `reference/packaged/`.
 
 **`judge X: shots saved for start/reference, answer needed`** (or **`judge X: not played (--no-judge-shots), answer
 needed`**). A required judge isn't scored yet: score it (VALID and INVALID), then check again. **`reference fails judge
