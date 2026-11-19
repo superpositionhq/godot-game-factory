@@ -1115,14 +1115,15 @@ task's solution.
 
 ## 9. Examples
 
-One whole task, to show the file format and the probe style only. Its game and its commits are made up, so it has
-never passed the task check: copy its shape, never its names or thresholds.
+One whole task that follows every rule of this skill. Its game and its commits are made up, so it has never run in the
+task check: copy its shape, never its names or thresholds. `tools/tests/test_validate_game.py` holds it to the
+validator's task rules.
 
 ```json
 {
   "name": "harbor-run-corr-chase-camera-and-lap-count",
-  "title": "The chase camera crowds the boat and the lap count never changes",
-  "instruction": "QA played scenario 2 (the harbor circuit; W and S throttle, A and D steer) and reports three things.\n1. The camera rides so close behind the boat that the course ahead can hardly be seen. It should sit well back and above the boat.\n2. In turns the quay and the moored boats cut off the view of the boat. The boat should stay in clear view all the way round.\n3. The lap count at the top of the screen stays at LAP 1/3 after the boat rounds the last buoy. It should show the lap the boat is on.\nSteering, throttle and the rest of the HUD must keep working as they do now.",
+  "title": "The chase camera crowds the boat, loses it by the quay, and the lap count never changes",
+  "instruction": "QA played scenario 2 (the harbor circuit; W and S throttle, A and D steer) and reports three things.\n1. The camera rides so close behind the boat that the course ahead can hardly be seen. It should sit well back and above the boat, so the course ahead can be seen past it.\n2. In the turn at the second buoy, beside the quay, the quay and the moored boats cut off the view of the boat. The boat should stay in clear view through that turn.\n3. In scenario 3 (the boat on the home straight of its first lap), the lap count at the top of the screen still reads LAP 1/3 after the boat crosses the finish line. It should show the lap the boat is on.\nSteering and throttle must keep working as they do now, and the speed readout and the race timer must stay on screen where they are.",
   "engine": "godot-4.7",
   "seed": {"game": "harbor-run", "kind": "correction",
            "commit": "1111111111111111111111111111111111111111",
@@ -1138,39 +1139,107 @@ never passed the task check: copy its shape, never its names or thresholds.
     {"name": "boots", "checks": [
       {"name": "boots_clean", "kind": "boot", "seconds": 60, "weight": 0, "needs": ["project_builds"]},
       {"name": "no_script_errors", "kind": "log_absent", "pattern": "SCRIPT ERROR", "weight": 0, "needs": ["boots_clean"]}]},
-    {"name": "fixed", "checks": [
-      {"name": "camera_back_from_boat", "kind": "probe", "weight": 3, "needs": ["boots_clean"],
-       "describe": "While the boat is driven, the camera stays well back from it instead of riding just behind it.",
+    {"name": "fixed_camera", "checks": [
+      {"name": "camera_well_back", "kind": "probe", "weight": 2, "needs": ["boots_clean"],
+       "describe": "While the boat is driven, the camera sits well back from it: at least 1.3 times as far as at the start.",
        "play": "drive",
        "measure": {"probe": "camera", "field": "distance", "window": [8, 21], "agg": "mean"},
-       "expect": {"op": ">=", "calibrate": 0.5}},
-      {"name": "boat_stays_in_view", "kind": "probe", "weight": 2, "needs": ["boots_clean"],
-       "describe": "Through the whole drive nothing stands between the camera and the boat.",
+       "expect": {"op": ">=", "start_times": 1.3}},
+      {"name": "camera_above_boat", "kind": "probe", "weight": 1, "needs": ["boots_clean"],
+       "describe": "While the boat is driven, the camera sits above it: at least 1 m higher over the boat than at the start.",
        "play": "drive",
-       "measure": {"probe": "camera", "field": "occluded", "window": [2, 21], "agg": "max"},
+       "measure": {"probe": "camera", "field": "height", "window": [8, 21], "agg": "mean"},
+       "expect": {"op": ">=", "start_plus": 1.0}},
+      {"name": "boat_in_view_by_quay", "kind": "probe", "weight": 2, "needs": ["boots_clean"],
+       "describe": "Through the turn at the second buoy, beside the quay, nothing stands between the camera and the boat.",
+       "play": {"name": "quay_turn", "seconds": 12,
+                "inputs": [{"t": 1, "teleport_to": {"name": "Buoy2"}, "distance": 8},
+                           {"t": 2, "key": "<Keyboard>/w", "press": true},
+                           {"t": 4, "key": "<Keyboard>/d", "press": true},
+                           {"t": 8, "key": "<Keyboard>/d", "press": false},
+                           {"t": 11, "key": "<Keyboard>/w", "press": false}]},
+       "measure": {"probe": "camera", "field": "occluded", "window": [3, 11], "agg": "max"},
        "expect": {"op": "<=", "value": 0}},
-      {"name": "lap_count_updates", "kind": "probe", "weight": 3, "needs": ["boots_clean"],
-       "describe": "After the boat is put beside the last buoy and driven on past it, the HUD shows lap 2 of 3.",
-       "play": {"name": "round_last_buoy", "seconds": 12,
-                "inputs": [{"t": 2, "teleport_to": {"name": "Buoy3"}, "distance": 4, "hold": 1},
-                           {"t": 4, "key": "<Keyboard>/w", "press": true},
-                           {"t": 9, "key": "<Keyboard>/w", "press": false}]},
-       "measure": {"probe": "ui", "select": {"kind": "text"}, "field": "text", "match": "LAP\\s*2/3", "of": "any",
-                   "at": "end"},
+      {"name": "looks_as_asked", "kind": "judge", "required": true, "weight": 2, "needs": ["boots_clean"],
+       "before": true, "reference": true,
+       "question": "Does the chase camera show the boat and the course the way the request asks?",
+       "rubric": [{"key": "course_ahead_seen", "required": true,
+                   "criterion": "While the boat is driven, the course ahead can be seen past the boat."},
+                  {"key": "boat_in_clear_view", "required": true,
+                   "criterion": "The boat stays in clear view through the turn at the second buoy, beside the quay."}],
+       "plays": [{"name": "straight_run", "seconds": 12,
+                  "inputs": [{"t": 1, "key": "<Keyboard>/w", "press": true},
+                             {"t": 11, "key": "<Keyboard>/w", "press": false}]},
+                 {"name": "quay_turn", "seconds": 12,
+                  "inputs": [{"t": 1, "teleport_to": {"name": "Buoy2"}, "distance": 8},
+                             {"t": 2, "key": "<Keyboard>/w", "press": true},
+                             {"t": 4, "key": "<Keyboard>/d", "press": true},
+                             {"t": 8, "key": "<Keyboard>/d", "press": false},
+                             {"t": 11, "key": "<Keyboard>/w", "press": false}]}]}]},
+    {"name": "fixed_lap_count", "checks": [
+      {"name": "lap_count_shows_lap_two", "kind": "probe", "weight": 3, "needs": ["boots_clean"],
+       "describe": "In scenario 3, after the boat crosses the finish line, the lap count at the top of the screen reads LAP 2/3.",
+       "play": {"name": "cross_finish", "seconds": 14, "args": ["-scenario", "3"],
+                "inputs": [{"t": 1, "key": "<Keyboard>/w", "press": true},
+                           {"t": 10, "key": "<Keyboard>/w", "press": false}]},
+       "measure": {"probe": "ui", "select": {"kind": "text", "rect": [0, 0, 1, 0.15]}, "field": "text",
+                   "match": "LAP\\s*2\\s*/\\s*3", "of": "any", "window": [11, 14], "agg": "max"},
        "expect": {"op": ">=", "value": 1}}]},
     {"name": "still_works", "checks": [
-      {"name": "boat_still_moves", "kind": "probe", "weight": 0, "needs": ["boots_clean"],
-       "describe": "The boat still travels under the drive's keys.",
+      {"name": "throttle_still_moves_boat", "kind": "probe", "weight": 0, "needs": ["boots_clean"],
+       "describe": "The boat still travels under the throttle.",
        "play": "drive",
        "measure": {"probe": "player", "field": "moved", "agg": "max"},
-       "expect": {"op": ">=", "value": 5}}]}
+       "expect": {"op": ">=", "value": 5}},
+      {"name": "steering_still_turns_boat", "kind": "probe", "weight": 0, "needs": ["boots_clean"],
+       "describe": "The boat still turns when it is steered.",
+       "play": "drive",
+       "measure": {"probe": "objects", "select": {"tag": "player"}, "field": "yaw", "of": "first",
+                   "window": [5, 16], "agg": "range"},
+       "expect": {"op": ">=", "value": 20}},
+      {"name": "speed_readout_still_shown", "kind": "probe", "weight": 0, "needs": ["boots_clean"],
+       "describe": "The speed readout at the lower right still shows the boat's speed while it is driven.",
+       "play": "drive",
+       "measure": {"probe": "ui", "select": {"kind": "text", "rect": [0.7, 0.8, 1, 1]}, "field": "number",
+                   "of": "max", "window": [3, 6], "agg": "max"},
+       "expect": {"op": ">", "value": 0}},
+      {"name": "race_timer_still_runs", "kind": "probe", "weight": 0, "needs": ["boots_clean"],
+       "describe": "The race timer at the upper right still counts up.",
+       "play": "drive",
+       "measure": {"probe": "ui", "select": {"kind": "text", "rect": [0.7, 0, 1, 0.15]}, "field": "clock",
+                   "of": "max", "window": [2, 21], "agg": "rises"},
+       "expect": {"op": ">=", "value": 5}},
+      {"name": "hud_still_in_place", "kind": "judge", "required": true, "weight": 0, "needs": ["boots_clean"],
+       "before": true,
+       "question": "Do the speed readout and the race timer stay on screen where they are?",
+       "rubric": [{"key": "speed_readout_in_place", "required": true,
+                   "criterion": "The speed readout is on screen where it is in the BEFORE pictures."},
+                  {"key": "race_timer_in_place", "required": true,
+                   "criterion": "The race timer is on screen where it is in the BEFORE pictures."}],
+       "plays": [{"name": "straight_run", "seconds": 12,
+                  "inputs": [{"t": 1, "key": "<Keyboard>/w", "press": true},
+                             {"t": 11, "key": "<Keyboard>/w", "press": false}]}]}]}
   ]
 }
 ```
 
-`builds`, `boots` and `still_works` carry `"weight": 0` because the start already passes them; the three probes of
-`fixed`, one per issue of the brief, carry the weight. The game is a template game, so `play_args` alone start its
-scenario. The task play reaches its spot with `teleport_to` a node by its whole name, then drives on.
-`lap_count_updates` reads the lap with `ui` because the label is on the start's HUD already (it shows LAP 1/3) and
-only its value changes; text in a place the thread creates would be read with `seen` beside the state behind it. `limits` are
-written out: left out, the schema's lower defaults apply. The optional `quality` milestone is left out.
+- **The brief** reports what QA saw, item by item, and names no cause, node or file. Its look asks ("the course ahead
+  can be seen past it", "in clear view through that turn") are rubric items of the required `looks_as_asked` judge,
+  in the brief's own words, with `before` and `reference`; its last sentence names four keeps.
+- **The weight** is on the outcome probes of `fixed_camera` and `fixed_lap_count`, at least one per issue, and on the
+  `looks_as_asked` judge, which the start fails. `builds`, `boots` and every check of `still_works` carry `"weight":
+  0` because the start already passes them.
+- **"Well back and above"** is a tuning ask the reference reaches only one fair way, so its thresholds are relative
+  to the start (`start_times`, `start_plus`), never calibrated.
+- **Every play reaches its moment.** The game is a template game, so `play_args` alone start scenario 2 and
+  `play_scene` stays null. The quay turn is reached by `teleport_to` a buoy by its whole name, and that one play,
+  written identically, serves the probe and the judge. The lap play starts scenario 3 with its own `args`, which the
+  brief states, and reads the label after the boat has crossed the line.
+- **Nothing only the reference has.** `Buoy2`, the group `player`, scenario 3, the lap label and the HUD's corners
+  all exist at `seed.commit`. The lap count is read with `ui` because its label is on the start's HUD already (it
+  shows LAP 1/3) and only its value changes; text in a place the thread creates would be read with `seen` beside a
+  probe of the state behind it.
+- **Every named keep has its check.** Throttle, steering, the speed readout and the race timer each get a required
+  `still_works` probe of what the player meets (literal thresholds: a `still_works` probe never calibrates), and
+  where the two readouts sit on screen goes to the required `still_works` judge, which compares with `before`.
+- `limits` are written out: left out, the schema's lower defaults apply. The optional `quality` milestone is left out.

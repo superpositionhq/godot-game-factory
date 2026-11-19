@@ -1277,6 +1277,29 @@ class Units(unittest.TestCase):
         t = task('a' * 40, 'b' * 40, milestones=[{'name': 'm', 'checks': [c]}])
         self.assertEqual(list(vg.check_schema(t, vg.SCHEMAS['game-task'])), [])
 
+    def test_the_skills_example_task_keeps_every_rule(self):
+        """The whole example task of the godot-write-tasks skill (section 9) passes the task rules with no finding, and
+        keeps the rules the validator can't see from one file: required looks_as_asked and still_works judges, at least
+        3 weighted outcome probes, nothing calibrated (its tuning asks are relative to the start), every still_works
+        check of weight 0."""
+        with open(os.path.join(REPO, 'skills', 'godot-write-tasks', 'SKILL.md'), encoding='utf-8') as f:
+            text = f.read()
+        block = re.search(r'## 9\. Examples.*?```json\n(.*?)\n```', text, re.S)
+        t = json.loads(block.group(1))
+        rep = vg.Report()
+        self.assertTrue(vg.check_task(rep, 'repo: Tasks', 't', t, t['seed']['game'], None))
+        self.assertEqual(rep.items, [])
+        checks = {m['name']: m['checks'] for m in t['milestones']}
+        judges = [(m, c) for m, cs in checks.items() for c in cs if c['kind'] == 'judge']
+        self.assertTrue(any(c['name'] == 'looks_as_asked' and c.get('required', True) and c.get('before')
+                            and c.get('reference') for _m, c in judges))
+        self.assertTrue(any(m == 'still_works' and c.get('required', True) and c.get('before') for m, c in judges))
+        outcomes = [c for m, cs in checks.items() if m != 'still_works' for c in cs
+                    if c['kind'] == 'probe' and c.get('required', True) and c.get('weight', 1) > 0]
+        self.assertGreaterEqual(len(outcomes), 3)
+        self.assertEqual([c['name'] for c in checks['still_works'] if c.get('weight', 1) != 0], [])
+        self.assertNotIn('calibrate', json.dumps(t))
+
     def test_a_plays_touches_and_clicks_are_its_controls(self):
         """What a play presses (a widget click, a tap's or a drag's widget spot) and the flags it starts with."""
         play = {'name': 'p', 'seconds': 8, 'args': ['-scenario', '4', '-devmenu', '2:quest'],

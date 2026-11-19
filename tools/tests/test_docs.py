@@ -4,7 +4,8 @@ somewhere, and every skill loads by its front matter. Plain text checks: no engi
     python -m unittest discover -s tools/tests -p "test_docs.py" -v
 
 What is not checked, so a green run does not claim it: the JSON examples of the documents (the task check's own tests
-and the probe tests hold the formats), and a script's positional arguments.
+and the probe tests hold the formats; test_validate_game holds the write-tasks skill's whole example task to the task
+rules), and a script's positional arguments.
 """
 import os, re, subprocess, unittest
 
