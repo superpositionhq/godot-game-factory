@@ -44,7 +44,7 @@ FAIL  desktop.second       17 checks, 1 failed  0 s
 session can't move the display's own mouse pointer (a Windows session without a desktop of its own, as over ssh): the
 checks of `mouse_drawn` that read the mouse a game polls are then skipped, each said on a `SKIPPED` line on every run,
 and the play checks instead that `probe.log` says the pointer didn't follow. A play's run is stopped after 180 s
-(`longest`: 900 s). What each play wrote is kept in
+(`longest`: 1800 s). What each play wrote is kept in
 `<work folder>/<variant>/Logs/ProbeTests/<play>/` (probe.json, probe.log, the screenshots, the game's log, the spec).
 
 Headless, the engine runs the scene tree, the scripts, the input events, the physics and the audio mix, but draws
@@ -136,7 +136,7 @@ with an id of its own.
 | `mouse_drawn` (`--rendered`) | the same in a window, where the engine reads the polled mouse and the hover from the display's own pointer, which the probe moves to the cursor; every run of one line kept once (a display may report the move as a motion of its own) |
 | `typing` | a key goes the engine's way (`scenes/Typing.tscn`): the game's `_input` first, then the focused control, then `_shortcut_input`, `_unhandled_key_input`, `_unhandled_input` while nothing took it: with nothing focused the game gets J at every stage and its action fires; a focused text field takes the typed keys (a capital with Shift held, a digit as it is) and the action bound to J doesn't fire, though its polled state and `Input.is_key_pressed` are down as a keyboard's; a focused button takes no J and is pressed by Enter, which still goes on; Ctrl+S matches an action bound to it; an action bound to the left Shift by its side fires for it and not for the right one; a modifier's side and the modifiers held on every key |
 | `typing_drawn` (`--rendered`) | the same in a window |
-| `longest` | a play of 300 s, the longest a task's may be: a tap held 180 s and a drag spread over 210 s and held 60 s lift when they end, a shot at 240 s taken in the frame its event comes, a shot at 299.5 s, and samples to the end |
+| `longest` | a play of 1200 s, the longest a task's may be: a tap held 700 s and a drag spread over 900 s and held 200 s lift when they end, a shot at 1100 s taken in the frame its event comes, a shot at 1199.5 s, and samples to the end |
 | `kept` | a spec that says `keep_saves`: the play starts on what the play before it saved, what it saved when it was told to close too (`wait` is played first) |
 | `fresh` | any other play starts clean, whatever the play before it saved |
 | `frame` (`--rendered`) | screenshots of exactly the frame's size without alpha, one taken in the frame its event comes (`when`: the tap's count shown) and one whose event doesn't come in time (a `shot_when` miss), a tap on a named Control landing, `screen` and `render` with values, at 960x540 and at 1080x1920 |

@@ -1035,10 +1035,10 @@ class Units(unittest.TestCase):
                          ['check p: play thumbs has a touch that ends after the play (10 s)'])
         self.assertEqual(errs({'t': 3, 'key': '<Keyboard>/escape', 'press': True}), [])   # the back button is a key
 
-    def test_a_play_lasts_up_to_300_s(self):
-        """A task play lasts 5 to 300 s, and every time in it goes up to 300 s: an input's `t`, a hold, a move's or a
-        drag's `over`, a measure's `at` and an event's `within`; a wait stays 300 s in all. One second past is
-        refused, and so is anything that ends after the play."""
+    def test_a_play_lasts_up_to_1200_s(self):
+        """A task play lasts 5 to 1200 s (the Lab game grader 1.18.0's), and every time in it goes up to 1200 s: an
+        input's `t`, a hold, a move's or a drag's `over`, a measure's `at` and an event's `within`; a wait stays 300 s
+        in all. One second past is refused, and so is anything that ends after the play."""
         def errs(seconds, inputs, at=None, since=None):
             measure = {'probe': 'player', 'field': 'x', 'agg': 'max'}
             if at is not None:
@@ -1050,29 +1050,29 @@ class Units(unittest.TestCase):
             t = task('a' * 40, 'b' * 40, milestones=[{'name': 'm', 'checks': [c]}])
             return list(vg.check_schema(t, vg.SCHEMAS['game-task'])) + vg.task_semantic_errors(t)
         gate = {'probe': 'widgets', 'select': {'name': 'Gate'}, 'field': 'count'}
-        longest = [{'t': 0, 'tap': [0.5, 0.5], 'hold': 299}, {'t': 1, 'drag': [[0.2, 0.8], [0.3, 0.7]], 'over': 200,
-                                                               'hold': 99, 'finger': 1},
-                   {'t': 2, 'move': [100, 0], 'over': 298}, {'t': 3, 'teleport': [0, 0, 0], 'hold': 297},
-                   {'t': 4, 'pin': {'name': 'Crate'}, 'hold': 296}, {'t': 5, 'teleport_to': {'name': 'Crate'},
-                                                                     'hold': 295},
-                   {'t': 6, 'wait': 300}, {'t': 250, 'shot': 'late', 'when': {
-                       'measure': gate, 'expect': {'op': '>=', 'value': 1}, 'within': 300}},
-                   {'t': 299.9, 'key': '<Keyboard>/w', 'press': False}]
-        self.assertEqual(errs(300, longest, at=[0, 150, 300], since={'measure': gate, 'expect': {'op': '>=', 'value': 1},
-                                                                     'within': 300}), [])
-        self.assertNotEqual(errs(301, []), [], 'a play of 301 s')
-        self.assertNotEqual(errs(300, [], at=[301]), [], 'an `at` past 300 s')
-        self.assertNotEqual(errs(300, [], since={'measure': gate, 'expect': {'op': '>=', 'value': 1}, 'within': 301}),
-                            [], 'a within past 300 s')
-        for row in ({'t': 300.5, 'key': '<Keyboard>/w', 'press': True}, {'t': 1, 'tap': [0.5, 0.5], 'hold': 301},
-                    {'t': 1, 'drag': [[0.2, 0.8], [0.3, 0.7]], 'over': 301}, {'t': 1, 'move': [1, 0], 'over': 301},
-                    {'t': 1, 'teleport': [0, 0, 0], 'hold': 301}, {'t': 1, 'pin': {'name': 'Crate'}, 'hold': 301},
+        longest = [{'t': 0, 'tap': [0.5, 0.5], 'hold': 1199}, {'t': 1, 'drag': [[0.2, 0.8], [0.3, 0.7]], 'over': 900,
+                                                                'hold': 299, 'finger': 1},
+                   {'t': 2, 'move': [100, 0], 'over': 1198}, {'t': 3, 'teleport': [0, 0, 0], 'hold': 1197},
+                   {'t': 4, 'pin': {'name': 'Crate'}, 'hold': 1196}, {'t': 5, 'teleport_to': {'name': 'Crate'},
+                                                                      'hold': 1195},
+                   {'t': 6, 'wait': 300}, {'t': 1150, 'shot': 'late', 'when': {
+                       'measure': gate, 'expect': {'op': '>=', 'value': 1}, 'within': 1200}},
+                   {'t': 1199.9, 'key': '<Keyboard>/w', 'press': False}]
+        self.assertEqual(errs(1200, longest, at=[0, 600, 1200],
+                              since={'measure': gate, 'expect': {'op': '>=', 'value': 1}, 'within': 1200}), [])
+        self.assertNotEqual(errs(1201, []), [], 'a play of 1201 s')
+        self.assertNotEqual(errs(1200, [], at=[1201]), [], 'an `at` past 1200 s')
+        self.assertNotEqual(errs(1200, [], since={'measure': gate, 'expect': {'op': '>=', 'value': 1}, 'within': 1201}),
+                            [], 'a within past 1200 s')
+        for row in ({'t': 1200.5, 'key': '<Keyboard>/w', 'press': True}, {'t': 1, 'tap': [0.5, 0.5], 'hold': 1201},
+                    {'t': 1, 'drag': [[0.2, 0.8], [0.3, 0.7]], 'over': 1201}, {'t': 1, 'move': [1, 0], 'over': 1201},
+                    {'t': 1, 'teleport': [0, 0, 0], 'hold': 1201}, {'t': 1, 'pin': {'name': 'Crate'}, 'hold': 1201},
                     {'t': 1, 'wait': 301}, {'t': 1, 'shot': 'late', 'when': {
-                        'measure': gate, 'expect': {'op': '>=', 'value': 1}, 'within': 301}}):
-            self.assertNotEqual(errs(300, [row]), [], row)
-        self.assertNotEqual(errs(300, [{'t': 299, 'tap': [0.5, 0.5], 'hold': 2}]), [], 'a touch that ends after it')
-        self.assertNotEqual(errs(300, [{'t': 299, 'move': [1, 0], 'over': 2}]), [], 'a move that ends after it')
-        self.assertNotEqual(errs(300, [{'t': 1, 'wait': 200}, {'t': 2, 'wait': 101}]), [], 'waits over 300 s in all')
+                        'measure': gate, 'expect': {'op': '>=', 'value': 1}, 'within': 1201}}):
+            self.assertNotEqual(errs(1200, [row]), [], row)
+        self.assertNotEqual(errs(1200, [{'t': 1199, 'tap': [0.5, 0.5], 'hold': 2}]), [], 'a touch that ends after it')
+        self.assertNotEqual(errs(1200, [{'t': 1199, 'move': [1, 0], 'over': 2}]), [], 'a move that ends after it')
+        self.assertNotEqual(errs(1200, [{'t': 1, 'wait': 200}, {'t': 2, 'wait': 101}]), [], 'waits over 300 s in all')
 
     def test_an_optional_click(self):
         """A widget click may say `"optional": true` (a control a game shows only in some states), and nothing else:
@@ -1137,7 +1137,7 @@ class Units(unittest.TestCase):
 
     def test_a_measures_since(self):
         """A sampled measure may say `since` (an event: a sampled measure with no window, at, agg or since of its own,
-        a literal expect, `within` 0-300 s); log and seen take none, and the event's measure keeps a measure's rules."""
+        a literal expect, `within` 0-1200 s); log and seen take none, and the event's measure keeps a measure's rules."""
         gate = {'probe': 'objects', 'select': {'name': 'Gate'}, 'field': 'count'}
 
         def errs(since, measure=None):
@@ -1149,8 +1149,8 @@ class Units(unittest.TestCase):
         good = {'measure': gate, 'expect': {'op': '>=', 'value': 1}}
         self.assertEqual(errs(good), [])
         self.assertEqual(errs(dict(good, within=12.5)), [])
-        self.assertEqual(errs(dict(good, within=300)), [])
-        for bad in (dict(good, within=0), dict(good, within=301), {'measure': gate},
+        self.assertEqual(errs(dict(good, within=1200)), [])
+        for bad in (dict(good, within=0), dict(good, within=1201), {'measure': gate},
                     dict(good, expect={'op': '>=', 'calibrate': 0.5}), dict(good, extra=1)):
             self.assertNotEqual(errs(bad), [], bad)
         self.assertNotEqual(errs(good, {'probe': 'log', 'pattern': 'x'}), [], 'a log measure has no since')

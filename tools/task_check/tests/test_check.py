@@ -341,6 +341,23 @@ class TaskErrors(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("the play's input did not land: click Confirm at 0.5 s", detail)
 
+    def test_the_probe_plays_up_to_the_schemas_longest_play(self):
+        """A task play lasts up to 1200 s (the schema's, the Lab game grader 1.18.0's): the probe plays a spec's seconds
+        that long and holds a touch's hold and spread, a teleport's hold and a pin's hold to it."""
+        root = Path(check.__file__).parents[2]
+        schema = json.loads((root / "docs" / "schemas" / "game-task.schema.json").read_text(encoding="utf-8"))
+        longest = schema["$defs"]["TaskPlay"]["properties"]["seconds"]["maximum"]
+        self.assertEqual(longest, 1200)
+        script = (Path(check.__file__).parent / "task_probe" / "inputs.gd").read_text(encoding="utf-8")
+        self.assertIn(f"const PLAY_SECONDS := {longest}.0", script)
+        self.assertIn('"over": clampf(Find.num(row, "over"), 0.0, PLAY_SECONDS)', script)
+        self.assertIn('"hold": clampf(Find.num(row, "hold"), 0.0, PLAY_SECONDS)', script)
+        for func in ("func _start_hold(", "func _pin("):
+            body = script[script.index(func):]
+            self.assertIn('clampf(Find.num(row, "hold"), 0.0, PLAY_SECONDS)', body[:body.index("\nfunc ", 1)], func)
+        main = (Path(check.__file__).parent / "task_probe" / "task_probe.gd").read_text(encoding="utf-8")
+        self.assertIn(f'clampf(Find.num(_spec, "seconds", 20.0), 1.0, {longest}.0)', main)
+
     def test_the_probes_words_for_a_click_that_found_nothing_are_the_checkers(self):
         """check.NO_CONTROL is what the probe's inputs.gd writes of a widget click no shown Control matches."""
         script = (Path(check.__file__).parent / "task_probe" / "inputs.gd").read_text(encoding="utf-8")
@@ -973,6 +990,23 @@ def playing(tmp, wrote='{"format": "godot-probe/1", "ended": "time"}'):
 
 
 class Plays(unittest.TestCase):
+    def test_a_long_play_gets_its_own_seconds_and_the_margin_to_run(self):
+        """A task play may last 1200 s: a play's timeout is --timeout, or its seconds and check.PLAY_MARGIN when that
+        is longer, plus its waits."""
+        timeouts = []
+
+        class Timed(FakeProject):
+            def play(self, seconds, shots, timeout, **kw):
+                timeouts.append(timeout)
+                return super().play(seconds, shots, timeout, **kw)
+
+        played = side("reference", Timed(), task_with(probe()))  # --timeout 60
+        played._play("play_longest", 1200, 1, waits=30.5)
+        played._play("play_short", 20, 1, waits=2)
+        played.timeout = 1800
+        played._play("play_default", 20, 1)
+        self.assertEqual(timeouts, [1200 + check.PLAY_MARGIN + 31, 20 + check.PLAY_MARGIN + 2, 1800])
+
     def test_a_play_hands_the_game_its_spec_and_the_play_args(self):
         with tempfile.TemporaryDirectory() as tmp:
             specs = []

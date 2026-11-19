@@ -106,7 +106,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
   - `name`: lowercase letters, digits and `_`, at most 32, and not `look` or `drive`. A check can't point at another
     check's play by its name: every check that reads a task play carries the whole play, and plays with the same name
     in one task must be identical (the play then runs once per side for all of them).
-  - `seconds`: a whole number, 5-300. No input at or after the end. Every time in a play goes up to 300 s too (an
+  - `seconds`: a whole number, 5-1200. No input at or after the end. Every time in a play goes up to 1200 s too (an
     input's `t`, a `hold`, a move's or a drag's `over`, a measure's `at`, an event's `within`), so a moment that
     comes late in a game (a third wave, a long build-up) can be reached and read. Keep a play as short as what it
     measures allows: every second is played on each side of every check.
@@ -142,7 +142,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
     instruction asks for a first launch, and changes nothing in how it is played. Never with `after`
     (`tools/validate-game.py` refuses the two together: a play starts either clean or on what others saved). Two
     plays of one name, one `fresh` and one not, differ, and the validator refuses them as any two that differ.
-  - `inputs` (at most 400; a play with none leaves the key out), each at time `t` (seconds of play, 0-300). They reach
+  - `inputs` (at most 400; a play with none leaves the key out), each at time `t` (seconds of play, 0-1200). They reach
     the game as the engine's own input events (`InputEventKey`, `InputEventMouseButton`, `InputEventMouseMotion`,
     `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventScreenTouch`, `InputEventScreenDrag`), so the
     game's `_input` and `_unhandled_input`, its Controls and its input actions (`Input.is_action_pressed`) take them
@@ -288,7 +288,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
       otherwise (section 2.4). No match: nothing happens. The play's `probe.log` says what each one did,
       `teleported next to <name>: asked (x, y, z) yaw <degrees>, now at (x, y, z)` or
       `teleport_to skipped (no object matches)`: check it in the fix's play;
-    - holding the player there: `"hold": 5` on a `teleport` or `teleport_to` (seconds, up to 300) puts the player back
+    - holding the player there: `"hold": 5` on a `teleport` or `teleport_to` (seconds, up to 1200) puts the player back
       at the spot (its position; its view stays free) for that many seconds of play, before the game's scripts of
       every frame and again after them, so a camera that follows the player frames the spot; a hold lasts through a
       `wait`. For a game that sets its player's place every frame, which would otherwise undo a teleport at once.
@@ -298,7 +298,7 @@ thing instead of removing it still pass? If not, move the probe to what the play
       clock, a web request) sees less real time than the play's seconds. At `t` the play's clock holds while the game
       keeps running, paced to real time, until `wait` real seconds and `wait` seconds of game time have both passed;
       nothing is sampled, sent or screenshot meanwhile; then the play goes on from `t`. A play's waits add at most
-      300 s in all, and its timeout grows by them; `seconds`, windows and `at` stay in play time, within 300 s;
+      300 s in all, and its timeout grows by them; `seconds`, windows and `at` stay in play time, within 1200 s;
     - a named screenshot: `{"t": 6.0, "shot": "pause_menu"}` (a letter or `_` first, then letters, digits, `_`; up to
       32) takes `shot_pause_menu.png` at that moment, with the UI, beside the evenly spaced ones. Each name once in a
       play, 20 at most. A picture never passes or fails anything by itself: it is for a judge (section 3.2), for a
@@ -420,7 +420,7 @@ A task play may touch the screen as a phone's player does. Two inputs, each with
 - a drag, `{"t": 2.0, "drag": [{"widget": "MoveStick"}, [0.2, 0.6]], "over": 0.3, "hold": 2.0, "finger": 0}` (2 to 16
   spots): the finger goes down at the first spot, moves through the others evenly over `over` seconds (at once
   without it), stays at the last for `hold` seconds, then lifts: a swipe, a slider, a virtual stick pushed over and
-  held there. A `hold` and an `over` go up to 300 s each, within the play.
+  held there. A `hold` and an `over` go up to 1200 s each, within the play.
 
 A spot is a point of the screen `[fx, fy]` in fractions 0-1 from its top left, or `{"widget": "MoveStick"}`: the centre
 of the first visible, laid-out widget of that name (a wildcard) or type, whatever its kind (a button, a stick, a
@@ -467,7 +467,7 @@ invalid when the fix's play misses.
 
 - `{"t": 2.0, "pin": <object select>, "hold": 3, "front": 1.5, "offset": [x, y, z]}` or, in place of `front`,
   `"at": <Point>`: the match nearest the player (never the player or a node below it; of two as near, the first in
-  tree order) is held at its place for `hold` seconds (up to 300) while its own scripts, animation and attacks run
+  tree order) is held at its place for `hold` seconds (up to 1200) while its own scripts, animation and attacks run
   on: it is put back and its velocity stilled before the game's scripts of every frame and again after them, as a
   held player is (section 1.1), and it still turns, swings and blocks. First it is set `front` m (0 to 1000) ahead
   of the player along the way the player faces (its -Z on the level; a 2D player's +X), at its own height (its y is
@@ -560,7 +560,7 @@ section 1.2. Points and `near`: section 2.13. Why a probe has no value: section 
 
 ### 2.1 Common fields
 
-- `window`: `[t0, t1]` seconds of play time (ends inclusive), or `at`: `[t, ...]` (at most 40 times, each 0-300; the
+- `window`: `[t0, t1]` seconds of play time (ends inclusive), or `at`: `[t, ...]` (at most 40 times, each 0-1200; the
   sample nearest each time, when one is within 0.26 s of it) or `"end"` (the last sample); not both. Default: the
   whole play.
 - `since` (every measure but `log` and `seen`): an event the window counts from, `{"measure": <a measure>, "expect":

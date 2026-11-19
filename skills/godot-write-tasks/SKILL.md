@@ -406,9 +406,10 @@ looks up and a positive yaw turns left.
   `teleport_to` the node a select matches), a wait in real time, a named screenshot (`shot`), a scene load, a view
   turn, and the stages of a contact (`pin`, `damage`, `set`: "A contact ask is staged" below, and
   docs/task-probes.md section 1.4). docs/task-probes.md has each one's form.
-- **A play may run up to 300 s; keep it as short as what it measures allows.** A play's `seconds` and every time in
-  it (an input's `t`, a `hold`, a move's or a drag's `over`, a measure's `at`, an event's `within`) go up to 300 s,
-  so a moment that comes late in a game (a later wave, a long build-up, a day's end) can be reached by playing to it.
+- **A play may run up to 1200 s; keep it as short as what it measures allows.** A play's `seconds` and every time
+  in it (an input's `t`, a `hold`, a move's or a drag's `over`, a measure's `at`, an event's `within`) go up to
+  1200 s, so a moment a player reaches only after a long uninterrupted play (a later wave, a long build-up, a day's
+  end, a run past five minutes) can be reached by playing to it.
   Every second is played on both sides of every check that names the play, so start the play where its moment is
   (`play_scene`, `play_args`, a scene load) and end it soon after what it reads.
 - **A cursor move then a press clicks what the game itself draws there.** The cursor is the game's own mouse: a
@@ -974,7 +975,7 @@ task's solution.
 | rule | why |
 |---|---|
 | A play does what a player must do to reach the state it probes: the start control by the text the instruction quotes, a wait for the scene | a play that never reaches the moment measures nothing |
-| A play lasts up to 300 s, every time in it too; keep it as short as what it measures allows | a late moment can be played to, and every second is played on both sides of every check |
+| A play lasts up to 1200 s, every time in it too; keep it as short as what it measures allows | a late moment can be played to, and every second is played on both sides of every check |
 | A menu or HUD the game paints itself is clicked by a cursor input onto it and a press | the cursor is the game's own mouse, as a player's is; no widget click finds what isn't a Control |
 | After typing into a field, a play leaves it by the player's own input before driving the game | a key goes to the focused control first, and a field takes every key it would type |
 | No shortcut only the reference has (a flag, a debug key, a scene the fix added) | the start and other builds don't have it |

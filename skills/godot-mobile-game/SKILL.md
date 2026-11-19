@@ -160,8 +160,8 @@ player as the product, the rule here is the one that applies.
   script a swipe just to bring a control into view; a control hidden any other way, and a drag's control out of view,
   is a miss (godot-write-tasks, "A click scrolls its own list"). A tap on a control under a dialog, a popup or an
   overlay is a miss that says it is covered: close it first with the player's own touch (godot-write-tasks, "A
-  covered control can't be clicked"). A play may run up to 300 s, and a touch's `hold` and a drag's `over` go up
-  to 300 s too, so a stick can be held through a long run; keep each play as short as what it measures allows, since
+  covered control can't be clicked"). A play may run up to 1200 s, and a touch's `hold` and a drag's `over` go up
+  to 1200 s too, so a stick can be held through a long run; keep each play as short as what it measures allows, since
   every second is played on both sides of every check. Read both sides'
   `probe.log` in the no-op and oracle check (godot-write-tasks, "The no-op and the oracle, on your own machine").
 - Good mobile threads to look for in your history: a control that was too small or badly placed and took rounds to

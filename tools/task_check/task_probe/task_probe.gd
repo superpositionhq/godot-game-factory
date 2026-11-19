@@ -130,7 +130,7 @@ func _begin() -> void:
 	_log = FileAccess.open(_out.path_join("probe.log"), FileAccess.WRITE)
 	if _kept != "":
 		note(_kept)
-	_seconds = clampf(Find.num(_spec, "seconds", 20.0), 1.0, 600.0)
+	_seconds = clampf(Find.num(_spec, "seconds", 20.0), 1.0, 1200.0)  # a task play up to the schema's 1200 s
 	_every = clampf(Find.num(_spec, "every", 0.5), 0.1, 1.0)
 	_shots = clampi(roundi(Find.num(_spec, "shots", 4.0)), 0, 64)
 	fps = clampi(roundi(Find.num(_spec, "fps", 30.0)), 10, 240)

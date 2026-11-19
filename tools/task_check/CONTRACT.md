@@ -77,15 +77,18 @@ Plays and inputs:
 - Events (`Event`: `{"measure", "expect", "within"}`): a sampled measure's `since` and a shot's `when`. The measure is
   one the probe samples (never `log` or `seen`, nor `audio` `sounds` or `repeats`), with no `window`, `at`, `agg` or
   `since` of its own, under every rule of a measure; `expect` is a literal (`Value`); `within` is above 0, up to
-  300 s. A shot's `when` reads `ui` `count` or `text` (no select `rect`), `widgets` `count` or `visible`, or `objects`
+  1200 s. A shot's `when` reads `ui` `count` or `text` (no select `rect`), `widgets` `count` or `visible`, or `objects`
   `count`, `x`, `y`, `z`, `active`, `hidden` or a `prop:` member, with no `to_angle` or `to_axis` and no `has.lit`
   anywhere (the validator's `event_errors`, `WHEN_FIELDS`).
 - Touches (`tap`, `drag`): one finger's touches are at least 0.1 s apart, from one's lift to the next one's start, and
   every touch is over by the play's end (the validator's `TOUCH_GAP`).
-- A task play's `seconds` is 5 to 300, and every time in one goes up to 300 s: an input's `t`, a `hold` (`tap`,
-  `drag`, `teleport`, `teleport_to`, `pin`), a `move`'s or a `drag`'s `over`, a measure's `at`, an event's `within`.
-  A play's waits add at most 300 s of real time in all; a boot check's `seconds` stays up to 600.
-- The stages of a contact: `pin` (an object select, `hold` above 0 up to 300 s, `front` 0 to 1000 m or `at` a point,
+- A task play's `seconds` is 5 to 1200 (the Lab game grader 1.18.0's), and every time in one goes up to 1200 s: an
+  input's `t`, a `hold` (`tap`, `drag`, `teleport`, `teleport_to`, `pin`), a `move`'s or a `drag`'s `over`, a
+  measure's `at`, an event's `within`; the probe plays a spec's `seconds` up to 1200 and holds every `hold` and `over`
+  to it (`PLAY_SECONDS`). A play's waits add at most 300 s of real time in all; a boot check's `seconds` stays up to
+  600. A play's timeout is `--timeout`, or its seconds and 600 s (`check.PLAY_MARGIN`) when that is longer, plus its
+  waits.
+- The stages of a contact: `pin` (an object select, `hold` above 0 up to 1200 s, `front` 0 to 1000 m or `at` a point,
   `offset`), `damage` (above 0, `to` and optionally `from`, object selects), `set` (a path of up to 6 members without
   an index, `on` an object select, `value` a boolean, a number or a string of at most 120 characters, `all`). The
   validator refuses a pin whose select says `"player": true` and one with both `front` and `at`.
@@ -685,7 +688,7 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   over 30 events, 150 half way.
 - tap, drag: `{"t": 2.0, "tap": [0.5, 0.25], "finger": 1, "hold": 0.5}`, `{"t": 3.0, "drag": [{"widget":
   "MoveStick"}, [0.2, 0.6]], "finger": 0, "over": 0.3, "hold": 2.0}` (the checker writes `finger`, 0 when unset;
-  `hold` and `over` only when set, the probe holding each to 0-300 s, `PLAY_SECONDS`; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
+  `hold` and `over` only when set, the probe holding each to 0-1200 s, `PLAY_SECONDS`; `_touch`, `_move_touch`). The spots are resolved when the finger goes down: a
   point `[fx, fy]` (fractions of the frame, y down), or `{"widget": name}`, the centre of the first visible Control
   of some size whose name (a wildcard) matches, else the first whose class does, else the first button in reading order
   whose shown caption is it as written, else reads it alike, as a widget click's (`UiScan.named`,
@@ -793,7 +796,7 @@ so the engine imports nothing there), each made fresh before its job.
   `shots`, `every`, `scene` (null: the project's main scene), the task's `player` select (null: the probe finds the
   player, section 1), its `inputs` with the checker's defaults filled in (`tasks.inputs`), `sound` (true when a query
   is `audio`) and the queries.
-- The probe reads `out` (default: `user://TaskProbe`), `size` (two numbers of 16 or more; without it the probe leaves the frame as the game has it), `touch` (the play is a phone's: `<Keyboard>/escape` is its back button), `keep_saves` (true: `user://` is left as it is), `seconds` (clamped to 1-600; default 20), `every` (0.1-1.0; 0.5), `shots` (0-64; 4),
+- The probe reads `out` (default: `user://TaskProbe`), `size` (two numbers of 16 or more; without it the probe leaves the frame as the game has it), `touch` (the play is a phone's: `<Keyboard>/escape` is its back button), `keep_saves` (true: `user://` is left as it is), `seconds` (clamped to 1-1200; default 20), `every` (0.1-1.0; 0.5), `shots` (0-64; 4),
   `fps` (10-240; 30: the rate the clock counts frames at, the one the command line's `--fixed-fps` gives), `scene`,
   `sound`, `player` (its own `player` key ignored), `inputs` and `queries.queries`; the queries' `every` rides along
   unread. A play without queries has an empty list.

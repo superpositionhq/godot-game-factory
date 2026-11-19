@@ -58,6 +58,9 @@ DRIVE = [{"t": 1.0, "key": "<Keyboard>/w", "press": True}, {"t": 6.0, "key": "<K
          {"t": 13.0, "key": "<Keyboard>/a", "press": True}, {"t": 15.0, "key": "<Keyboard>/a", "press": False},
          {"t": 15.0, "key": "<Keyboard>/w", "press": True}, {"t": 21.0, "key": "<Keyboard>/w", "press": False}]
 PLAYS = {"look": (20, 6, None), "drive": (22, 8, DRIVE)}  # seconds, screenshots, inputs
+# seconds a play may run past its own seconds (boot, shader compiles) when that is longer than --timeout: a task play
+# may last up to 1200 s (the schema's, the Lab game grader 1.18.0's)
+PLAY_MARGIN = 600
 # A mobile game's drive (docs/task-probes.md): the same route by touch, a left thumb pushing where a virtual stick
 # usually is (down at its middle, over to a side, held there) and a right thumb's tap for the jump.
 STICK = [0.15, 0.75]
@@ -283,9 +286,9 @@ class Side:
     def _play(self, name, seconds, shots, inputs=None, play=None, queries=None, every=None, waits=0.0, again=False,
               packaged=False):
         """A play, once per name, on the scene and args `play` (a task play, or None for the checker's own) opens;
-        `waits`: the real seconds its waits add (a task play's), which its timeout gets on top. A task play that
-        names `after` starts on the saved data of the plays before it; every other play starts clean (the probe
-        clears the copy's saved data). `again`: played once more for the saved data it leaves; its checks keep reading
+        `waits`: the real seconds its waits add (a task play's), which its timeout gets on top; a long play gets at
+        least its own seconds and PLAY_MARGIN. A task play that names `after` starts on the saved data of the plays
+        before it; every other play starts clean (the probe clears the copy's saved data). `again`: played once more for the saved data it leaves; its checks keep reading
         its first play, its files are kept as <name>_again, and what differed from the first is noted (replay_note)."""
         if name not in self.played or again:
             keeps = bool(play and play.get("after"))
@@ -293,8 +296,9 @@ class Side:
                      + f"({seconds} s" + (f", {waits:g} s waiting" if waits else "") + ")")
             scene, args = tasks.place(self.task, play)
             before, self.saves = self.saves, []  # a play that raises leaves no saves known
-            found = self.project.play(seconds, shots, self.timeout + math.ceil(waits), scene=scene, inputs=inputs,
-                                      queries=queries, args=args, every=every, player=self.player, keep_saves=keeps,
+            found = self.project.play(seconds, shots, max(self.timeout, seconds + PLAY_MARGIN) + math.ceil(waits),
+                                      scene=scene, inputs=inputs, queries=queries, args=args, every=every,
+                                      player=self.player, keep_saves=keeps,
                                       **({"packaged": True} if packaged else {}))
             self.saves = before + [name] if keeps else [name]
             waited = getattr(found, "waited", 0.0)

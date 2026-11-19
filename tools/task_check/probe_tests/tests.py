@@ -1061,28 +1061,29 @@ def check_typing(c, found):
 
 
 def check_longest(c, found):
-    """A play of 300 s, the longest a task's may be: a touch held and a drag spread past two minutes, a shot waiting
-    for its event near the end, and samples to the end (`scenes/Events.tscn`)."""
-    if not ended(c, found, 300.5 + (5 / 30 if not found["rendered"] else 0)):
+    """A play of 1200 s, the longest a task's may be: a touch held and a drag spread past ten minutes (the probe's
+    old 600 s clamp), a shot waiting for its event near the end, and samples to the end (`scenes/Events.tscn`)."""
+    if not ended(c, found, 1200.5 + (5 / 30 if not found["rendered"] else 0)):
         return
     probe = found["probe"]
     note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
     c.eq("inputs sent", probe.get("inputs_sent"), 6)
     c.eq("no input missed", probe.get("inputs_missed"), [])
-    c.true("the tap held 180 s lifts at 185 s", re.search(
-        r"^185\.00 \[[^]]*\] tap: finger 0 lifts at pixel \(\d+, \d+\) after 180\.00 s", note, re.M), note[-3000:])
-    c.true("the drag spread over 210 s and held 60 s lifts at 280 s", re.search(
-        r"^280\.00 \[[^]]*\] drag: finger 1 lifts at pixel \(\d+, \d+\) after 270\.00 s", note, re.M), note[-3000:])
+    c.true("the tap held 700 s lifts at 705 s", re.search(
+        r"^705\.00 \[[^]]*\] tap: finger 0 lifts at pixel \(\d+, \d+\) after 700\.00 s", note, re.M), note[-3000:])
+    c.true("the drag spread over 900 s and held 200 s lifts at 1110 s", re.search(
+        r"^1110\.00 \[[^]]*\] drag: finger 1 lifts at pixel \(\d+, \d+\) after 1100\.00 s", note, re.M),
+        note[-3000:])
     taken = re.search(r"screenshot shot_banner\.png at (\d+\.\d\d) s", note)
     shown = float(taken.group(1)) if taken else None
-    c.true("the shot at 240 s waits for its event and is taken in the frame the banner shows (20 frames on)",
+    c.true("the shot at 1100 s waits for its event and is taken in the frame the banner shows (20 frames on)",
            "the shot banner's event: count reads 1.0" in note and shown is not None
-           and 240 + 19 / 30 - 0.02 <= shown <= 240 + 20 / 30 + 0.02, note[-3000:])
-    c.true("the shot at 299.5 s is taken", "screenshot shot_closing.png at 299.50 s" in note, note[-3000:])
+           and 1100 + 19 / 30 - 0.02 <= shown <= 1100 + 20 / 30 + 0.02, note[-3000:])
+    c.true("the shot at 1199.5 s is taken", "screenshot shot_closing.png at 1199.50 s" in note, note[-3000:])
     first = next((s["t"] for s in samples(found, "banner") if s.get("rows")), None)
-    c.near("the samples show the banner first at the step after it", first, 241.0, 0.05)
+    c.near("the samples show the banner first at the step after it", first, 1101.0, 0.05)
     last = samples(found, "score")[-1] if samples(found, "score") else {}
-    c.near("the samples go on to the play's end", last.get("t"), 300.0, 0.05)
+    c.near("the samples go on to the play's end", last.get("t"), 1200.0, 0.05)
     c.eq("the score counts a point a frame from the banner's frame to the last sample's",
          ((last.get("rows") or [{}])[0].get("prop:score")),
          round(last.get("t", 0) * 30) - round((shown or 0) * 30))
@@ -1118,5 +1119,5 @@ PLAYS = {
     "mouse_drawn": {"check": check_mouse, "spec": "mouse", "rendered": True},
     "typing": {"check": check_typing},
     "typing_drawn": {"check": check_typing, "spec": "typing", "rendered": True},
-    "longest": {"check": check_longest, "timeout": 900},
+    "longest": {"check": check_longest, "timeout": 1800},
 }

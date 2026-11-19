@@ -57,7 +57,7 @@ const COVERED := "covered by another control"  ## the why of a click or a tap so
 const NEVER := "its event never happened"  ## the why of a shot whose event didn't come in time (check.NEVER)
 const UNPRESSED := "its scroll area was scrolled to it, but the play ended before the press"
 const UNREAD := "its event can't be read (probe.log)"  ## a shot whose event's query or match can't be made
-const PLAY_SECONDS := 300.0  ## the longest task play (the task schema's): a touch's hold and a drag's spread at most
+const PLAY_SECONDS := 1200.0  ## the longest task play (the schema's): a touch's hold, a drag's spread, a teleport's or pin's hold
 const WARM := 0.2  ## seconds before an input's time from which its has.lit selects are looked at every frame
 const LIT_WAIT := 1.0  ## seconds an input whose has.lit select waits for a part's first drawing is held back at most
 
@@ -945,7 +945,7 @@ static func _meets(value: float, op: String, limit: float) -> bool:
 
 
 func _start_hold(row: Dictionary, player: Node, elapsed: float) -> void:
-	var seconds := clampf(Find.num(row, "hold"), 0.0, 600.0)
+	var seconds := clampf(Find.num(row, "hold"), 0.0, PLAY_SECONDS)
 	if seconds <= 0.0:
 		return
 	_hold_at = Find.place(player)
@@ -1071,7 +1071,7 @@ func _pin(row: Dictionary, elapsed: float) -> void:
 		if look.x * look.x + look.z * look.z > 1e-4:
 			yaw = rad_to_deg(atan2(-look.x, -look.z))
 	_place(target, spot, yaw)
-	var seconds := clampf(Find.num(row, "hold"), 0.0, 600.0)
+	var seconds := clampf(Find.num(row, "hold"), 0.0, PLAY_SECONDS)
 	var held: Array[Dictionary] = []
 	for pin in _pins:
 		if pin["ref"].get_ref() != target:

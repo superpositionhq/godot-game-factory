@@ -43,9 +43,9 @@ INVALID island-survival-fix-hut-door: start already passes every required probe
 Options: `--keep` keeps the scratch copies (to look at one or rerun a play by hand), not what their plays left
 outside them (a play starts from clean saved data anyway), `--out DIR` puts the results elsewhere, `--scratch DIR`
 puts the copies elsewhere, `--direct` runs Godot without the machine's job slots, `--timeout S` (a play, default
-1800, plus the real seconds of its waits) and `--build-timeout S` (default 3600). A task play lasts up to 300 s of play
-time, and a play runs on its fixed clock as fast as the machine renders, so the default leaves a 300 s play room on a
-slow machine: never set `--timeout` lower than the longest play needs.
+1800, plus the real seconds of its waits; a play gets at least its own seconds and 600 s more) and `--build-timeout S`
+(default 3600). A task play lasts up to 1200 s of play time (the Lab game grader 1.18.0's), and a play runs on its
+fixed clock as fast as the machine renders, so the default leaves a long play room on a slow machine.
 
 ## Requirements
 
