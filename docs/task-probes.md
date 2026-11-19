@@ -1551,7 +1551,8 @@ the order taken, with `ask.md` (the brief, the question, the rubric, what each p
 side's own picture count and notes (a route that couldn't be played) are in `sides.md`, opened with the key. A play a
 probe names is the same play and is played once.
 
-Score them yourself, blind, into `blind\answers.json` ([task-check.md](task-check.md), "VALID and INVALID"): a required
+Score them yourself, blind, into `blind\answers.json`, then check the task again, or settle that run when its pictures
+change on every run ([task-check.md](task-check.md), "VALID and INVALID" and "Settling a run"): a required
 judge keeps the task from being VALID until both sides are scored, the reference passes it, and the start fails every
 required item (or, for a judge of what still looks as it did, passes it). A task try saves the same for the agent's
 game (`agent\`) under `<task>\run<N>\judge-shots\`: score its judges the same way before calling the task too easy or

@@ -50,6 +50,7 @@ PASS, REQUIRED = 0.6, 0.5  # the judge's pass mark: weighted score at least PASS
 PENDING = "shots saved for {sides}, answer needed"
 ANSWERED = "scored in blind/answers.json"
 ANSWERS = "answers.json"  # under blind/
+PICTURES = "pictures.json"  # each picture's sha256, by side: scores stand while they are the same
 ROUTE = "route"  # the developer's route's play, as a judge's play name
 SIDES = ("BEFORE", "AFTER", "REFERENCE")  # a comparing judge's panels, left to right (the Lab's grade.SIDES)
 READINGS = "readings.md"
@@ -397,7 +398,7 @@ def kept(folder):
             raw = (base / "blind" / ANSWERS).read_bytes() if problem else None
         except OSError:
             raw = None
-        made, _ = _json(base / "pictures.json")
+        made, _ = _json(base / PICTURES)
         out[base.name] = {"key": key, "problem": problem, "raw": raw,
                           "sides": {side: {"scores": (answers or {}).get(letter),
                                            "pictures": (made or {}).get(side) if isinstance(made, dict) else None}
@@ -419,6 +420,14 @@ def scored(check, scores):
     return value >= PASS and not low, why
 
 
+def answer(check, scores):
+    """A side's answered judge from its scores (scored): {"passed", "why", "low": every required item below
+    REQUIRED}. ValueError as scored."""
+    passed, why = scored(check, scores)
+    return {"passed": passed, "why": why,
+            "low": all(scores[i["key"]] < REQUIRED for i in check["rubric"] if i["required"])}
+
+
 def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None, beside=None, mobile=False):
     """Save judge check `check`'s screenshots of each side under <folder>/<check>/: `played` {side: {play name: (probe,
     files)}}. With `blind`, the blind copy (of one or two sides), keeping `held`'s letters (kept()[check]) and carrying
@@ -426,7 +435,7 @@ def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None
     comparing judge is shown beside that side (saved with those prefixes); `mobile`: the drive's label is the touch
     one. Its record: {"sides": {side: [saved names]}, "blind":
     whether there is a blind copy (its key stays in its folder), "answered": {side: {"passed", "why", "low"}}, "notes",
-    "status"}."""
+    "status", and with a blind copy "bound" (bound)}."""
     base = Path(folder) / check["name"]
     if base.exists():
         shutil.rmtree(base)
@@ -456,7 +465,7 @@ def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None
         (base / side / READINGS).write_text(readings(check, made, extra, mobile, counts), encoding="utf-8")
     pictures = {side: {f.name: digest(f.read_bytes()) for f in sorted((base / side).iterdir())
                        if f.suffix.lower() == ".png"} for side in saved}
-    (base / "pictures.json").write_text(json.dumps(pictures, indent=2) + "\n", encoding="utf-8")
+    (base / PICTURES).write_text(json.dumps(pictures, indent=2) + "\n", encoding="utf-8")
     key, answered = None, {}
     if blind and saved and all(pictures.values()):
         old = (held or {}).get("key")
@@ -473,12 +482,9 @@ def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None
                 continue
             answers[letter] = scores
             try:
-                passed, why = scored(check, scores)
+                answered[side] = answer(check, scores)
             except ValueError as exc:
                 notes.append(f"blind/{ANSWERS}: {exc}")
-                continue
-            answered[side] = {"passed": passed, "why": why,
-                              "low": all(scores[i["key"]] < REQUIRED for i in check["rubric"] if i["required"])}
         if answers:
             (base / "blind" / ANSWERS).write_text(json.dumps(answers, indent=2) + "\n", encoding="utf-8")
         elif (held or {}).get("raw") and key == old:  # an answer file that can't be read stays as written, to fix
@@ -492,7 +498,14 @@ def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None
     done = bool(saved) and sorted(answered) == sorted(saved)
     return {"sides": {s: [n for _, _, p in rows for _, n in p] for s, rows in saved.items()},
             "blind": key is not None, "answered": answered, "notes": notes,
-            "status": ANSWERED if done else PENDING.format(sides="/".join(saved) or "no side")}
+            "status": ANSWERED if done else PENDING.format(sides="/".join(saved) or "no side"),
+            **({"bound": bound(base, PICTURES)} if key is not None else {})}
+
+
+def bound(base, made):
+    """What a settle binds the writer's answers to (settle.py): the sha256 of the folder's list of picture hashes
+    (`made`: pictures.json, crops.json) and of its blind key, as this run saved them."""
+    return {made: digest((base / made).read_bytes()), "key.json": digest((base / "blind" / "key.json").read_bytes())}
 
 
 def line(name, record):

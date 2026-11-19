@@ -47,6 +47,8 @@ real seconds of its waits; by default a play gets its own seconds and 300 s more
 no other floor) and `--build-timeout S` (default 1800, the Lab's; a release export gets twice it). A task play
 lasts up to 1200 s of play time (the Lab game grader 1.18.0's), and a play runs on its fixed clock as fast as the
 machine renders: a long play that needs more than 300 s past its own seconds on the Lab's machine is stopped there.
+`--settle` plays nothing: it settles each named task's kept run in `<out>` on the answers you wrote for that run's own
+pictures ("Settling a run", below).
 
 ## Requirements
 
@@ -264,8 +266,11 @@ the task from being VALID: its line says `judge <check>: shots saved for start/r
    (never by easing what the task asks) and check again.
 
 Scores stand while the pictures they were given for are the same (`pictures.json`); a side whose pictures changed
-(another commit, a play that changed) is asked again, with a note. `--no-judge-shots` skips the judge plays, so a task
-with a required judge can't be VALID in that run.
+(another commit, a play that changed) is asked again, with a note. A game whose pictures are never byte for byte the
+same from one run to the next (a camera, a countdown or an effect on the wall clock or on unseeded randomness) drops
+them on every check: score the run's own pictures and settle that run instead of checking again (`--settle`,
+"Settling a run" below). `--no-judge-shots` skips the judge plays, so a task with a required judge can't be VALID in
+that run.
 
 A judge's `route` (a project file of key inputs `[{t, key, press}]`) is read from each side's own copy, as the Lab
 reads it from the copy it grades (the start's when it grades the no-op, the reference's for the oracle, the agent's
@@ -304,10 +309,40 @@ a required `seen` probe is not VALID. To answer:
    INVALID, as the Lab makes it a task error. The line then says `seen <check>: read from blind/answers.json`.
 
 The folder is kept from one check to the next, and an answer stands while its crop is the same (`crops.json`); a
-crop that changed (another commit, a play that changed) drops that side's answer, with a note. A start that doesn't
+crop that changed (another commit, a play that changed) drops that side's answer, with a note, and a run whose crops
+differ on every check is settled on the answers to its own crops (`--settle`, "Settling a run" below). A start that doesn't
 build by design is never played: only the reference is saved, as `blind\A\`. In the Lab the model must read the start
 and the reference the same 3 times out of 3, which this check can't show: a crop you can read only with a `?`, or
 only at full zoom, may not.
+
+### Settling a run
+
+`python tools\task-check.py %GGF_ROOT%\games\<slug> --task <name> --settle` (`--out DIR` when the run used one; the
+task by name or by the same `.json` file the run checked) plays nothing. It takes the task's kept run,
+`<out>\<task>.json` and its folder, and decides it on the answers written into each judge's and `seen` probe's
+`blind\answers.json` for that run's own pictures, by the same rules a check that reads them applies: the same pass
+mark, the same start and reference rules, the same no-op score, a `seen` probe's threshold and pass made from the
+answered values as a check makes them. Every other row of the run (its probes, builds, boots, thresholds) stands as
+the run wrote it. It prints the task's verdict line and writes the final result over `<task>.json`, with the run's
+own result and what it checked under `settled`. It refuses, and writes nothing (`REFUSED <task>: why`), when:
+
+- there is no kept run, or the run is no verdict (an `ERROR`, a task that didn't validate, a run that stopped before
+  it graded the start, a row the checker couldn't run): check the task again;
+- the task file isn't the one the run checked (its sha256 differs from the run's `task_sha256`);
+- any picture or crop differs from the sha256 its `pictures.json` or `crops.json` lists, a side's folder holds a
+  picture more or less than the run saved, the blind copy holds a file more or less than both sides share or one that
+  isn't the file of the side the key names, or `pictures.json`, `crops.json` or `blind\key.json` isn't the file the
+  run saved (the result records their sha256 as `bound`; a run of an older checker has no record, and is bound by the
+  rest);
+- any picture, list or key (or a judge's `readings.md`) was written after the run wrote its result, or
+  `blind\answers.json` is older than the pictures and the key it answers (each answer is for that run's pictures);
+- an answer is missing or can't be read (every letter of the key, every rubric item, each shot's lines) for a
+  required check, or for an optional one whose answers file is there;
+- a check that needs a `seen` probe was never graded the way the answer now grades that probe (only a check again can).
+
+Score blind as always: before opening the key. A settle can't see when the key was opened; it records the file times
+it saw (`settled.answers`: when the answers, the newest picture and the key were written, and the key's last read as
+the file system keeps it). A settled result settles again from the run it keeps; checking the task again replaces it.
 
 A task with no reference is never VALID: its first reason is `no seed.reference: the oracle side can't be played,
 ...`. The check still plays its start and holds it to the start's rules (it must build, fail every required probe
@@ -365,9 +400,11 @@ reasons that follow say what the start does. Every task has a reference (godot-w
   sample holds running totals since the play started; the checker reads each sample's rise over the one before.
 - `<repo>\.task-checks\<task>\judge-shots\<check>\`: each judge check's pictures to score (VALID and INVALID
   above); the result's `judges` lists them, each `answer needed` or `scored in blind/answers.json` with each side's
-  result (`answered`).
+  result (`answered`) and `bound`, the sha256 of its `pictures.json` and `blind\key.json` as the run saved them.
 - `<repo>\.task-checks\<task>\seen-shots\<check>\`: each `seen` probe's crops to answer (above); the result's `seen`
-  lists them, each `answer needed` or `read from blind/answers.json`.
+  lists them, each `answer needed` or `read from blind/answers.json`, with `bound` the same way (`crops.json`). A
+  settled result (`--settle`) also has `settled`: when, the run's own verdict, reasons and result (`run`), when the
+  run's result was written, and per check the answers' sha256 and the file times seen.
 - `<out>\progress.txt`: `task check: D of T task(s) done, started HH:MM, M min so far` (`, finished` at the end), each
   finished task's console line with its minutes (`(18 min)`) and a line per judge check waiting for an answer, and
   `checking <task>, then N more`. `progress.json` (format `task-check-progress/1`) holds the same: `started` and

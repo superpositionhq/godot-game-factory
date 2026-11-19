@@ -951,6 +951,28 @@ def save_seen_shots(task, sides, folder, where="", held=None, log=print, rng=Non
     return out
 
 
+def answered(task, result, reference, start, played=True):
+    """(valid, why, notes) from the two sides' grades and the writer's answers: each judge check's record
+    (result["judges"]) and each seen check's (result["seen"]) as saved with the run, or as a settle bound them to the
+    run's own pictures (settle.py). The one rule for both. `played`: the judges' plays were played (not
+    --no-judge-shots)."""
+    valid, why, notes = verdict.verdict(task, reference, start, start_judged(result["judges"]))
+    notes += [judges.line(n, r) for n, r in result["judges"].items()]
+    if reference is None:  # the start's rows still tell the writer what it does, but nothing proves the checks
+        valid, why = False, [NO_REFERENCE] + list(why)
+    if judges.judges(task):
+        found = judged(task, result["judges"], played)
+        valid, why = valid and not found, list(why) + found
+    if seen.checks(task):
+        notes += [seen.line(n, r) for n, r in result["seen"].items()]
+        # a required seen check gates as a probe does, so the task isn't VALID until both sides are answered (an
+        # unanswered start would otherwise read as the start failing it)
+        waiting = [seen.line(c["name"], result["seen"][c["name"]]) for c in seen.checks(task)
+                   if c["required"] and result["seen"][c["name"]]["status"] != seen.ANSWERED]
+        valid, why = valid and not waiting, list(why) + waiting
+    return valid, why, notes
+
+
 def probe_values(task, reference, start):
     """{probe: {group, required, op, expect, start, reference, threshold, start_passed, reference_passed}} from the two
     grades' measures."""
@@ -1045,29 +1067,15 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
             start_grade = start_unbuilt(task, start.why_unbuilt())
         else:
             start_grade = Grade(task, "start", start, reference, thresholds).run()
-        shots = []
         if judges.judges(task) and judge_shots:
             shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None}
             result["judges"] = save_judge_shots(task, shown, evidence / "judge-shots", f"{name}/judge-shots/",
                                                 blind=True, log=log, held=scores, start=start, reference=reference)
-            shots = [judges.line(n, r) for n, r in result["judges"].items()]
-        valid, why, notes = verdict.verdict(task, ref_grade, start_grade, start_judged(result["judges"]))
-        notes += shots
-        if reference is None:  # the start's rows still tell the writer what it does, but nothing proves the checks
-            valid, why = False, [NO_REFERENCE] + list(why)
-        if judges.judges(task):
-            found = judged(task, result["judges"], judge_shots)
-            valid, why = valid and not found, list(why) + found
         if seen.checks(task):  # a start that doesn't build by design is never played, so it has nothing to read
             shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None
                      and not (label == "start" and build is not None and not start.built())}
             result["seen"] = save_seen_shots(task, shown, evidence / "seen-shots", f"{name}/seen-shots/", held, log=log)
-            notes += [seen.line(n, r) for n, r in result["seen"].items()]
-            # a required seen check gates as a probe does, so the task isn't VALID until both sides are answered (an
-            # unanswered start would otherwise read as the start failing it)
-            waiting = [seen.line(c["name"], result["seen"][c["name"]]) for c in seen.checks(task)
-                       if c["required"] and result["seen"][c["name"]]["status"] != seen.ANSWERED]
-            valid, why = valid and not waiting, list(why) + waiting
+        valid, why, notes = answered(task, result, ref_grade, start_grade, judge_shots)
         result.update(probes=probe_values(task, ref_grade, start_grade), start_checks=start_grade["checks"],
                       reference_checks=ref_grade["checks"] if ref_grade else [])
         return finish("VALID" if valid else "INVALID", why, notes)

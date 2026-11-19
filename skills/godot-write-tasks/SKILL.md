@@ -684,7 +684,13 @@ for B from 0 to 1 into `blind\answers.json` before you open the key and `sides.m
 the pictures don't show (its moment isn't on screen, its subject is off view, hidden or never reached) scores 0 on
 that side: cannot be seen is a fail, never a pass. A required judge keeps the task from being VALID until both sides
 are scored; the reference must pass it, and the start must score every required item below 0.5 (a `still_works`
-judge of what still looks as it did must pass at the start too). **When a picture does not show what an item asks,
+judge of what still looks as it did must pass at the start too). **Pictures that change on every run: settle the run
+instead.** When a game's pictures (or a `seen` probe's crops) are never byte for byte the same twice (a camera, a
+countdown or an effect on the wall clock or unseeded randomness), a check again drops your answers every time. Answer
+the run you have, then run the check with `--settle` and the same `--task` and `--out`: it plays nothing and decides
+that run on your answers by the same rules. It refuses when a picture, the key or the task changed since the run, an
+answer is missing, or the answers are older than the pictures. Never edit a picture, a key or a run's result: an
+answer counts only for the pictures it was given for. **When a picture does not show what an item asks,
 rewrite the play, never the check**: change its inputs and the moments its screenshots are taken (a named `shot`
 tied to the event with `when` where the moment moves between builds) until it shows that state on every run, or edit
 the game itself so the asked thing really appears on screen. Never drop the item, point it at something else, or
@@ -760,7 +766,7 @@ What each failure means and what to do (the exact lines and more fixes: [docs/ta
 | `X reads the same on the start and the reference (N): uncalibrated, never a pass` | a weighted probe that measures nothing the change moves, whatever its threshold (local only for a literal or a threshold relative to the start: the Lab's grader refuses only a calibrated one) | compare both sides' samples; read what the change moves (field, select, play, window), never a looser threshold |
 | `no seed.reference: the oracle side can't be played ...` | a task with no reference can't be validated | give it the thread's accepted end as `seed.reference` (section 2) |
 | `judge X: no play of its own ...` | a required judge shown only the idle look and the drive, which never reach what it asks (local only: the Lab's grader judges it on those two plays) | give it `plays` that show each item at its moment |
-| `seen X: crops saved ..., answer needed`, `judge X: shots saved ..., answer needed` | the check can't decide it without you | answer it blind (step 5), then check again |
+| `seen X: crops saved ..., answer needed`, `judge X: shots saved ..., answer needed` | the check can't decide it without you | answer it blind (step 5), then check again; when its pictures change on every run, answer them and settle that run (`--settle`) |
 | `no samples in the window (the play ended at N s)`, `a stage of the play didn't land`, `... an input did not land ...` | a play that never reaches its moment: it ended early, a stage found nothing, a click or touch found no control | read `probe.log` and `inputs_missed`; drive the play as a player would (the start control by the text the instruction quotes, a wait for the scene, a stage on something both sides have) |
 | a value just past its threshold, `... did not go as its first play`, a crop you can read only with a `?` | an unsteady reading: a window at the edge of the event, a sample at a moment that moves, text that changes while the shot is taken | read the samples, not only the reduced value; move the window into the steady part of the event, read a quantity with a clear gap between the sides, take the shot at a still moment; never ease what the instruction asks |
 | `reference fails X: packaging failed ...`, `... packaged, but the packaged game didn't run cleanly` | the release export wasn't made (the engine's error, no `Windows Desktop` preset, or a machine without the release export template), or its player crashed or stopped before its time | read `reference/package/package.log` or the `packaged` play's log; fix the game's `Windows Desktop` preset or the crash; install the templates with `machine\get-godot.ps1` |

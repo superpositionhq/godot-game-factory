@@ -13,6 +13,7 @@ Modules:
 - godot: the import and the plays from source (through the machine's godot-heavy.ps1 when it has one);
 - desk: a program run on a Windows desktop of its own;
 - check: one task checked end to end; cli: `python tools/task-check.py`;
+- settle: a kept run decided on the writer's answers to its own judge pictures and seen crops (`--settle`);
 - trial: one task tried with the contractor's own coding agent and graded (`python tools/task-try.py`,
   docs/task-try.md).
 
