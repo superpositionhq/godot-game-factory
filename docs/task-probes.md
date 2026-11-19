@@ -243,7 +243,22 @@ thing instead of removing it still pass? If not, move the probe to what the play
       scroll areas alone hide is scrolled to as any control, and then found shown but disabled; one hidden any other
       way is a miss as any control there, and one something is over is `covered by another control`, which the mark
       doesn't excuse. Mark a click disabled only
-      where the instruction says its control must be disabled;
+      where the instruction says its control must be disabled. **A click no control takes is made on its text as
+      shown** (the Lab's Godot grader, game grader 1.18.0), as a player clicks the words they see: when no Control
+      matches it by name, class or caption (none disabled, none scrolled to), the probe reads every text on screen as
+      the `ui` measure reads it (a `Label`'s, a `RichTextLabel`'s, a button's or a text field's own text, a `Label3D`
+      the camera shows) and also texts side by side on one line read joined left to right (a row drawn as `1`,
+      `BUY RANK`, `300 PT` reads "1 BUY RANK 300 PT": their heights overlap by half, a gap of at most 6 of the line's
+      heights), and compares `widget` with them as a caption is compared (alike, case, spaces and punctuation
+      aside). Exactly one place must read it: the pointer goes to its centre as a `cursor` input moves it, the left
+      button goes down in the next frame and up 0.1 s later, and the inputs after the click wait for the release
+      (`probe.log`: `clicking text "Buy rank" at (0.512, 0.430) for 'Buy rank'`). A text shown in two places or more
+      is a miss that names them (`no visible control that takes a click matches it, by name, class or caption, and
+      its text is shown in 2 places, not one: "Shop" at (0.200, 0.100); "Shop" at (0.800, 0.900)`), which `optional`
+      doesn't excuse: name the control by words only it shows. No text that reads it is the miss it was. Text a
+      script draws itself (`draw_string`) is no Control's and isn't read: click it by a `cursor` input and a press.
+      A play that ends before such a click's press is a miss that says `its text was found, but the play ended
+      before the press`;
     - the cursor: `{"t": 1.0, "cursor": [0.5, 0.6]}` moves the mouse to a point of the frame (fractions 0-1, y down
       from the top; it starts at the centre); a following `<Mouse>/leftButton` press and release clicks there.
       **The cursor is the game's own mouse**, as a player's is: the game's `_input`, a Control's `_gui_input` (one it

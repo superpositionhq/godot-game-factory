@@ -1,0 +1,17 @@
+{
+  "seconds": 8,
+  "shots": 0,
+  "every": 0.5,
+  "scene": "res://scenes/ShownText.tscn",
+  "inputs": [
+    {"t": 1.0, "widget": "1 BUY RANK 300 PT", "click": true},
+    {"t": 1.01, "key": "<Keyboard>/k", "press": true},
+    {"t": 1.02, "key": "<Keyboard>/k", "press": false},
+    {"t": 2.0, "widget": "open map", "click": true},
+    {"t": 3.0, "widget": "Exit", "click": true},
+    {"t": 4.0, "widget": "Shop", "click": true},
+    {"t": 5.0, "widget": "Ghost", "click": true},
+    {"t": 6.0, "widget": "dock 7", "click": true}
+  ],
+  "queries": []
+}

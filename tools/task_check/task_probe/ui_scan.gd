@@ -372,6 +372,80 @@ static func disabled_button(want: String) -> Array:
 	return [read[0], read[1]] if not read.is_empty() else []
 
 
+static func shown_texts() -> Array:
+	## the texts on screen as the ui query reads its Controls' text rows: [{text, x, y, w, h}] (fractions of the frame),
+	## each drawn Control that shows a text of its own
+	var found: Array = []
+	for c in controls():
+		if not drawn(c) or not ("text" in kinds(c)):
+			continue
+		var r: Variant = rect(c)
+		if r != null:
+			found.append({"text": String(own_text(c)), "x": r[0], "y": r[1], "w": r[2], "h": r[3]})
+	return found
+
+
+static func by_shown_text(texts: Array, want: String) -> Dictionary:
+	## a click no Control takes, made on its text as shown (the Lab's Godot grader, game grader 1.18.0, as Unreal's
+	## FindShownText): the places on screen whose text reads `want` label_key alike, one text alone or texts side by
+	## side on one line joined left to right ("1", "BUY RANK", "300 PT": their heights overlap by half, a gap of at
+	## most 6 of the line's heights); the same place read twice is one. {"matches": n, "label": the one
+	## 'text "<text>"' or every place, "at": the one place's centre in fractions of the frame (n 1 only)}
+	var key := label_key(want)
+	if key == "":
+		return {"matches": 0, "label": ""}
+	var lines: Array = []
+	for t: Dictionary in texts:
+		if t["w"] > 0.0 and t["h"] > 0.0 and label_key(t["text"]) != "":
+			lines.append(t)
+	lines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ca: float = a["y"] + a["h"] / 2.0
+		var cb: float = b["y"] + b["h"] / 2.0
+		return ca < cb if ca != cb else a["x"] < b["x"])
+	var hits: Array = []  # [Rect2, text]
+	for i in lines.size():
+		var a: Dictionary = lines[i]
+		var box := Rect2(a["x"], a["y"], a["w"], a["h"])
+		var joined: String = a["text"]
+		if label_key(joined) == key:
+			_add_hit(hits, box, joined)
+			continue
+		var right: Array = []
+		for j in lines.size():
+			var b: Dictionary = lines[j]
+			var overlap: float = minf(a["y"] + a["h"], b["y"] + b["h"]) - maxf(a["y"], b["y"])
+			if j != i and b["x"] > a["x"] and overlap >= 0.5 * minf(a["h"], b["h"]):
+				right.append(b)
+		right.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return p["x"] < q["x"])
+		for b: Dictionary in right:
+			if not key.begins_with(label_key(joined)):
+				break
+			if b["x"] - box.end.x > 6.0 * maxf(a["h"], b["h"]):
+				break  # another column, not the next piece of the label
+			joined += " " + String(b["text"])
+			box = box.merge(Rect2(b["x"], b["y"], b["w"], b["h"]))
+			if label_key(joined) == key:
+				_add_hit(hits, box, joined)
+				break
+	if hits.size() != 1:
+		var places: Array[String] = []
+		for h: Array in hits:
+			var c: Vector2 = (h[0] as Rect2).get_center()
+			places.append('"%s" at (%.3f, %.3f)' % [h[1], c.x, c.y])
+		return {"matches": hits.size(), "label": "; ".join(places)}
+	return {"matches": 1, "label": 'text "%s"' % hits[0][1], "at": (hits[0][0] as Rect2).get_center()}
+
+
+static func _add_hit(hits: Array, box: Rect2, text: String) -> void:
+	## the same place read twice (a text and its own shadow) is one place
+	for h: Array in hits:
+		var other: Rect2 = h[0]
+		var d := (other.get_center() - box.get_center()).abs()
+		if d.x <= maxf(other.size.x, box.size.x) / 2.0 and d.y <= maxf(other.size.y, box.size.y) / 2.0:
+			return
+	hits.append([box, text])
+
+
 static func to_window(at: Vector2) -> Vector2:
 	## a place of the frame (its own units) as an input event names it
 	return Find.probe.get_tree().root.get_final_transform() * at

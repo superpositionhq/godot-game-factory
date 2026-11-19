@@ -470,6 +470,14 @@ looks up and a positive yaw turns left.
   and punctuation included: that is how a player finds it, and any build that keeps the words keeps the click. A
   caption written exactly wins; only when no button shows it so does one that reads the same with case, spaces and
   punctuation aside take it, so write it as shown when two buttons read alike.
+- **A click names a control by the words shown on it, even when the control is not a button** (a menu row the game
+  builds of its own labels, a label over a hit area, a `Label3D` sign). A click no Control takes by name, class or
+  caption is made on its text as shown, as a player clicks the words they see: the pointer goes there and the left
+  button goes down and up (the Lab's Godot grader does the same). Exactly one place on screen may read those words,
+  because a click on words shown twice can't tell which one the player meant: the click is then a miss that names
+  both places, whatever `optional` says, so name the control by words only it shows (a row's words read joined left
+  to right count, "1 BUY RANK 300 PT"). Text a script draws itself with `draw_string` is not read: click it with a
+  `cursor` input and a press.
 - **Mark a click `"disabled": true` only where the instruction says the control must be disabled.** A click on a
   button shown but disabled presses nothing and is a miss, as a player's click there does nothing; `disabled` is for a
   button the game locks by design (a choice the instruction says stays locked), and its click lands when that button
@@ -988,6 +996,7 @@ task's solution.
 | Each action once, while its control is there | a second click on a control that is gone is a miss |
 | A click or a tap goes to a control by its caption or name, never fixed screen coordinates | another build lays the screen out otherwise |
 | A caption is written exactly as the screen shows it, in the game's own language | it is the words a player finds the control by |
+| A click on words that aren't a button's names words shown in one place only | the click is made on the one place that reads them, and words shown twice are a miss |
 | A click is marked `disabled` only where the instruction says its control must be disabled | a click on a disabled button does nothing, and the miss says the play's control was not usable |
 | A first-launch play may say `"fresh": true`, never with `after` | it states the clean start every play without `after` has |
 | A click or a tap on a control only its lists hide scrolls them and lands: never script scrolling for it; a control hidden any other way (a container that clips without scrolling, a list that can't show it), and a drag's control out of view, is a miss whatever `optional` or `disabled` say | a player scrolls a list to what they want, but can't press what nothing brings into view; scripted scrolling is guessed timing another build's layout breaks |

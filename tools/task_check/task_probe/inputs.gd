@@ -9,11 +9,13 @@ extends RefCounted
 ## teleports of the player (held there for a while when asked), waits in real time, named screenshots, scene loads,
 ## view turns, and the stages of a contact: an object pinned at a place, a hit through the game's take_damage, a
 ## property set. A click or a tap on a Control that only its own scroll areas hide scrolls them to it, as a player
-## would, and presses in the next frame; one on a Control something else is over presses nothing. A shot may wait for
-## an event (`when`): it is taken in the first frame at or after its time in which the event's reading meets its expect.
+## would, and presses in the next frame; one on a Control something else is over presses nothing. A click no Control
+## takes is made on its text as shown, when exactly one place on screen reads it. A shot may wait for an event
+## (`when`): it is taken in the first frame at or after its time in which the event's reading meets its expect.
 
 const Find := preload("find.gd")
 const UiScan := preload("ui_scan.gd")
+const UiQuery := preload("queries/ui.gd")
 
 ## Input System key names (as the other factories' plays write them) that aren't the engine's own names
 const KEYS := {
@@ -56,10 +58,12 @@ const BACK := "<keyboard>/escape"
 const COVERED := "covered by another control"  ## the why of a click or a tap something else takes (check.COVERED)
 const NEVER := "its event never happened"  ## the why of a shot whose event didn't come in time (check.NEVER)
 const UNPRESSED := "its scroll area was scrolled to it, but the play ended before the press"
+const TEXT_UNPRESSED := "its text was found, but the play ended before the press"  ## a click on its text, at the end
 const UNREAD := "its event can't be read (probe.log)"  ## a shot whose event's query or match can't be made
 const PLAY_SECONDS := 1200.0  ## the longest task play (the schema's): a touch's hold, a drag's spread, a teleport's or pin's hold
 const WARM := 0.2  ## seconds before an input's time from which its has.lit selects are looked at every frame
 const LIT_WAIT := 1.0  ## seconds an input whose has.lit select waits for a part's first drawing is held back at most
+const TEXT_PRESS := 0.1  ## seconds a click made on its text as shown holds the left button down (the Lab's, Unreal's)
 
 var probe: Node
 var rows: Array[Dictionary] = []
@@ -88,6 +92,7 @@ var _wait_for := 0.0
 var _wait_frames := 0
 var _wait_start := 0
 var _again: Dictionary = {}  # a click or a tap whose Control was scrolled into view: sent once more in the next frame
+var _text_click: Dictionary = {}  # a click made on its text as shown: {row, label, up (-1 before the press)}
 var _awaited: Array[Dictionary] = []  # shots waiting for their event: {name, t, until, field, of, op, value, match, query}
 
 
@@ -152,13 +157,14 @@ func send(elapsed: float) -> void:
 	## every input due at play time `elapsed`, then the part due by now of what is under way (a finger's path, a
 	## click's release); stops at a wait (the inputs after it wait for its end), and at a click or a tap that scrolled
 	## its Control into view: that one is sent once more first in the next frame, once the layout has followed, and the
-	## inputs after it wait for it, so their order stays
+	## inputs after it wait for it, so their order stays; and at a click made on its text, until its release
 	_step(elapsed)
 	if not _again.is_empty():
 		var row := _again
 		_again = {}
 		_send_one(row, elapsed, true)
-	while _again.is_empty() and not waiting and _next < rows.size() and _at(rows[_next]) <= elapsed + 1e-9:
+	_press_text(elapsed)
+	while _again.is_empty() and _text_click.is_empty() and not waiting and _next < rows.size() and _at(rows[_next]) <= elapsed + 1e-9:
 		var row := rows[_next]
 		if _lit_waits.get(_next, false) and elapsed < _at(row) + LIT_WAIT:
 			break  # who it picks isn't known before the part's first drawing is read: sent in a later frame
@@ -226,11 +232,18 @@ static func _keep(n: Node, spot: Vector3) -> void:
 
 func finish() -> void:
 	## the play is over: no finger and no button stays down. A click or a tap still to be sent once more after its scroll
-	## is a miss (UNPRESSED), and so is every shot still waiting for its event (NEVER).
+	## is a miss (UNPRESSED), and so is a click on its text not yet pressed (TEXT_UNPRESSED) and every shot still
+	## waiting for its event (NEVER).
 	if not _again.is_empty():
 		var kind := _kind(_again)
 		_miss(_again, kind, Find.text(_again, "widget") if kind == "click" else _spot_name(_again.get("tap")), UNPRESSED)
 		_again = {}
+	if not _text_click.is_empty():
+		if _text_click["up"] < 0.0:
+			_miss(_text_click["row"], "click", Find.text(_text_click["row"], "widget"), TEXT_UNPRESSED)
+		else:
+			_button(MOUSE_BUTTON_LEFT, false)
+		_text_click = {}
 	for awaited in _awaited:
 		_never(awaited)
 	_awaited.clear()
@@ -575,6 +588,8 @@ func _click(row: Dictionary, _elapsed: float, again: bool = false) -> void:
 			var away: Array = UiScan.scrolled_away(want, true)
 			if not away.is_empty() and _scroll_to(row, away[0] as Control, "click", want):
 				return
+		if _click_text(row, want):
+			return
 		_miss(row, "click", want, "no visible control that takes a click matches it, by name, class or caption")
 		return
 	if UiScan.clipped_out(found):
@@ -601,6 +616,76 @@ func _click(row: Dictionary, _elapsed: float, again: bool = false) -> void:
 	_button(MOUSE_BUTTON_LEFT, true)
 	_clicks.append({"row": row, "label": label, "frames": 0, "watched": watched, "taken": taken})
 	probe.note("clicked %s by %s" % [label, "its " + how if how.begins_with("caption") else how])
+
+
+func _click_text(row: Dictionary, want: String) -> bool:
+	## no Control takes the click: the player clicks the words they see (the Lab's Godot grader, game grader 1.18.0,
+	## as Unreal's ClickText), whatever shows them (a Label or any Control's own text, a Label3D the camera shows, texts
+	## side by side on one line read joined: UiScan.by_shown_text). Exactly one place must read it: the pointer goes to
+	## its centre as a cursor input moves it, the left button goes down in the next frame and up TEXT_PRESS later
+	## (_press_text), and the inputs after it wait for the release. True when it is done with (pressed, or a miss
+	## naming the 2+ places that read it); false: no text reads it, the plain miss
+	var texts: Array = UiScan.shown_texts()
+	texts.append_array(_labels_3d())
+	var read: Dictionary = UiScan.by_shown_text(texts, want)
+	if read["matches"] == 0:
+		return false
+	if read["matches"] > 1:
+		probe.note("'%s' is shown in %d places: %s" % [want, read["matches"], read["label"]])
+		_miss(row, "click", want, ("no visible control that takes a click matches it, by name, class or caption, and "
+			+ "its text is shown in %d places, not one: %s") % [read["matches"], read["label"]])
+		return true
+	var at: Vector2 = read["at"]
+	_move_cursor(UiScan.fraction(at.x, at.y), Vector2.ZERO)
+	_text_click = {"row": row, "label": read["label"], "up": -1.0}
+	probe.note("clicking %s at (%.3f, %.3f) for '%s'" % [read["label"], at.x, at.y, want])
+	return true
+
+
+func _press_text(elapsed: float) -> void:
+	## a click on its text: the left button down the frame after the pointer went there, up TEXT_PRESS later
+	if _text_click.is_empty():
+		return
+	if _text_click["up"] < 0.0:
+		_button(MOUSE_BUTTON_LEFT, true)
+		_text_click["up"] = elapsed + TEXT_PRESS
+	elif elapsed + 1e-9 >= _text_click["up"]:
+		_button(MOUSE_BUTTON_LEFT, false)
+		_text_click = {}
+
+
+func _labels_3d() -> Array:
+	## the Label3Ds the game's camera shows, as the ui query reads them (UiQuery.label_corners): [{text, x, y, w, h}]
+	var found: Array = []
+	var cam: Node = probe.view()
+	if not (cam is Camera3D):
+		return found
+	var camera := cam as Camera3D
+	var frame := UiScan.frame_size()
+	if frame.x <= 0.0 or frame.y <= 0.0:
+		return found
+	for n in Find.of_class("Label3D", false):
+		var label := n as Label3D
+		if Find.is_own(label) or not Find.shown(label) or label.layers & camera.cull_mask == 0:
+			continue
+		if label.modulate.a <= Find.ALPHA_FLOOR or label.text.strip_edges() == "" \
+				or camera.is_position_behind(label.global_position):
+			continue
+		var have := false
+		var lo := Vector2.ZERO
+		var hi := Vector2.ZERO
+		for corner: Vector3 in UiQuery.label_corners(label, camera):
+			if camera.is_position_behind(corner):
+				continue
+			var p := camera.unproject_position(corner)
+			lo = p if not have else lo.min(p)
+			hi = p if not have else hi.max(p)
+			have = true
+		if not have or not Rect2(Vector2.ZERO, frame).intersects(Rect2(lo, hi - lo)):
+			continue
+		found.append({"text": label.text, "x": lo.x / frame.x, "y": lo.y / frame.y, "w": (hi.x - lo.x) / frame.x,
+			"h": (hi.y - lo.y) / frame.y})
+	return found
 
 
 func _scroll_to(row: Dictionary, c: Control, kind: String, want: String) -> bool:

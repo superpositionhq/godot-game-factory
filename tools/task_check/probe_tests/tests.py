@@ -320,6 +320,46 @@ def check_captions(c, found):
     c.eq("inputs sent (a scrolled click counts once)", probe.get("inputs_sent"), 24)
 
 
+def check_shown_text(c, found):
+    """A click no Control takes is made on its text as shown (the Lab's Godot grader, game grader 1.18.0): a row of
+    labels read joined, a label alike, a label and its shadow as one place, a Label3D; text in two places and text
+    drawn see-through are misses (`scenes/ShownText.tscn`)."""
+    if not ended(c, found, 8.5):
+        return
+    probe = found["probe"]
+    game_log = found["log"][:len(found["log"]) - len(found["output"])]
+    note = found["files"].get("probe.log", b"").decode("utf-8", "replace")
+    pressed = re.findall(r"^PRESSED (\w+) (\d+)", game_log, re.M)
+    released = dict(re.findall(r"^RELEASED (\w+) (\d+)", game_log, re.M))
+    c.eq("the panels under the words clicked are pressed, in order: the row read joined, the label read alike, the "
+         "label and its shadow", [p[0] for p in pressed], ["Row", "Sign", "ExitPanel"])
+    for name, down in pressed:
+        up = released.get(name)
+        c.true(f"{name}: the left button is let go 0.1 s (3 frames) after it went down",
+               up is not None and int(up) - int(down) == 3, (down, up))
+    key = re.search(r"^KEY K (\d+)", game_log, re.M)
+    row_up = released.get("Row")
+    c.true("the key sent just after the click waits for its release",
+           key is not None and row_up is not None and int(key.group(1)) >= int(row_up), (key and key.group(1), row_up))
+    c.true("probe.log says each click on text and where",
+           re.search(r'clicking text "1 BUY RANK 300 PT" at \(0\.\d+, 0\.\d+\) for \'1 BUY RANK 300 PT\'', note)
+           and 'clicking text "Open Map"' in note and 'clicking text "Exit"' in note, note[-3000:])
+    dock = re.search(r'clicking text "DOCK 7" at \((0\.\d+), (0\.\d+)\)', note)
+    c.true("a Label3D in front of the camera is clicked at its place, the frame's centre",
+           dock is not None and abs(float(dock.group(1)) - 0.5) < 0.05 and abs(float(dock.group(2)) - 0.5) < 0.05,
+           note[-3000:])
+    nothing = "no visible control that takes a click matches it, by name, class or caption"
+    missed = [(m["t"], m["kind"], m["target"], m["why"]) for m in probe.get("inputs_missed", [])]
+    c.eq("misses: words shown in two places (both named), words drawn see-through (no text)",
+         [(t, kind, target, why if "shown in" not in why else "two") for t, kind, target, why in missed],
+         [(4.0, "click", "Shop", "two"), (5.0, "click", "Ghost", nothing)])
+    two = next((why for t, _, _, why in missed if t == 4.0), "")
+    c.true("the miss of words shown twice names both places",
+           re.fullmatch(nothing + r', and its text is shown in 2 places, not one: "Shop" at \(0\.\d+, 0\.\d+\); '
+                                  r'"Shop" at \(0\.\d+, 0\.\d+\)', two), two)
+    c.eq("inputs sent", probe.get("inputs_sent"), 8)
+
+
 SCROLLED_OUT = "scrolled out of its container's view: a press at its centre lands outside the view"
 COVERED = "covered by another control"
 NEVER = "its event never happened"
@@ -1095,6 +1135,7 @@ PLAYS = {
     "touch_drawn": {"check": check_touch, "spec": "touch", "rendered": True},
     "second": {"check": check_second, "twice": True},
     "captions": {"check": check_captions},
+    "shown_text": {"check": check_shown_text},
     "scrolls": {"check": check_scrolls},
     "events": {"check": check_events},
     "contact": {"check": check_contact, "twice": True},

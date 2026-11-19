@@ -341,6 +341,40 @@ class TaskErrors(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("the play's input did not land: click Confirm at 0.5 s", detail)
 
+    def test_a_click_no_control_takes_is_made_on_its_text_shown_in_one_place(self):
+        """A click no Control takes by name, class or caption is made on its text as shown (the Lab's Godot grader,
+        game grader 1.18.0): the probe tries it before the NO_CONTROL miss, holds the left button TEXT_PRESS, and the
+        inputs after it wait for the release; text shown in two places or more is a miss that `optional` doesn't
+        excuse, since it is not check.NO_CONTROL."""
+        folder = Path(check.__file__).parent / "task_probe"
+        script = (folder / "inputs.gd").read_text(encoding="utf-8")
+        click = script[script.index("func _click(row: Dictionary"):script.index("func _click_text(")]
+        self.assertLess(click.index("if _click_text(row, want):"),
+                        click.index(f'_miss(row, "click", want, "{check.NO_CONTROL}")'))
+        self.assertIn("const TEXT_PRESS := 0.1", script)
+        send = script[script.index("func send(elapsed: float)"):script.index("func warm(")]
+        self.assertLess(send.index("_press_text(elapsed)"),
+                        send.index("while _again.is_empty() and _text_click.is_empty() and not waiting"))
+        finish = script[script.index("func finish()"):script.index("func _flush()")]
+        self.assertIn("TEXT_UNPRESSED", finish)
+        self.assertIn(f'("{check.NO_CONTROL}, and "', script, "the miss of text shown twice begins as NO_CONTROL")
+        scan = (folder / "ui_scan.gd").read_text(encoding="utf-8")
+        self.assertIn("static func by_shown_text(texts: Array, want: String) -> Dictionary:", scan)
+        self.assertIn("overlap >= 0.5 * minf(a[\"h\"], b[\"h\"])", scan, "pieces of one line: heights overlap by half")
+        self.assertIn("> 6.0 * maxf(a[\"h\"], b[\"h\"])", scan, "a gap of at most 6 of the line's heights")
+
+        play = {"name": "open_shop", "seconds": 5, "inputs": [{"t": 1, "widget": "Shop", "click": True,
+                                                               "optional": True}]}
+        task = task_with(probe(play=play, measure={"probe": "player", "field": "y", "agg": "max"},
+                               expect={"op": ">=", "value": 0}))
+        twice = {"t": 1.0, "kind": "click", "target": "Shop",
+                 "why": check.NO_CONTROL + ', and its text is shown in 2 places, not one: "Shop" at (0.200, 0.100); '
+                                           '"Shop" at (0.800, 0.900)'}
+        good = side("reference", FakeProject(answering()), task)
+        passed, detail = first_row(task, "start", side("start", FakeProject(answering(missed=[twice])), task), good)
+        self.assertFalse(passed, "an optional click on text shown twice still missed")
+        self.assertIn("the play's input did not land: click Shop at 1 s", detail)
+
     def test_the_probe_plays_up_to_the_schemas_longest_play(self):
         """A task play lasts up to 1200 s (the schema's, the Lab game grader 1.18.0's): the probe plays a spec's seconds
         that long and holds a touch's hold and spread, a teleport's hold and a pin's hold to it."""

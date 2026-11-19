@@ -667,7 +667,21 @@ control <path>`, `inputs: no device for <path>`), never a stop. An input that di
   `IGNORE`, or nothing is picked there) the press is sent. Not seen: a Control on the way up that accepts the press
   itself, a game's `_input` that marks it handled first, a native `_has_point` (a `TextureButton`'s click mask: its
   rectangle is read), whether a press outside an open non-exclusive popup only closes it, title bars, windows that
-  aren't embedded, and what is inside a `SubViewportContainer`.
+  aren't embedded, and what is inside a `SubViewportContainer`. Text: a click no Control takes (none by name, class
+  or caption, no disabled button, none scrolled to) is made on its text as shown (the Lab's Godot grader, game grader
+  1.18.0, as Unreal's; `_click_text`, `UiScan.by_shown_text`): the one place on screen whose text reads its `widget`
+  compared as a caption is (`UiScan.label_key`), whatever shows it: a drawn Control's own text as the ui query reads
+  it (`UiScan.shown_texts`: a `Label`, a `RichTextLabel`, a button's or a text field's text), a `Label3D` the camera
+  shows (`_labels_3d`, as the ui query's `label_corners`), or texts side by side on one line that read it joined left
+  to right (their heights overlap by half, a gap of at most 6 of the line's heights); the same place read twice is
+  one (`_add_hit`). The pointer goes to its centre as a cursor input moves it, the left button goes down in the next
+  frame and up `TEXT_PRESS` (0.1 s) later (`_press_text`), and the inputs after it wait for the release; `probe.log`
+  says `clicking text "<text>" at (<fx>, <fy>) for '<widget>'`. Text shown in two places or more is a miss whose why
+  is `no visible control that takes a click matches it, by name, class or caption, and its text is shown in <n>
+  places, not one: "<text>" at (<fx>, <fy>); ...` (not `check.NO_CONTROL`, so `optional` doesn't excuse it); no text
+  that reads it is the NO_CONTROL miss as before. Text a script draws itself (`draw_string`) is no Control's and
+  isn't read. A play that ends before such a click's press has the row `its text was found, but the play ended
+  before the press` (`TEXT_UNPRESSED`); one that ends with its button down lets it go.
 - cursor: `{"t", "cursor": [fx, fy]}` (fractions of the frame, clamped to 0-1): an `InputEventMouseMotion` to that
   point (the cursor starts at the frame's centre; `relative` from where it was, `velocity` and `screen_velocity` the
   engine's last tracked ones, the buttons and modifiers held, as a display's motion carries them); a following
