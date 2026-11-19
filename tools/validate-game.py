@@ -1759,13 +1759,15 @@ def arg_starts(args):
     return out
 
 
-def _has_name(repo, commit, name, tree):
+def _has_name(repo, commit, name, tree, anycase=False):
     """Whether `name` shows at `commit`: as a file name in its tree, or in a text file of the game (scripts, scenes and
-    resources saved as text, project.godot with its groups, layers and autoloads)."""
-    if any(re.search(rf'(^|/){re.escape(name)}(\.|$)', p) for p in tree):
+    resources saved as text, project.godot with its groups, layers and autoloads). anycase: in any case, as a caption is
+    compared."""
+    if any(re.search(rf'(^|/){re.escape(name)}(\.|$)', p, re.I if anycase else 0) for p in tree):
         return True
     word = ['-w'] if re.fullmatch(r'\w+', name, re.A) else []
-    return _git(repo, 'grep', '-q', '-I', *word, '-F', name, commit, '--', *GAME_ROOTS).returncode == 0
+    return _git(repo, 'grep', '-q', '-I', *word, *(['-i'] if anycase else []), '-F', name, commit, '--',
+                *GAME_ROOTS).returncode == 0
 
 
 def _scenario_count(repo, commit):
@@ -1799,10 +1801,11 @@ def reference_only_names(repo, t):
     counts = {}
     found, cache = [], {}
 
-    def only_ref(n):
-        if n not in cache:
-            cache[n] = (_has_name(repo, ref, n, trees[ref]), _has_name(repo, start, n, trees[start]))
-        return cache[n][0] and not cache[n][1]
+    def only_ref(n, anycase=False):
+        if (n, anycase) not in cache:
+            cache[n, anycase] = (_has_name(repo, ref, n, trees[ref], anycase),
+                                 _has_name(repo, start, n, trees[start], anycase))
+        return cache[n, anycase][0] and not cache[n, anycase][1]
 
     def scenarios(k):
         if k not in counts:
@@ -1817,7 +1820,7 @@ def reference_only_names(repo, t):
             if only_ref(n):
                 found.append((label, n, 'name'))
         for w in sorted(controls):
-            if _alike(w) not in told and only_ref(w):
+            if _alike(w) not in told and only_ref(w, anycase=True):
                 found.append((label, w, 'control'))
         for a in sorted((x for x in starts if isinstance(x, str))):
             word = PLAY_FLAG.match(a).group(1)
