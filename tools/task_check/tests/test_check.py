@@ -271,6 +271,25 @@ class TaskErrors(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("the task's own fix fails it", detail)
 
+    def test_only_a_count_or_a_widgets_combination_reads_0_of_nothing(self):
+        """As the Lab's Godot grader (probes.zero_when_none): an objects measure combined by `any` that reads nothing on
+        the reference is a task error even where 0 would pass; a widgets one is "not shown"."""
+        def task(kind):
+            return task_with(probe(measure={"probe": kind, "select": {"name": "Crate*"},
+                                            "field": "active" if kind == "objects" else "visible",
+                                            "of": "any", "agg": "last"}, expect={"op": "==", "value": 0}))
+        objects = task("objects")
+        passed, detail = first_row(objects, "reference", None, side("reference", FakeProject(answering([])), objects))
+        self.assertFalse(passed)
+        self.assertTrue(detail.startswith("task error: "), detail)
+        self.assertIn("the check reads nothing even on the task's own fix", detail)
+        widgets = task("widgets")
+        self.assertEqual(first_row(widgets, "reference", None,
+                                   side("reference", FakeProject(answering([])), widgets))[0], True,
+                         "a hidden control is matched by nothing: 0 of nothing")
+        self.assertTrue(check.zero_when_none({"probe": "components", "field": "count"}))
+        self.assertFalse(check.zero_when_none({"probe": "components", "field": "speed", "of": "sum"}))
+
     def test_a_ui_select_that_reads_nothing_on_the_reference_is_a_task_error(self):
         task = task_with(probe(measure={"probe": "ui", "select": {"kind": "text", "text": "LAP"}, "field": "signature",
                                         "agg": "changes"}, expect={"op": ">=", "value": 1}))

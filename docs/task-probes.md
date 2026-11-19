@@ -1466,7 +1466,9 @@ How it is graded, and its limits:
 - **A select that reads nothing on the reference is a task error.** An `objects`, `widgets`, `components` or `ui`
   probe whose select matches nothing (or nothing with a value for its field) in the whole of the reference's play, a play
   that ran to its end, can be passed by no build: the task is invalid. A measure that reads 0 of nothing (a `count`,
-  or `of` `count`, `any`, `all` or `sum`) is not, where 0 passes its threshold ("the crates are gone").
+  or a `widgets` measure's `of` `count`, `any`, `all` or `sum`, as the Lab's grader has it) is not, where 0 passes its
+  threshold ("the crates are gone"); an `objects` or `components` measure combined by `of` is. A `ui` select that
+  reads nothing is refused by the task check only (local only: the Lab's grader grades it as it measured).
 - **The same reading on both sides is no pass.** A probe that carries weight, outside `still_works`, and reads the
   same value on the start and the fix measures nothing the change moves, whatever its threshold (a literal too): the
   task check calls it uncalibrated, never a pass. A still-works probe and a weight-0 guard read the same on purpose.

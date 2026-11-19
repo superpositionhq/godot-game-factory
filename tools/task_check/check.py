@@ -584,6 +584,16 @@ def missed_text(rows, limit=3):
     return "; ".join(said) + (f"; and {len(rows) - limit} more" if len(rows) > limit else "")
 
 
+def zero_when_none(measure):
+    """Whether a selecting measure reads 0 when its select matches nothing (an answer, never a task error when 0
+    passes), as the Lab's Godot grader has it (probes.zero_when_none): a `count`, and a `widgets` measure combined by
+    `of` count, any, all or sum (a control the game hides is matched by nothing). An `objects` or `components` measure
+    combined so is not: reading nothing on the reference is a task error. A `ui` measure (refused here only) keeps the
+    widgets' rule."""
+    return measure["field"] == "count" or (measure["probe"] in ("widgets", "ui")
+                                           and measure.get("of") in ("count", "any", "all", "sum"))
+
+
 def reads_nothing(measure, probe):
     """Why a selecting measure read nothing in a whole play, its window aside, or None: the probe sampled its query
     but its select matched no row in any sample, or no row it matched had a value for its field (any row is one for a
@@ -655,8 +665,9 @@ class Grade:
     def unreadable(self, check, limit):
         """Why no version of the game can pass probe `check`, or None: its select (objects, widgets, components, ui) reads
         nothing in the reference's play of it, a play that ran to its end: no row matched in any sample, or none had a
-        value for its field. A measure that reads 0 of nothing (a count, or `of` count, any, all or sum) is not refused
-        when 0 passes its threshold `limit`: there nothing matching is the outcome."""
+        value for its field. A measure that reads 0 of nothing (zero_when_none) is not refused when 0 passes its
+        threshold `limit`: there nothing matching is the outcome. A `ui` probe is refused here only (local only: the
+        Lab's grader doesn't count `ui` among the measures that select)."""
         measure, ref = check["measure"], self.reference
         if ref is None or measure["probe"] not in SELECTING or not ref.built():
             return None
@@ -665,7 +676,7 @@ class Grade:
         if not isinstance(found, dict) or found.get("ended") != "time":
             return None
         why = reads_nothing(measure, found)
-        zero = measure["field"] == "count" or measure.get("of") in ("count", "any", "all", "sum")
+        zero = zero_when_none(measure)
         if why is None or (zero and limit is not None and verdict.passes(0.0, check["expect"]["op"], limit)):
             return None
         name = tasks.play_name(check)

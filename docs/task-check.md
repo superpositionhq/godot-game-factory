@@ -197,7 +197,8 @@ A task is **VALID** when all of this holds:
   probe and a required probe of weight 0 (a guard) read the same on purpose;
 - no check is a **task error**: a probe whose select (`objects`, `widgets`, `components`, `ui`) reads nothing in the
   reference's play, a play that ran to its end (unless the measure reads 0 of nothing and 0 passes: "the crates are
-  gone"), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot, an
+  gone", for a `count`, or a `widgets` measure's `of` `count`, `any`, `all` or `sum`, as the Lab's grader has it; a
+  `ui` select is refused here only, local only: the Lab's grader doesn't refuse it), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot, an
   `optional` click that found nothing on screen and a `disabled` click on its button shown disabled aside; a click or
   a touch on a control still out of its container's view, or on one something else is over (`covered by another
   control`), and a shot whose event never came (`shot_when`), are never set aside). A probe whose `since` event never
