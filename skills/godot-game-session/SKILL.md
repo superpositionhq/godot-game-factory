@@ -432,9 +432,9 @@ template made it and `validate-game.py`'s "not packaged yet" warning is expected
 or frames of `Scripts/godot.ps1 play -Shots`, not from extra launches made for them; no editor views, debug overlays
 or placeholder art), each from a different scenario or moment. Fewer than 5 in the README is the validator's warning (not an
 error), so never invent stills to reach five. The README shows them as a hero image plus a captioned gallery (one
-line per image saying what it shows). Every image the README links must be committed: after pushing, open the repo
-page on github.com and check that each image renders (a link to a file that was never committed shows as a broken
-image).
+line per image saying what it shows). Every image the README links must be committed, with the README's own path
+to it (a link to a file that was never committed shows as a broken image); `validate-game.py` refuses a README image
+that isn't committed.
 
 **Game format (docs/game-format.md).** Before calling the game content-complete,
 `python <GGF_ROOT>/godot-game-factory/tools/validate-game.py <GGF_ROOT>/games/<slug>` must say VALID: required files,
