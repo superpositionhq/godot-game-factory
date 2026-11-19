@@ -111,8 +111,10 @@ def main(argv=None):
                                           "drive, so LFS files are hardlinked)")
     parser.add_argument("--direct", action="store_true",
                         help="run Godot directly, not through the machine's godot-heavy.ps1 slots")
-    parser.add_argument("--timeout", type=int, default=1800, help="seconds a play may run")
-    parser.add_argument("--build-timeout", type=int, default=3600, help="seconds a build may run")
+    parser.add_argument("--timeout", type=int, default=None,
+                        help="seconds a play may run (default: its own seconds and 300, as the Lab's grader)")
+    parser.add_argument("--build-timeout", type=int, default=check.BUILD_TIMEOUT,
+                        help="seconds a build may run (default 1800, the Lab's; a release export gets twice it)")
     parser.add_argument("--no-judge-shots", dest="judge_shots", action="store_false",
                         help="don't play judge checks' plays or save their screenshots (by default each judge check's "
                              "screenshots of the start and the reference are saved under <task>/judge-shots/ to be "

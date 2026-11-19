@@ -1025,8 +1025,8 @@ def playing(tmp, wrote='{"format": "godot-probe/1", "ended": "time"}'):
 
 class Plays(unittest.TestCase):
     def test_a_long_play_gets_its_own_seconds_and_the_margin_to_run(self):
-        """A task play may last 1200 s: a play's timeout is --timeout, or its seconds and check.PLAY_MARGIN when that
-        is longer, plus its waits."""
+        """A task play may last 1200 s: a play's timeout is its seconds and check.PLAY_MARGIN plus its waits, as the
+        Lab's Godot grader times it (no 1800 s floor); --timeout, when given, takes its place."""
         timeouts = []
 
         class Timed(FakeProject):
@@ -1034,12 +1034,22 @@ class Plays(unittest.TestCase):
                 timeouts.append(timeout)
                 return super().play(seconds, shots, timeout, **kw)
 
-        played = side("reference", Timed(), task_with(probe()))  # --timeout 60
+        played = side("reference", Timed(), task_with(probe()))
+        played.timeout = None  # no --timeout: the Lab's
         played._play("play_longest", 1200, 1, waits=30.5)
         played._play("play_short", 20, 1, waits=2)
-        played.timeout = 1800
-        played._play("play_default", 20, 1)
-        self.assertEqual(timeouts, [1200 + check.PLAY_MARGIN + 31, 20 + check.PLAY_MARGIN + 2, 1800])
+        played._play("play_plain", 20, 1)
+        played.timeout = 60  # --timeout 60
+        played._play("play_given", 1200, 1, waits=2)
+        self.assertEqual(timeouts, [1200 + check.PLAY_MARGIN + 31, 20 + check.PLAY_MARGIN + 2,
+                                    20 + check.PLAY_MARGIN, 60 + 2])
+
+    def test_the_build_and_export_limits_are_the_labs(self):
+        """A build may run 1800 s by default and a release export twice its build's limit, as the Lab's grader."""
+        self.assertEqual(check.BUILD_TIMEOUT, 1800)
+        import inspect
+        self.assertEqual(inspect.signature(check.check_task).parameters["build_timeout"].default, 1800)
+        self.assertIsNone(inspect.signature(check.check_task).parameters["timeout"].default)
 
     def test_a_play_hands_the_game_its_spec_and_the_play_args(self):
         with tempfile.TemporaryDirectory() as tmp:

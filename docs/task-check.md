@@ -42,11 +42,11 @@ INVALID island-survival-fix-hut-door: start already passes every required probe
 
 Options: `--keep` keeps the scratch copies (to look at one or rerun a play by hand), not what their plays left
 outside them (a play starts from clean saved data anyway), `--out DIR` puts the results elsewhere, `--scratch DIR`
-puts the copies elsewhere, `--direct` runs Godot without the machine's job slots, `--timeout S` (a play, default
-1800, plus the real seconds of its waits; a play gets at least its own seconds and 300 s more, as the Lab gives it)
-and `--build-timeout S` (default 3600). A task play lasts up to 1200 s of play time (the Lab game grader 1.18.0's),
-and a play runs on its fixed clock as fast as the machine renders: a long play that needs more than 300 s past its
-own seconds on the Lab's machine is stopped there.
+puts the copies elsewhere, `--direct` runs Godot without the machine's job slots, `--timeout S` (a play, plus the
+real seconds of its waits; by default a play gets its own seconds and 300 s more, as the Lab's grader gives it, with
+no other floor) and `--build-timeout S` (default 1800, the Lab's; a release export gets twice it). A task play
+lasts up to 1200 s of play time (the Lab game grader 1.18.0's), and a play runs on its fixed clock as fast as the
+machine renders: a long play that needs more than 300 s past its own seconds on the Lab's machine is stopped there.
 
 ## Requirements
 
@@ -393,7 +393,7 @@ moment ([task-probes.md](task-probes.md), section 3.2).
 **`no samples in the window (the play ended at N s)`.** The play ended before the window: the window or `at` lies past
 the play's `seconds`, or the game crashed or quit (see the play's log). **`the play wrote no probe file`**: the game
 never got to play (a crash at load: see the play's `play.log` and `output.txt`), or the play was stopped at
-`--timeout` before its end (its progress line then shows it took that long).
+its timeout (its seconds and 300 s, or `--timeout`) before its end (its progress line then shows it took that long).
 
 **`no value in the window (nothing it selects was measured)`.** The selection matched nothing, or nothing it matched
 has that field, or a `player` or `camera` measure's play never found the player or the camera (name the player with
@@ -490,7 +490,7 @@ see "Results") tells which: its screenshots, the `track` in `probe.json`, and `p
 teleport put the player and what each click or touch hit. A `teleport_to` goes next to the match nearest the player,
 so a select that also matches another node can take the player there instead: select the things themselves.
 `reference fails boots_clean: crashed` means the reference crashes in a plain boot (`didn't finish its run`: it
-stopped before its `seconds`; `timed out`: it ran past `--timeout`). `reference fails X: build failed (exit N: ...)`
+stopped before its `seconds`; `timed out`: it ran past its timeout). `reference fails X: build failed (exit N: ...)`
 means the reference doesn't build as committed; every check that `needs` it then fails `not run: needs X`, and so on
 down the chain. The reason names the first cause and `reference\build\build.log` holds the rest, as for `start doesn't
 build` below. For a required `log_absent` (`N matching log line(s): ...`) or `file_exists` (`0 file(s) match`): the

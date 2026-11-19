@@ -86,8 +86,8 @@ Plays and inputs:
   input's `t`, a `hold` (`tap`, `drag`, `teleport`, `teleport_to`, `pin`), a `move`'s or a `drag`'s `over`, a
   measure's `at`, an event's `within`; the probe plays a spec's `seconds` up to 1200 and holds every `hold` and `over`
   to it (`PLAY_SECONDS`). A play's waits add at most 300 s of real time in all; a boot check's `seconds` stays up to
-  600. A play's timeout is `--timeout`, or its seconds and 300 s (`check.PLAY_MARGIN`, the Lab's) when that is longer, plus its
-  waits.
+  600. A play's timeout is its seconds and 300 s (`check.PLAY_MARGIN`, the Lab's, with no floor), or `--timeout` when
+  given, plus its waits; a build's is `--build-timeout` (default 1800, the Lab's) and a release export's twice it.
 - The stages of a contact: `pin` (an object select, `hold` above 0 up to 1200 s, `front` 0 to 1000 m or `at` a point,
   `offset`), `damage` (above 0, `to` and optionally `from`, object selects), `set` (a path of up to 6 members without
   an index, `on` an object select, `value` a boolean, a number or a string of at most 120 characters, `all`). The
@@ -906,7 +906,7 @@ python tools\task_check\desk.py <godot console exe> --path <copy> --log-file <co
 
 It runs with the checker's own Python and the machine's pinned Godot (`ggfroot.godot_exe(console=True)`), through
 `godot-heavy.ps1 -Label "task-check play <commit[:12]>" -Gpu` when the machine has the limiter (a GPU slot), with a
-timeout of `--timeout` plus the play's waits, counted from when the job starts. The engine's own flags come before
+timeout of its seconds and 300 s (or `--timeout`) plus the play's waits, counted from when the job starts. The engine's own flags come before
 `--`: `--fixed-fps 30` (the clock's step, section 4), `--disable-vsync` (no wait for the screen), `--audio-driver
 Dummy` (no play is heard; the mix is still measured), `<scene>` (the play's scene, when it has one). What follows
 `--` is the game's: the probe's `-taskProbe <spec>` (any case), then the task's play arguments. The checker never

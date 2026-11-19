@@ -58,9 +58,10 @@ DRIVE = [{"t": 1.0, "key": "<Keyboard>/w", "press": True}, {"t": 6.0, "key": "<K
          {"t": 13.0, "key": "<Keyboard>/a", "press": True}, {"t": 15.0, "key": "<Keyboard>/a", "press": False},
          {"t": 15.0, "key": "<Keyboard>/w", "press": True}, {"t": 21.0, "key": "<Keyboard>/w", "press": False}]
 PLAYS = {"look": (20, 6, None), "drive": (22, 8, DRIVE)}  # seconds, screenshots, inputs
-# seconds a play may run past its own seconds (boot, shader compiles) when that is longer than --timeout, the Lab's
-# Godot grader's (grade.PLAY_MARGIN): a task play may last up to 1200 s (the schema's, the Lab game grader 1.18.0's)
+# seconds a play may run past its own seconds (boot, shader compiles), as the Lab's Godot grader gives it
+# (grade.PLAY_MARGIN, play_timeout: its seconds and this, no floor): a task play may last up to 1200 s (the schema's)
 PLAY_MARGIN = 300
+BUILD_TIMEOUT = 1800  # seconds a build may run, the Lab's Godot grader's (its timeout); a release export gets twice it
 # A mobile game's drive (docs/task-probes.md): the same route by touch, a left thumb pushing where a virtual stick
 # usually is (down at its middle, over to a side, held there) and a right thumb's tap for the jump.
 STICK = [0.15, 0.75]
@@ -287,7 +288,7 @@ class Side:
               packaged=False):
         """A play, once per name, on the scene and args `play` (a task play, or None for the checker's own) opens;
         `waits`: the real seconds its waits add (a task play's), which its timeout gets on top; a long play gets at
-        least its own seconds and PLAY_MARGIN. A task play that names `after` starts on the saved data of the plays
+        its own seconds and PLAY_MARGIN, as the Lab's grader gives it, or `--timeout` when that was given. A task play that names `after` starts on the saved data of the plays
         before it; every other play starts clean (the probe clears the copy's saved data). `again`: played once more for the saved data it leaves; its checks keep reading
         its first play, its files are kept as <name>_again, and what differed from the first is noted (replay_note)."""
         if name not in self.played or again:
@@ -296,7 +297,7 @@ class Side:
                      + f"({seconds} s" + (f", {waits:g} s waiting" if waits else "") + ")")
             scene, args = tasks.place(self.task, play)
             before, self.saves = self.saves, []  # a play that raises leaves no saves known
-            found = self.project.play(seconds, shots, max(self.timeout, seconds + PLAY_MARGIN) + math.ceil(waits),
+            found = self.project.play(seconds, shots, play_timeout(seconds, self.timeout) + math.ceil(waits),
                                       scene=scene, inputs=inputs, queries=queries, args=args, every=every,
                                       player=self.player, keep_saves=keeps,
                                       **({"packaged": True} if packaged else {}))
@@ -383,7 +384,7 @@ class Side:
                 self._packaged = False, f"{self.why_unbuilt()}, so it wasn't packaged"
                 return self._packaged
             self.log(f"  {self.name}: making the release export")
-            r = self.project.package(self.build_timeout)
+            r = self.project.package(2 * self.build_timeout)  # the Lab's: twice its build's
             if self.evidence is not None and (r.exit_code != 0 or not r.playable):
                 self._keep("package", {"package.log": r.output.encode("utf-8")})
             if getattr(r, "why", None):
@@ -568,6 +569,12 @@ def missed(probe, play=None):
             for t, widget, optional, disabled in marked)
 
     return [r for r in rows if not excused(r)]
+
+
+def play_timeout(seconds, given=None):
+    """A play's timeout before its waits: `given` (--timeout) when one was given, else its own seconds and PLAY_MARGIN,
+    as the Lab's Godot grader times a play (grade.play_timeout: no floor)."""
+    return given if given else int(seconds) + PLAY_MARGIN
 
 
 def missed_text(rows, limit=3):
@@ -888,7 +895,7 @@ def probe_values(task, reference, start):
     return out
 
 
-def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, timeout=1800, build_timeout=3600,
+def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, timeout=None, build_timeout=BUILD_TIMEOUT,
                log=print, clock=time.time, builds=None, judge_shots=True):
     """Check one task (a dict read from `repo`'s tasks branch, its file's bytes `raw`): its result (written to
     <out_dir>/<name>.json, its plays' files under <out_dir>/<name>/). `builds`: a run's shared copies (Builds), which
