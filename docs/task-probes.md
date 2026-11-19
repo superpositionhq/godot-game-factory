@@ -218,7 +218,11 @@ thing instead of removing it still pass? If not, move the probe to what the play
       mouse, a sibling that passes the press on to its own parent, a scroll bar, a control on a higher `CanvasLayer`),
       no embedded window (a dialog, a popup) holding that point, and no exclusive dialog shown anywhere; a control
       below it whose press climbs to it (a label on a button) is no cover, and one whose mouse filter is `IGNORE` (a
-      see-through overlay that takes no press) neither. Otherwise nothing is sent and the click is a miss that says
+      see-through overlay that takes no press) neither. A control inside the open dialog or popup itself is
+      not covered by it: its own window holds the point, and the press reaches the control as a player's does
+      (local only: the Lab's Godot grader, at origin/main 0ab4015, still counts the open dialog as over its own
+      buttons, a grader bug sent to the owner; until it is fixed, a play that must pass in the Lab clicks no button
+      inside an embedded `Window`, and a check reads no `covered` of one). Otherwise nothing is sent and the click is a miss that says
       `covered by another control`, which neither `optional` nor `disabled` excuses, and `probe.log` names what is
       over it: `Buy (Button) matches 'Buy', but Shop/Tooltip (Panel) is over it: not clicked`. Close the dialog,
       popup or overlay first with the player's own input. The test redoes the engine's picking (mouse filters, the
@@ -1471,7 +1475,8 @@ How it is graded, and its limits:
   reads nothing is refused by the task check only (local only: the Lab's grader grades it as it measured).
 - **The same reading on both sides is no pass.** A probe that carries weight, outside `still_works`, and reads the
   same value on the start and the fix measures nothing the change moves, whatever its threshold (a literal too): the
-  task check calls it uncalibrated, never a pass. A still-works probe and a weight-0 guard read the same on purpose.
+  task check calls it uncalibrated, never a pass (for a literal or a threshold relative to the start, local only: the
+  Lab's grader refuses only a calibrated one). A still-works probe and a weight-0 guard read the same on purpose.
 - **`needs`** names only earlier checks; check names are unique in the task.
 
 ### 3.1 A start that doesn't load: `fails_at_start`
@@ -1567,7 +1572,8 @@ Before any agent is given a task, the checker grades the start and the fix with 
 - every required `judge` check names plays of its own and, scored by the task's writer from the screenshots the check
   saves (section 3.2), passes on the fix and fails on the start, item by item (a judge of what still looks as it did
   passes on both); an item the pictures don't show scores 0;
-- no `code_judge` is required (a model reads the change in the Lab, and nothing checks it before);
+- no `code_judge` is required (a model reads the change in the Lab, and nothing checks it before; local only: the
+  Lab's grader runs a required one);
 - every required `seen` probe, read by the task's writer from the crops the check saves (section 2.22), fails on the
   start and passes on the fix; in the Lab its readings of both must also agree 3 times out of 3.
 

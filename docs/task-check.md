@@ -197,21 +197,28 @@ A task is **VALID** when all of this holds:
   the task, whichever probe it is;
 - no probe that carries weight, outside `still_works`, reads the same on the start and the reference, whatever its
   threshold (a literal too): it measures nothing the change moves, so it is uncalibrated, never a pass. A still-works
-  probe and a required probe of weight 0 (a guard) read the same on purpose;
+  probe and a required probe of weight 0 (a guard) read the same on purpose. For a calibrated threshold the Lab's
+  grader refuses it too; for a literal or one relative to the start the refusal is **local only** (the Lab's grader
+  grades it as it measures);
 - no check is a **task error**: a probe whose select (`objects`, `widgets`, `components`, `ui`) reads nothing in the
   reference's play, a play that ran to its end (unless the measure reads 0 of nothing and 0 passes: "the crates are
   gone", for a `count`, or a `widgets` measure's `of` `count`, `any`, `all` or `sum`, as the Lab's grader has it; a
-  `ui` select is refused here only, local only: the Lab's grader doesn't refuse it), or a task play one of whose inputs didn't land on the reference (`inputs_missed`, a named screenshot, an
+  `ui` select is refused here only, **local only**: the Lab's grader doesn't refuse it), or a task play one of whose
+  inputs didn't land on the reference (`inputs_missed`, a named screenshot, an
   `optional` click that found nothing on screen and a `disabled` click on its button shown disabled aside; a click or
   a touch on a control still out of its container's view, or on one something else is over (`covered by another
   control`), and a shot whose event never came (`shot_when`), are never set aside). A probe whose `since` event never
   comes on the reference has no value there: uncalibrated when its threshold is calibrated or relative to the start,
   a fail when it is a literal.
   No version of the game can be graded by such a check;
-- every required `judge` names a play of its own (`plays`, or a `route`), is scored by you on both sides, and the
-  reference passes it (below); every required `seen` probe is read by you on both sides (below);
-- no `code_judge` is required: a model reads the change in the Lab and nothing here can, so code review stays a
-  `"required": false` quality check.
+- every required `judge` names a play of its own (`plays`, or a `route`; **local only**: the Lab's grader judges one
+  with neither on the idle play and the drive), is scored by you on both sides, and the reference passes it (below);
+  every required `seen` probe is read by you on both sides (below);
+- no `code_judge` is required (**local only**: the Lab's grader runs a required one; a model reads the change in the
+  Lab and nothing here can, so code review stays a `"required": false` quality check).
+
+The rules marked local only are stricter than the Lab's grader: a task they refuse may still be graded in the Lab,
+but never one they let through that the Lab refuses. Never read one as the Lab's behaviour.
 
 A play input that didn't land on the start (a click on a control the start doesn't show) fails that side's check of
 the play: the start failing it. Read the start's `probe.log` all the same: a start that fails only because its play
@@ -380,8 +387,8 @@ reference that measured 0): read the reason in brackets as below. In a task with
 start leaves uncalibrated reads **`X has no threshold: uncalibrated: ...`**: no solution could pass it.
 
 **`X reads the same on the start and the reference (N): uncalibrated, never a pass: ...`.** A probe that carries
-weight, outside `still_works`, measured the same value on both sides, whatever its threshold (a literal too): it
-measures nothing the change moves, so it decides nothing between doing nothing and the fix. Compare both sides'
+weight, outside `still_works`, measured the same value on both sides, whatever its threshold (a literal too, local
+only: the Lab's grader refuses only a calibrated one): it measures nothing the change moves, so it decides nothing between doing nothing and the fix. Compare both sides'
 samples in `probe.json` and read what the change moves (another field, select, play or window: a widget hidden on both
 sides, a property that stays empty, a select that reads the wrong node), never a looser threshold.
 
@@ -391,7 +398,8 @@ the reasons after this line say what the start does.
 
 **`judge X: no play of its own (no `plays`, no `route`): ...`.** A required judge shown only the idle `look` and the
 `drive` never sees what its rubric asks (they never press the task's keys or leave a title screen), and an item that
-can't be seen scores 0, so it is never VALID whatever its scores. Give it `plays` of its own that show each item at its
+can't be seen scores 0, so it is never VALID whatever its scores (local only: the Lab's grader judges it on what
+those two plays show). Give it `plays` of its own that show each item at its
 moment ([task-probes.md](task-probes.md), section 3.2).
 
 **`no samples in the window (the play ended at N s)`.** The play ended before the window: the window or `at` lies past
@@ -482,7 +490,7 @@ at the start: the item or its plays are wrong.
 visual check, never the outcome: add a required probe of what the thread changed (godot-write-tasks skill, section 5).
 
 **`X is a required code_judge: ...`.** Make it `"required": false` (code review is a quality check): no check here
-can run it.
+can run it (local only: the Lab's grader runs a required one).
 
 **`start fails still-works X`.** The game works at the start, so a still-works probe that fails there is broken: it
 doesn't find the HUD, the node or the value it looks for. Fix the probe (see the play's `probe.json`), never the

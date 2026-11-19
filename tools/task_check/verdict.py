@@ -27,7 +27,8 @@ every required check, as the Lab's own no-op and oracle check of a task holds th
   (`uncalibrated`), whichever it is;
 - no probe that carries weight, outside still_works, reads the same on the start and the reference, whatever its
   threshold (a literal too): it measures nothing the change moves, so it is uncalibrated, never a pass (SAME_READING;
-  a still-works probe and a weight-0 guard read the same on purpose);
+  a still-works probe and a weight-0 guard read the same on purpose). The Lab's grader refuses a calibrated one; for
+  a literal or a threshold relative to the start this is local only;
 - no check of either side is a task error (check.TASK_ERROR: a probe whose selector reads nothing even on the
   reference, a task play whose input didn't land on the reference): no version of the game can be graded by it;
 - either way, every required probe of the task's `still_works` milestone already passes at the start: what still works
@@ -42,8 +43,8 @@ every required check, as the Lab's own no-op and oracle check of a task holds th
   judge that carries weight counts by the writer's score of the start (`judged`); an optional one the start isn't
   scored on keeps the task from VALID, since what a no-op earns can't be told (a required one waits anyway). A code_judge earns a no-op nothing (the Lab's: no
   change to review);
-- no required `code_judge`: a model reads the change in the Lab and nothing here can, so code review stays a quality
-  check (`"required": false`).
+- no required `code_judge` (local only: the Lab's grader runs one): a model reads the change in the Lab and nothing
+  here can, so code review stays a quality check (`"required": false`).
 Judges' screenshots and seen probes' crops are answered by the task's writer (check.check_task holds the verdict until
 every required one is answered and agrees)."""
 

@@ -840,8 +840,8 @@ def judged(task, records, played=True):
     records): every one scored on every side shown, the reference passing it, and the start passing a judge of what
     still looks as it did (in still_works) or scoring every required item below judges.REQUIRED on any other. A judge
     is a required check like any other, so a task isn't VALID on scores nobody gave. A required judge with no play of
-    its own (no `plays`, no `route`) never passes here, whatever its scores: it is shown only the idle look and the
-    drive, which never press a task's keys or leave a title screen."""
+    its own (no `plays`, no `route`) never passes here, whatever its scores (local only: the Lab's grader judges it on
+    them): it is shown only the idle look and the drive, which never press a task's keys or leave a title screen."""
     out = []
     for group, c in tasks.checks(task):
         if c["kind"] != "judge" or not c["required"]:

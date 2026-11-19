@@ -478,7 +478,11 @@ looks up and a positive yaw turns left.
   over it. Close the dialog, popup or overlay first with the player's own input (its button, the key the game closes
   it with), or wait for it to go, then press the control. A see-through overlay that ignores the mouse covers
   nothing. The `widgets` field `covered` reads whether a control is covered, for a check that a button can be
-  pressed where it shows.
+  pressed where it shows. A button inside the open dialog or popup itself is not covered by it in the task check;
+  the Lab's grader (at origin/main 0ab4015) still counts the dialog as over its own buttons, a grader bug, so until
+  that is fixed no play clicks or taps a button inside an embedded `Window` (`AcceptDialog`, `ConfirmationDialog`,
+  `PopupPanel` and the like) and no check reads `covered` of one: drive it by the key the dialog answers to (a game
+  still being built can draw its dialogs as `Control` panels instead).
 - **An optional click is for a control that appears only in some states**, never to hide a click that should land.
   `"optional": true` on a widget click is for a control the game shows only sometimes (a confirmation that appears
   only when something exists): when nothing on screen matches it, the play goes on. A miss is how a play says it
@@ -724,6 +728,9 @@ What each verdict means:
 | `INVALID` | one of those doesn't hold: `reasons` says which; the task doesn't ship as it is |
 | `ERROR` | the checker couldn't check it (a commit not fetched, LFS objects missing, no Godot, no desktop of its own): fix that and run again; it says nothing about the task |
 
+A few refusals are **local only**, stricter than the Lab's grader (marked so below): a task they refuse may still be
+graded in the Lab, never the other way round. Fix them all the same, and never describe them as the Lab's behaviour.
+
 What each failure means and what to do (the exact lines and more fixes: [docs/task-check.md](../../docs/task-check.md),
 "Common reasons and fixes"):
 
@@ -736,16 +743,17 @@ What each failure means and what to do (the exact lines and more fixes: [docs/ta
 | `reference fails X: ...` | the oracle fails a required check: the check or the reference is wrong | read the reference's row and play: a threshold on the wrong side (`op`), a play that doesn't reach the state, a `log_absent` pattern or `file_exists` glob the reference itself fails, or a reference that doesn't do the ask (pick another reference, or take the ask out of the instruction) |
 | `uncalibrated: ... the reference measured nothing`, `... task error: ... reads nothing even on the task's own fix` | a reference that measures nothing: the select finds nothing there, so no build can pass | select by what the thing does or carries, or by names the start has; read the rows in the reference's `probe.json` and check the play reaches the place |
 | `uncalibrated: ... both measure N`, `X has no threshold: ...` | start and reference read the same: nothing to put a threshold between (any probe, required or not, stops the Lab's check) | measure something the change moves, or a literal for a count or a boolean; or drop an optional probe |
-| `X reads the same on the start and the reference (N): uncalibrated, never a pass` | a weighted probe that measures nothing the change moves, whatever its threshold | compare both sides' samples; read what the change moves (field, select, play, window), never a looser threshold |
+| `X reads the same on the start and the reference (N): uncalibrated, never a pass` | a weighted probe that measures nothing the change moves, whatever its threshold (local only for a literal or a threshold relative to the start: the Lab's grader refuses only a calibrated one) | compare both sides' samples; read what the change moves (field, select, play, window), never a looser threshold |
 | `no seed.reference: the oracle side can't be played ...` | a task with no reference can't be validated | give it the thread's accepted end as `seed.reference` (section 2) |
-| `judge X: no play of its own ...` | a required judge shown only the idle look and the drive, which never reach what it asks | give it `plays` that show each item at its moment |
+| `judge X: no play of its own ...` | a required judge shown only the idle look and the drive, which never reach what it asks (local only: the Lab's grader judges it on those two plays) | give it `plays` that show each item at its moment |
 | `seen X: crops saved ..., answer needed`, `judge X: shots saved ..., answer needed` | the check can't decide it without you | answer it blind (step 5), then check again |
 | `no samples in the window (the play ended at N s)`, `a stage of the play didn't land`, `... an input did not land ...` | a play that never reaches its moment: it ended early, a stage found nothing, a click or touch found no control | read `probe.log` and `inputs_missed`; drive the play as a player would (the start control by the text the instruction quotes, a wait for the scene, a stage on something both sides have) |
 | a value just past its threshold, `... did not go as its first play`, a crop you can read only with a `?` | an unsteady reading: a window at the edge of the event, a sample at a moment that moves, text that changes while the shot is taken | read the samples, not only the reduced value; move the window into the steady part of the event, read a quantity with a clear gap between the sides, take the shot at a still moment; never ease what the instruction asks |
 | `reference fails X: packaging failed ...`, `... packaged, but the packaged game didn't run cleanly` | the release export wasn't made (the engine's error, no `Windows Desktop` preset, or a machine without the release export template), or its player crashed or stopped before its time | read `reference/package/package.log` or the `packaged` play's log; fix the game's `Windows Desktop` preset or the crash; install the templates with `machine\get-godot.ps1` |
 | a judge's or a `seen` probe's picture doesn't show what its rubric asks (the reference's own picture included) | the play doesn't produce that picture: it ends before the moment, the shot is taken too early or too late, or the game never puts the asked thing on screen | rewrite the play, its inputs and its shot moments, until it produces that picture every time (a `shot` with `when` where the moment moves between builds); or edit the game so the asked thing really appears on screen; never drop the check, point it at something else, or loosen its rubric |
 | `<side>: the route X was NOT played: ...` (a judge's notes) | the judge's route file isn't in the reference, or isn't a route | score only what the pictures show; nothing stands in for the route |
-| `X is a required code_judge`, `no required probe outside still_works but seen ones` | a check nothing here can run, or no outcome probe for the start to fail | make code review `"required": false`; add a required probe of the outcome |
+| `X is a required code_judge`, `no required probe outside still_works but seen ones` | a check nothing here can run (local only: the Lab's grader runs a required one), or no outcome probe for the start to fail | make code review `"required": false`; add a required probe of the outcome |
+| `task error: ...` on a `ui` probe | a `ui` select that reads nothing on the reference (local only: the Lab's grader grades it as it measured, so no solution could pass it) | read the reference's rows; select text the reference shows |
 
 ### Every ask has a check
 
