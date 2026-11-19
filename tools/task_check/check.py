@@ -234,7 +234,8 @@ class Side:
         self.saves = []  # the plays whose saved data the copy holds now: the last that started clean, and those after it
         self.replays = {}  # play name -> what differed when it was played again for its saves (replay_note)
         self.crops = {}  # a seen check's name -> its crops on this side (seen.crops)
-        self.routes = {}  # a judge's route file -> (its play or None, why none)
+        self.routes = {}  # a judge's route file (or (file, other side's name)) -> (its play or None, why none)
+        self.route_info = {}  # the same keys -> {path, seconds, inputs} of a route played
         self.route_from = None  # the Side whose copy a judge's route file is read from (None: this one)
         # what the writer answered for seen checks (seen.kept), set by the task check; None: no answer is read here (a
         # task try), so seen checks are not asked
@@ -324,16 +325,21 @@ class Side:
             self.played[name] = found
         return self.played[name]
 
-    def judge_plays(self, check):
-        """{play name: (probe dict or None, {file: bytes})} of every play judge check `check` is shown on this side:
-        its own task plays (the probes' own when they name the same play, which is the same play), else the idle play
-        and the drive, each played whole (never the boot cut to look's seconds, whose screenshots span the boot)."""
+    def judge_plays(self, check, route_from=None, route=True):
+        """{play name: (probe dict or None, {file: bytes}[, route])} of every play judge check `check` is shown on this
+        side: its own task plays (the probes' own when they name the same play, which is the same play), else the idle
+        play and the drive, each played whole (never the boot cut to look's seconds, whose screenshots span the boot),
+        and its route (read from `route_from`'s copy, else as route_play reads it; none when not `route`: the Lab's
+        REFERENCE side is never shown one). A route's entry carries a third item, {"path", "seconds", "inputs"}."""
         out = {}
         for play, _, _ in judges.plays(check):
             if play == judges.ROUTE:
-                found = self.route_play(check["route"])
+                if not route:
+                    continue
+                found = self.route_play(check["route"], route_from)
                 if found is not None:
-                    out[judges.ROUTE] = (found.probe, found.files)
+                    out[judges.ROUTE] = (found.probe, found.files, self.route_info[self._route_key(check["route"],
+                                                                                                  route_from)])
                 continue
             if isinstance(play, str):
                 seconds, shots, inputs = own_play(play, self.project)
@@ -343,19 +349,28 @@ class Side:
             out[play if isinstance(play, str) else play["name"]] = (p.probe, p.files)
         return out
 
-    def route_play(self, path):
+    def _route_key(self, path, source=None):
+        own = self.route_from or self
+        return path if source is None or source is own else (path, source.name)
+
+    def route_play(self, path, source=None):
         """The developer's route file `path` played on this side as the Lab's grade plays a judge's route: read from
-        the graded copy (`route_from`: the reference in a task check, the agent's game in a try), its inputs held to
-        the Lab's limits (read_route), played for route_seconds with ROUTE_SHOTS screenshots, once. None, with why in
-        `routes`, when it can't be played: then the judge is shown no route play, and nothing stands for it."""
-        if path not in self.routes:
-            inputs, why = read_route((self.route_from or self).project, path)
+        the graded copy (`route_from`, else this side's own: the start's when the start is graded as the no-op, the
+        reference's as the oracle, the agent's game in a try; `source`: another side's copy, as the Lab's BEFORE side
+        plays the graded copy's route), its inputs held to the Lab's limits (read_route), played for route_seconds with
+        ROUTE_SHOTS screenshots, once. None, with why in `routes`, when it can't be played: then the judge is shown no
+        route play, and nothing stands for it."""
+        key = self._route_key(path, source)
+        if key not in self.routes:
+            inputs, why = read_route((source or self.route_from or self).project, path)
             if inputs is None:
-                self.routes[path] = None, why
+                self.routes[key] = None, why
             else:
                 seconds = route_seconds(inputs)
-                self.routes[path] = self._play(judges.ROUTE, seconds, ROUTE_SHOTS, inputs), None
-        return self.routes[path][0]
+                name = judges.ROUTE if key == path else f"{judges.ROUTE}_from_{source.name}"
+                self.routes[key] = self._play(name, seconds, ROUTE_SHOTS, inputs), None
+                self.route_info[key] = {"path": path, "seconds": seconds, "inputs": len(inputs)}
+        return self.routes[key][0]
 
     def idle(self, seconds):
         """Whether the boot play of `seconds` also serves "look": look is the first part of the same idle game, so one
@@ -806,32 +821,72 @@ def start_unbuilt(task, why):
                         "weight": build["weight"], "detail": str(why)[:700], "group": group}], "probes": {}}
 
 
-def save_judge_shots(task, sides, folder, where="", blind=False, log=print, rng=None, held=None):
+def save_judge_shots(task, sides, folder, where="", blind=False, log=print, rng=None, held=None, start=None,
+                     reference=None, gone=False):
     """Play every `judge` check's plays on `sides` ({folder name: Side}, a side that didn't build left out with a note)
     and save the screenshots its judge would see under <folder>/<check>/ (judges.save), with the blind copy when
-    `blind` and the scores `held` (judges.kept) still stand for. Nothing is asked of a model: {check: record}, each
-    "answer needed" until scored, its `folder` named as `where` (the folder's place in the results) and the check's
-    name. A route that couldn't be played is said in the notes: the judge is shown no route there."""
+    `blind` and the scores `held` (judges.kept) still stand for. A judge that compares (`before`, `reference`) is shown,
+    beside each side as the Lab's judge sees the graded copy, the start's plays as BEFORE (its route read from that
+    side's copy) and the reference's as REFERENCE (no route), from the Sides `start` and `reference`. Nothing is asked
+    of a model: {check: record}, each "answer needed" until scored, its `folder` named as `where` (the folder's place in
+    the results) and the check's name. A route that couldn't be played is said in the notes: the judge is shown no
+    route there. `gone`: the start's and the reference's copies are gone (a try): they show only what they played
+    before, and BEFORE no route."""
     out = {}
     for found in judges.judges(task):
-        played, notes = {}, []
+        played, beside, notes, mobile = {}, {}, [], None
         for label, side in sides.items():
             try:
                 if not side.built():
                     notes.append(f"{label}: no screenshots, {side.why_unbuilt()}")
                     continue
                 played[label] = side.judge_plays(found)
+                if mobile is None:
+                    mobile = _is_mobile(side)
                 if found["route"] and side.routes.get(found["route"], (None, None))[0] is None:
                     notes.append(f"{label}: the route {found['route']} was NOT played: "
                                  f"{side.routes[found['route']][1]}; the judge is shown no route, and nothing stands "
                                  "for it")
+                if found["before"] or found["reference"]:
+                    beside[label] = _beside(found, side, start, reference, notes, label, gone)
             except Exception as exc:  # a play the checker couldn't make: said in ask.md, never the task's error
                 notes.append(f"{label}: the plays failed ({type(exc).__name__}: {str(exc)[:200]})")
         record = judges.save(task, found, played, folder, blind=blind, notes=notes, rng=rng,
-                             held=(held or {}).get(found["name"]))
+                             held=(held or {}).get(found["name"]), beside=beside, mobile=bool(mobile))
         record["folder"] = f"{where}{found['name']}/"
         log(f"  {judges.line(found['name'], record)}")
         out[found["name"]] = record
+    return out
+
+
+def _is_mobile(side):
+    found = getattr(side.project, "mobile", None)
+    try:
+        return bool(found()) if callable(found) else False
+    except Exception:  # a copy whose Platform.json can't be read: a desktop game's labels
+        return False
+
+
+def _beside(check, side, start, reference, notes, label, gone=False):
+    """{"BEFORE": plays, "REFERENCE": plays} a comparing judge is shown beside `side` as the graded copy, as the Lab's
+    judge_evidence makes them: BEFORE the start's plays and the route read from `side`'s copy, REFERENCE the
+    reference's plays without a route. A side that can't be shown is said in `notes` as the Lab says it."""
+    out = {}
+    if check["before"]:
+        if start is None or not start.built():
+            notes.append(f"{label}: BEFORE: " + ("the task has no start" if start is None else start.why_unbuilt()))
+        else:
+            out["BEFORE"] = start.judge_plays(check, route_from=side, route=not gone)
+            if gone and check["route"]:
+                notes.append(f"{label}: BEFORE: the route isn't shown: the start's copy is gone before the agent's "
+                             "game is made, so it can't play that game's route (the Lab's BEFORE does)")
+    if check["reference"]:
+        if reference is None:
+            notes.append(f"{label}: REFERENCE: the task names no reference")
+        elif not reference.built():
+            notes.append(f"{label}: REFERENCE: {reference.why_unbuilt()}")
+        else:
+            out["REFERENCE"] = reference.judge_plays(check, route=False)
     return out
 
 
@@ -972,9 +1027,8 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
             sides[side] = Side(side, project, task, timeout, build_timeout, evidence, log)
             sides[side].answers = held
             result[side] = {"commit": sha, **info}
-        start, reference = sides["start"], sides.get("reference")
-        for made in sides.values():  # a judge's route is read from the graded copy: the oracle's, the reference
-            made.route_from = reference or start
+        start, reference = sides["start"], sides.get("reference")  # a judge's route is read from each side's own copy:
+        # the graded copy, the start's as the no-op and the reference's as the oracle, as the Lab reads it
         build = tasks.fails_at_start(task)
         if not start.built():
             result["start"]["built"] = False
@@ -995,7 +1049,7 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
         if judges.judges(task) and judge_shots:
             shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None}
             result["judges"] = save_judge_shots(task, shown, evidence / "judge-shots", f"{name}/judge-shots/",
-                                                blind=True, log=log, held=scores)
+                                                blind=True, log=log, held=scores, start=start, reference=reference)
             shots = [judges.line(n, r) for n, r in result["judges"].items()]
         valid, why, notes = verdict.verdict(task, ref_grade, start_grade, start_judged(result["judges"]))
         notes += shots

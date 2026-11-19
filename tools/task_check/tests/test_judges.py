@@ -109,8 +109,9 @@ class Saved(unittest.TestCase):
             records = check.save_judge_shots(task, sides, folder, "probe-task/judge-shots/", blind=True,
                                              log=lambda *a: None, rng=random.Random(1))
             base = folder / "door_looks_open"
-            self.assertEqual(sorted(p.name for p in (base / "start").iterdir()),
+            self.assertEqual(sorted(p.name for p in (base / "start").iterdir() if p.suffix == ".png"),
                              [f"open_door_{i:02d}.png" for i in range(1, 7)])
+            self.assertTrue((base / "start" / judges.READINGS).is_file())
             self.assertEqual((base / "start" / "open_door_02.png").read_bytes(), b"start:10:shot_door.png",
                              "the named shot in the order taken")
             self.assertEqual(len(sides["start"].project.plays), 1, "the probe's own play is reused")
@@ -143,7 +144,7 @@ class Saved(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             record = judges.save(task, chk, played, tmp, blind=True, rng=random.Random(1))
             base = Path(tmp) / chk["name"]
-            a, b = (sorted(p.name for p in (base / "blind" / x).iterdir()) for x in "AB")
+            a, b = (sorted(p.name for p in (base / "blind" / x).iterdir() if p.suffix == ".png") for x in "AB")
             self.assertEqual(a, b, "both blind folders hold the same picture names")
             self.assertEqual(len(a), 6 + 5)
             self.assertTrue(any("left out of the blind copy" in n for n in record["notes"]))
@@ -157,7 +158,8 @@ class Saved(unittest.TestCase):
         s.probe_play("look")
         with tempfile.TemporaryDirectory() as tmp:
             check.save_judge_shots(task, {"reference": s}, Path(tmp), log=lambda *a: None)
-            saved = sorted(p.name for p in (Path(tmp) / "door_looks_open" / "reference").iterdir())
+            saved = sorted(p.name for p in (Path(tmp) / "door_looks_open" / "reference").iterdir()
+                           if p.suffix == ".png")
         self.assertEqual(saved, sorted([f"look_{i:02d}.png" for i in range(1, 7)]
                                        + [f"drive_{i:02d}.png" for i in range(1, 9)]))
         self.assertEqual([(p["seconds"], p["shots"]) for p in s.project.plays], [(60, 6), (20, 6), (22, 8)])
@@ -184,7 +186,7 @@ class Saved(unittest.TestCase):
                 judges.scored(chk, bad)
 
     def test_a_route_is_read_from_the_graded_copy_and_played_on_each_side(self):
-        task = task_with(probe(), judge(route="Tests/route.json", before=True))
+        task = task_with(probe(), judge(route="Tests/route.json"))
         sides = self.sides(task)
         route = [{"t": 3, "key": "<Keyboard>/w", "press": False}, {"t": 1, "key": "<Keyboard>/w", "press": True}]
         sides["reference"].project.files["Tests/route.json"] = json.dumps(route).encode()
@@ -200,7 +202,53 @@ class Saved(unittest.TestCase):
             self.assertEqual(len(record["sides"]["start"]), 6 + 8 + 6, "20 pictures a side at most: the route's last "
                              "two left out, as the Lab cuts them")
             self.assertIn("route_01.png", record["sides"]["reference"])
-            self.assertIn("played on each side shown", (Path(tmp) / "door_looks_open" / "ask.md").read_text())
+            self.assertIn("read from each side's own copy", (Path(tmp) / "door_looks_open" / "ask.md").read_text())
+            said = (Path(tmp) / "door_looks_open" / "reference" / judges.READINGS).read_text()
+            self.assertIn("- the developer's route, played by the grader (Tests/route.json), 10 s (screenshots: 6); "
+                          "inputs: 2 presses and releases from Tests/route.json", said)
+
+    def test_a_comparing_judge_is_shown_before_and_reference_beside_each_side_as_the_lab_shows_them(self):
+        """BEFORE: the start's plays, with the route read from the side graded; REFERENCE: the reference's plays,
+        never a route; every screenshot (no cap of 20: the Lab shows panels); the readings labelled by side."""
+        task = task_with(probe(), judge(route="Tests/route.json", before=True, reference=True))
+        sides = self.sides(task)
+        route = [{"t": 1, "key": "<Keyboard>/w", "press": True}, {"t": 3, "key": "<Keyboard>/w", "press": False}]
+        sides["reference"].project.files["Tests/route.json"] = json.dumps(route).encode()
+        with tempfile.TemporaryDirectory() as tmp:
+            record = check.save_judge_shots(task, sides, Path(tmp), blind=True, log=lambda *a: None,
+                                            rng=random.Random(1), start=sides["start"],
+                                            reference=sides["reference"])["door_looks_open"]
+            base = Path(tmp) / "door_looks_open"
+            ref = sorted(p.name for p in (base / "reference").iterdir() if p.suffix == ".png")
+            self.assertEqual(len([n for n in ref if not n.startswith(("BEFORE_", "REFERENCE_"))]), 6 + 8 + 8,
+                             "no cap of 20 for a judge that compares")
+            self.assertIn("BEFORE_route_08.png", ref, "BEFORE plays the graded copy's route on the start")
+            self.assertFalse(any(n.startswith("REFERENCE_route") for n in ref), "REFERENCE shows no route")
+            self.assertEqual(len([n for n in ref if n.startswith("REFERENCE_")]), 6 + 8)
+            start = sorted(p.name for p in (base / "start").iterdir() if p.suffix == ".png")
+            self.assertFalse(any("route" in n for n in start),
+                             "graded as the no-op, the start reads its own copy, which holds no route")
+            self.assertTrue(any("start: the route Tests/route.json was NOT played" in n for n in record["notes"]))
+            said = (base / "reference" / judges.READINGS).read_text()
+            for text in ("- BEFORE: idle play, 20 s, no input (screenshots: 6, in the panels)",
+                         "- AFTER: the developer's route, played by the grader (Tests/route.json), 10 s",
+                         "- REFERENCE: scripted drive, 22 s"):
+                self.assertIn(text, said)
+            self.assertNotIn("REFERENCE: the developer's route", said)
+            self.assertIn("BEFORE, AFTER and REFERENCE left to right", (base / "ask.md").read_text())
+            self.assertTrue((base / "blind" / "A" / judges.READINGS).is_file())
+
+    def test_the_readings_state_the_track_and_camera_as_the_labs_prompt(self):
+        probe_file = {"track": [[float(t), 1.0, 2.0, 3.0] for t in range(20)],
+                      "camera": [[float(t), 1.0, 2.0, 503.0, -20.0, 0.0, 70.0] for t in range(20)]}
+        self.assertEqual(judges.camera_text(probe_file), "camera (median of 20 samples): 5.00 m above the player, "
+                         "0.00 m from it horizontally, pitch -20.0°, field of view 70°")
+        chk = judges.judges(task_with(probe(), judge()))[0]
+        said = judges.readings(chk, {"look": (probe_file, {}), "drive": (None, {})}, counts={("AFTER", "look"): 6})
+        self.assertIn('- idle play, 20 s, no input (screenshots: 6); inputs: none; player position track (seconds, x, '
+                      'y, z in cm): [[0.0, 1.0, 2.0, 3.0], [2.0, 1.0, 2.0, 3.0]', said)
+        self.assertIn("- scripted drive, 22 s: W 1-6 s", said)
+        self.assertIn("none (no player pawn)", said)
 
     def test_a_route_that_cant_be_played_is_said_and_shows_nothing(self):
         task = task_with(probe(), judge(route="Tests/route.json"))
@@ -280,7 +328,10 @@ class Whole(unittest.TestCase):
                                                  "needed"])
             base = Path(tmp) / "out" / "probe-task" / "judge-shots" / "door_looks_open"
             for folder in ("start", "reference", "blind/A", "blind/B"):
-                self.assertEqual(len(list((base / folder).iterdir())), 5, folder)
+                names = [p.name for p in (base / folder).iterdir() if p.suffix == ".png"]
+                self.assertEqual(len([n for n in names if not n.startswith("REFERENCE_")]), 5, folder)
+                self.assertEqual(len([n for n in names if n.startswith("REFERENCE_")]), 5,
+                                 f"{folder}: the reference beside it, as the Lab's comparing judge sees it")
             self.assertTrue((base / "ask.md").is_file())
             self.score(tmp, {"door_open": 0, "lit": 1}, {"door_open": 1, "lit": 1})
             self.assertEqual((self.run_check(tmp)["verdict"]), "VALID")
@@ -365,6 +416,38 @@ class Flags(unittest.TestCase):
 
 
 class Try(unittest.TestCase):
+    def test_a_try_shows_a_comparing_judge_the_start_and_the_reference_played_before_the_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, base = self.tried(tmp, before=True, reference=True)
+            self.assertEqual(result["status"], "DONE")
+            names = sorted(p.name for p in (base / "agent").iterdir() if p.suffix == ".png")
+            self.assertIn("BEFORE_open_door_01.png", names)
+            self.assertIn("REFERENCE_open_door_01.png", names)
+            self.assertIn("- REFERENCE: task play open_door", (base / "agent" / judges.READINGS).read_text())
+
+    def tried(self, tmp, **extra):
+        repo, start, fix, _ = make_game(tmp)
+        task = task_with(probe(expect={"op": ">=", "calibrate": 0.5}),
+                         judge(plays=[play(shots=["door"])], shots=3, **extra))
+        task["seed"] = {**task["seed"], "commit": start, "reference": fix}
+        projects = {"start": Shooting(measuring(-500), folder="start"),
+                    "reference": Shooting(measuring(100), folder="reference"),
+                    "run1": Shooting(measuring(100), folder="run1")}
+
+        def project(folder, machine, label):
+            folder = Path(folder)
+            return projects[folder.name if folder.name in projects else folder.parent.name]
+
+        def agent(argv, cwd, prompt, transcript, minutes, env_extra=None):
+            Path(transcript).write_text("")
+            return {"exit_code": 0, "seconds": 60.0, "timed_out": False}
+
+        with mock.patch.object(godot, "Project", project), mock.patch.object(trial, "run_agent", agent), \
+                mock.patch.object(godot.Machine, "for_project", classmethod(lambda cls, p, d=False: cls(Path(p), None))):
+            result = trial.try_task(repo, task, json.dumps(task).encode(), Path(tmp) / "scratch", Path(tmp) / "out",
+                                    "claude", "claude", places=[repo], log=lambda *a: None)
+        return result, Path(tmp) / "out" / "probe-task" / "run1" / "judge-shots" / "door_looks_open"
+
     def test_a_try_saves_the_agents_side_and_lists_the_judge_as_pending(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo, start, fix, _ = make_game(tmp)
@@ -392,7 +475,7 @@ class Try(unittest.TestCase):
             self.assertEqual(result["runs"][0]["score"], 1.0, "the number leaves judges out")
             self.assertEqual(result["judges_pending"], ["door_looks_open"])
             base = Path(tmp) / "out" / "probe-task" / "run1" / "judge-shots" / "door_looks_open"
-            self.assertEqual(sorted(p.name for p in (base / "agent").iterdir()),
+            self.assertEqual(sorted(p.name for p in (base / "agent").iterdir() if p.suffix == ".png"),
                              [f"open_door_{i:02d}.png" for i in range(1, 5)])
             self.assertFalse((base / "blind").exists())
             self.assertIn("before calling the task too easy or held", (base / "ask.md").read_text())

@@ -1529,14 +1529,20 @@ One subject per judge; a rubric item about "every screen" only with plays that o
   calls such a task VALID. An item the pictures don't show scores 0: cannot be seen is a fail, never a pass.
 
 - A check with a `route` (a project file of key inputs `[{t, key, press}]`) is also shown that route, played by the
-  grader on the graded copy (and on the start for a `before` check), 8 screenshots, after its other plays, within the
-  20. The file is read from the graded copy: a route the copy lacks, or one that isn't a route (over 1 MiB, more than
+  grader on the graded copy (and on the start for a `before` check, never on the REFERENCE side), 8 screenshots, after
+  its other plays, within the 20. The file is read from the graded copy: a route the copy lacks, or one that isn't a route (over 1 MiB, more than
   400 inputs, an input that isn't a key by its control path at 0 to 118 s), is not played, and the judge is told so.
 
 The task check asks no model. It plays each `judge` check's plays on the start and on the reference and saves the
 screenshots the judge would be shown: its `shots` evenly spaced ones of each play and every named one, 20 at most, or
-the 6 of `look` and the 8 of `drive` for a check without `plays`, and its `route`, read from the reference's copy and
-played on each side. They go under `<task>\judge-shots\<check>\start\` and `reference\`, named `<play>_<nn>.png` in
+the 6 of `look` and the 8 of `drive` for a check without `plays`, and its `route`, read from each side's own copy (the
+copy the Lab grades: the start's as the no-op, the reference's as the oracle) and played on it. A check that compares
+(`before`, `reference`) has no cap of 20 (the Lab shows it panels of every screenshot) and is shown, beside each side,
+what the Lab's judge sees beside the graded copy: the start's plays as BEFORE (with the route read from that side's
+copy) and the reference's as REFERENCE (no route), saved as `BEFORE_<play>_<nn>.png` and `REFERENCE_<play>_<nn>.png`
+in that side's folder. Each side's folder also holds `readings.md`: what the Lab's judge prompt states beside the
+pictures (each play's label and inputs, the player's position track and the camera). They go under
+`<task>\judge-shots\<check>\start\` and `reference\`, named `<play>_<nn>.png` in
 the order taken, with `ask.md` (the brief, the question, the rubric, what each picture is) and a blind copy:
 `blind\A\` and `blind\B\` hold the pictures both sides have, and `blind\key.json` says which side each is. Each
 side's own picture count and notes (a route that couldn't be played) are in `sides.md`, opened with the key. A play a

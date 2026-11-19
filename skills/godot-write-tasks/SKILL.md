@@ -667,10 +667,13 @@ phone's size, and writes VALID or INVALID per task with the reasons and the meas
 the task check says VALID**; for INVALID, fix the task, never the threshold toward what the start happens to measure.
 
 **The check asks no model, so you score the judges.** For every `judge` check it plays the check's plays on the start
-and on the reference (and its `route`, read from the reference's copy, as the Lab plays it) and saves the screenshots
-the cloud's judge would be shown under `.task-checks\<task>\judge-shots\<check>\` (`start\`, `reference\`, and a
-blind copy in `blind\A\` and `blind\B\` whose sides are in `blind\key.json`), with `ask.md` holding the brief, the
-question and the rubric. Look at the pictures blind: score every rubric item for A and for B from 0 to 1 into
+and on the reference (and its `route`, read from each side's own copy, as the Lab reads it from the copy it grades)
+and saves the screenshots the cloud's judge would be shown under `.task-checks\<task>\judge-shots\<check>\`
+(`start\`, `reference\`, and a blind copy in `blind\A\` and `blind\B\` whose sides are in `blind\key.json`), with
+`ask.md` holding the brief, the question and the rubric, and `readings.md` in each side's folder holding the position
+track and camera the Lab's judge prompt states. A judge that compares (`before`, `reference`) also gets, in each side's
+folder, the start's and the reference's pictures the Lab's judge sees beside it (`BEFORE_*.png`, `REFERENCE_*.png`):
+score each side beside them, as the Lab's judge does. Look at the pictures blind: score every rubric item for A and for B from 0 to 1 into
 `blind\answers.json` before you open the key and `sides.md`, then check the task again. An item the pictures don't
 show (its moment isn't on screen, its subject is off view, hidden or never reached) scores 0 on that side: cannot be
 seen is a fail, never a pass. A required judge keeps the task from being VALID until both sides are scored; the reference must pass it, and the start must score every required
@@ -1004,7 +1007,8 @@ task's solution.
 | A judge's views are the task's own tour (scene loads, `teleport_to` what the build made, view turns, named `shot` inputs), never a view list from the game's files | a build could dress only the spots it lists |
 | A look described by a list gets one rubric item per item the instruction asks for on its own | a judge of the whole look passes a build missing one |
 | A `code_judge` is never required | a model reads code review, and no check before submission can run it |
-| A `package` check asks one thing: the game's release export (its `Windows Desktop` preset) builds, and its player runs 20 s with no crash | that is all a shipped build is graded on, by the same export and play on every machine that checks it; a machine that can't make the export fails the check, never passes it |
+| A `package` check asks one thing: the game's release export (its `Windows Desktop` preset) builds, and its player runs 20 s with no crash | that is all a shipped build is graded on; a machine that can't make the export fails the check, never passes it |
+| The task check exports for Windows; the Lab's grader exports the same preset for Linux and plays every copy on Linux | a native library with no Linux build, code tied to the `windows` feature tag or `OS.get_name()`, a backslash path or a file name in the wrong letter case passes here and fails there (docs/task-check.md, "VALID and INVALID") |
 | A check's name says what it decides | the result files and every reader of the task go by it |
 
 **The plays**

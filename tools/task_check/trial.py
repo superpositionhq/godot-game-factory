@@ -383,6 +383,12 @@ def try_task(repo, task, raw, scratch, out_dir, agent, exe, runs=1, model=None, 
                     pass  # kept in `thresholds`: every run's grade fails that check the same way
                 if c["measure"]["probe"] != "seen":  # what the reference reads, for a run's task errors (Grade)
                     reference.probe_play(c["play"])
+        if judge_shots:  # a comparing judge's BEFORE and REFERENCE plays, while the copies are here (save_judge_shots)
+            for c in judges.judges(task):
+                if c["before"] and start.built():
+                    start.judge_plays(c, route=False)
+                if c["reference"]:
+                    reference.judge_plays(c, route=False)
         # Gone before an agent starts, as it could read them two folders above its own: the reference copy is the answer
         # and the copies' logs hold the grader's queries.
         for label in ("start", "reference"):
@@ -438,7 +444,8 @@ def try_task(repo, task, raw, scratch, out_dir, agent, exe, runs=1, model=None, 
                 row.update(score(task, grade), checks=grade["checks"])
                 if judge_shots and judges.judges(task):
                     row["judges"] = check.save_judge_shots(task, {"agent": tried}, evidence / label / "judge-shots",
-                                                           f"{name}/{label}/judge-shots/", log=log)
+                                                           f"{name}/{label}/judge-shots/", log=log, start=start,
+                                                           reference=reference, gone=True)
                     result["judges_pending"] = sorted(row["judges"])
             log(f"  {label}: {'SOLVED' if row['solved'] else 'not solved'} "
                 f"({row['required_passed']}/{row['required'] or '?'} required checks)")

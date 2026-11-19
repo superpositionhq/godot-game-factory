@@ -12,10 +12,16 @@ looks at them and answers the rubric:
   since those never reach what a rubric asks;
 - an item the pictures don't show scores 0 (UNSEEN): cannot be seen is a fail, never a pass, and ask.md says so;
 - a judge with a `route` is also shown the developer's route file played by the checker as the Lab plays it (read from
-  the graded copy: the reference in a task check, the agent's game in a try; 8 screenshots; check.Side.route_play),
+  the graded copy: each side's own in a task check, the agent's game in a try; 8 screenshots; check.Side.route_play),
   after its other plays; a route that can't be played (no such file, not a route) is said in the notes and shows
   nothing, and nothing stands for it;
-- a judge is shown 20 screenshots of a side at most.
+- a judge is shown 20 screenshots of a side at most, unless it compares (`before`, `reference`): the Lab then shows
+  every one, as panels of the sides at the same moment;
+- a judge that compares is also shown, beside each side as the graded copy, the start's plays as BEFORE (its route
+  read from that side's copy) and the reference's as REFERENCE (never a route), as the Lab's judge_evidence makes
+  them: saved beside the side's own as BEFORE_<play>_<nn>.png and REFERENCE_<play>_<nn>.png;
+- the readings the Lab's prompt states beside the pictures (each play's label, its inputs, the player's position
+  track and the camera, judging.prompt) are saved as readings.md in each side's folder and blind letter.
 
 `save` writes them under <folder>/<check>/<side>/<play>_<nn>.png with <folder>/<check>/ask.md (the brief, the question,
 the rubric, what each picture is); with `blind`, a copy of two sides under blind/A and blind/B whose mapping is
@@ -45,6 +51,13 @@ PENDING = "shots saved for {sides}, answer needed"
 ANSWERED = "scored in blind/answers.json"
 ANSWERS = "answers.json"  # under blind/
 ROUTE = "route"  # the developer's route's play, as a judge's play name
+SIDES = ("BEFORE", "AFTER", "REFERENCE")  # a comparing judge's panels, left to right (the Lab's grade.SIDES)
+READINGS = "readings.md"
+# the Lab's labels of the checker's own plays and a route (game_grader godot/grade.py, grade.ROUTE)
+IDLE_TEXT = "idle play, 20 s, no input"
+DRIVE_TEXT = "scripted drive, 22 s: W 1-6 s, D 6-8 s, W 8-13 s with a jump (space) at 9 s, A 13-15 s, W 15-21 s"
+MOBILE_DRIVE_TEXT = "scripted drive by touch, 22 s: a left thumb on the virtual stick, a right thumb's tap for the jump"
+ROUTE_TEXT = "the developer's route, played by the grader"
 NO_OWN_PLAY = ("no play of its own (no `plays`, no `route`): it is shown only the idle look and the drive, which never "
                "press the task's keys or leave a title screen, so it can't see what its rubric asks; give it plays "
                "that show each item at its moment")
@@ -123,17 +136,106 @@ def chosen(names, shots):
     return [n for n in names if n in keep]
 
 
-def selection(check, played):
-    """[(play name, label, [(file name in the play, saved name)])] of one side, 20 screenshots at most in all.
-    `played`: {play name: (probe dict or None, {file: bytes})} of the plays made (a missing play shows nothing)."""
-    out, left = [], JUDGE_IMAGES
+def compares(check):
+    """Whether a judge compares: shown BEFORE and REFERENCE beside the graded copy."""
+    return bool(check.get("before") or check.get("reference"))
+
+
+def selection(check, played, prefix="", route=True):
+    """[(play name, label, [(file name in the play, saved name)])] of one side, 20 screenshots at most in all unless
+    the judge compares (the Lab then shows every one, in panels). `played`: {play name: (probe dict or None, {file:
+    bytes}[, route])} of the plays made (a missing play shows nothing). `prefix`: before each saved name (BEFORE_,
+    REFERENCE_); `route`: whether a route is shown (never on the REFERENCE side)."""
+    out, left = [], None if compares(check) else JUDGE_IMAGES
     for play, label, shots in plays(check):
+        if play == ROUTE and not route:
+            continue
         name = play if isinstance(play, str) else play["name"]
-        probe, files = played.get(name, (None, {}))
-        picked = chosen(taken(probe, files), shots)[:left]
-        left -= len(picked)
-        out.append((name, label, [(n, f"{name}_{i + 1:02d}.png") for i, n in enumerate(picked)]))
+        probe, files = played.get(name, (None, {}))[:2]
+        picked = chosen(taken(probe, files), shots)
+        if left is not None:
+            picked = picked[:left]
+            left -= len(picked)
+        out.append((name, label, [(n, f"{prefix}{name}_{i + 1:02d}.png") for i, n in enumerate(picked)]))
     return out
+
+
+def camera_text(probe):
+    """The camera as the Lab's judge prompt states it (judging.camera_text, its numbers as it computes them), or None."""
+    try:
+        camera = [row for row in (probe or {}).get("camera") or [] if isinstance(row, list) and len(row) == 7]
+        if not camera:
+            return None
+        pawn = {round(row[0], 2): row[1:] for row in (probe or {}).get("track") or []
+                if isinstance(row, list) and len(row) == 4}
+        pitch, fov = _median([row[4] for row in camera]), _median([row[6] for row in camera])
+        pairs = [(row[1:4], pawn[round(row[0], 2)]) for row in camera if round(row[0], 2) in pawn]
+        if not pairs:
+            return (f"camera (median of {len(camera)} samples, no player pawn to measure from): pitch {pitch:.0f}°, "
+                    f"field of view {fov:.0f}°")
+        above = _median([(c[2] - q[2]) / 100 for c, q in pairs])
+        away = _median([((c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2) ** 0.5 / 100 for c, q in pairs])
+        return (f"camera (median of {len(pairs)} samples): {above:.2f} m above the player, {away:.2f} m from it "
+                f"horizontally, pitch {pitch:.1f}°, field of view {fov:.0f}°")
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+
+
+def _median(values):
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2] if ordered else None
+
+
+def play_rows(check, played, mobile=False, route=True):
+    """[(label, inputs, probe, play name)] of one side's plays as the Lab's grade labels them for its judge
+    (judge_rows, route_play): its own task plays, else the idle play and the drive, then its route."""
+    rows = []
+    if check["plays"]:
+        for p in check["plays"]:
+            asked = [f"{len(p.get('inputs') or [])} scripted input(s)" if p.get("inputs") else "no input",
+                     f"its screenshots in order, about one every {p['seconds'] / check['shots']:.2g} s"]
+            rows.append((f"task play {p['name']}, {p['seconds']} s", ", ".join(asked),
+                         played.get(p["name"], (None, {}))[0], p["name"]))
+    else:
+        rows += [(IDLE_TEXT, "none", played.get("look", (None, {}))[0], "look"),
+                 (MOBILE_DRIVE_TEXT if mobile else DRIVE_TEXT, "the scripted drive",
+                  played.get("drive", (None, {}))[0], "drive")]
+    found = played.get(ROUTE)
+    if route and check.get("route") and found is not None and len(found) > 2:
+        info = found[2]
+        rows.append((f"{ROUTE_TEXT} ({info['path']}), {info['seconds']} s",
+                     f"{info['inputs']} presses and releases from {info['path']}", found[0], ROUTE))
+    return rows
+
+
+def readings(check, own, beside=None, mobile=False, counts=None):
+    """readings.md of one side as the graded copy: each play the Lab's judge is told of, BEFORE first and REFERENCE
+    last when it compares, with its inputs, the player's position track (every tenth sample) and the camera, as
+    judging.prompt states them. `counts`: {(tag, play name): screenshots shown}."""
+    tagged = []
+    if compares(check):
+        tags = [("BEFORE", (beside or {}).get("BEFORE"), True), ("AFTER", own, True),
+                ("REFERENCE", (beside or {}).get("REFERENCE"), False)]
+        for tag, played, route in tags:
+            if played is not None:
+                tagged += [(f"{tag}: {label}", inputs, probe, (tag, name))
+                           for label, inputs, probe, name in play_rows(check, played, mobile, route)]
+    else:
+        tagged = [(label, inputs, probe, ("AFTER", name)) for label, inputs, probe, name in
+                  play_rows(check, own, mobile)]
+    lines = ["# What the judge reads beside the pictures", "",
+             "As the Lab's judge prompt states each play (its numbers as the Lab computes them).", ""]
+    for label, inputs, probe, key in tagged:
+        track = (probe or {}).get("track") or []
+        sampled = track[:: max(1, len(track) // 10)]
+        count = (counts or {}).get(key, 0)
+        span = (f"screenshots: {count}, in the panels" if compares(check) else f"screenshots: {count}") if count \
+            else "no screenshots"
+        seen = camera_text(probe)
+        lines.append(f"- {label} ({span}); inputs: {inputs}; player position track (seconds, x, y, z in cm): "
+                     f"{json.dumps(sampled)[:1200] if sampled else 'none (no player pawn)'}"
+                     + (f"; {seen}" if seen else ""))
+    return "\n".join(lines) + "\n"
 
 
 def named(file):
@@ -154,9 +256,9 @@ def blind_copy(base, sides, rng=None, key=None):
     (key, notes)."""
     key, notes = key or blind_key(sides, rng), []
     # Only pictures both sides have go in: a side with fewer (a play cut short) would be told apart by its count.
-    both = set.intersection(*({p.name for p in (base / side).iterdir()} for side in sides))
+    both = set.intersection(*({p.name for p in (base / side).iterdir() if p.is_file()} for side in sides))
     for side in sides:
-        only = sorted({p.name for p in (base / side).iterdir()} - both)
+        only = sorted({p.name for p in (base / side).iterdir() if p.is_file()} - both)
         if only:
             notes.append(f"{side}: {len(only)} picture(s) the other side lacks, left out of the blind copy "
                          f"({', '.join(only)})")
@@ -206,15 +308,25 @@ def ask_text(task, check, sides, notes=(), blind=False, saved=None):
         lines.append("Which pictures each side has, and any side's notes, are in `sides.md`: open it with the key.")
     else:
         lines += side_lines(saved)
-    if check["before"] or check["reference"]:
+    if compares(check):
         shown = [x for x, on in (("the start as BEFORE", check["before"]), ("the reference as REFERENCE",
                                                                              check["reference"])) if on]
-        lines += ["", f"In the cloud the judge is also shown {' and '.join(shown)}, beside the developer's game, the "
-                      "same plays at the same moments."]
+        lines += ["", f"The Lab's judge is also shown {' and '.join(shown)}, beside the side it grades (AFTER): the "
+                      "same plays at the same moments, as panels with BEFORE, AFTER and REFERENCE left to right, every "
+                      "screenshot of every play (no cap of 20). They are saved in each side's folder beside its own: "
+                      "`BEFORE_<play>_NN.png` and `REFERENCE_<play>_NN.png`, the moment `NN` of each side to be read "
+                      "together with that side's `<play>_NN.png`. The REFERENCE side shows no route; BEFORE plays the "
+                      "route read from the side being graded. Score each side as AFTER, beside the same BEFORE and "
+                      "REFERENCE the Lab's judge would see; the panels show which side is which, as they do to the "
+                      "Lab's judge."]
     if check["route"]:
-        lines += ["", f"The route file `{check['route']}` is read from the graded copy (the reference here) and played "
-                      "on each side shown, as the Lab plays it. Where it couldn't be played the notes say why, and the "
-                      "judge sees no route: score only what the pictures show."]
+        lines += ["", f"The route file `{check['route']}` is read from each side's own copy, the copy the Lab grades "
+                      "(the start's as the no-op, the reference's as the oracle, the agent's game in a try), and played "
+                      "on it, as the Lab plays it. Where it couldn't be played the notes say why, and the judge sees "
+                      "no route: score only what the pictures show."]
+    lines += ["", f"`{READINGS}` in each side's folder (and in each blind letter) holds what the Lab's judge prompt "
+                  "states beside the pictures: each play's label and inputs, the player's position track and the "
+                  "camera. Read it as the judge would."]
     lines += ["", "## How to answer", ""]
     if blind:
         lines += ["`blind/A/` and `blind/B/` hold the pictures both of two side folders have; which is which is in "
@@ -306,10 +418,12 @@ def scored(check, scores):
     return value >= PASS and not low, why
 
 
-def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None):
+def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None, beside=None, mobile=False):
     """Save judge check `check`'s screenshots of each side under <folder>/<check>/: `played` {side: {play name: (probe,
     files)}}. With `blind`, the blind copy (of one or two sides), keeping `held`'s letters (kept()[check]) and carrying
-    over each side's scores whose pictures are unchanged. Its record: {"sides": {side: [saved names]}, "blind":
+    over each side's scores whose pictures are unchanged. `beside`: {side: {"BEFORE": plays, "REFERENCE": plays}} a
+    comparing judge is shown beside that side (saved with those prefixes); `mobile`: the drive's label is the touch
+    one. Its record: {"sides": {side: [saved names]}, "blind":
     whether there is a blind copy (its key stays in its folder), "answered": {side: {"passed", "why", "low"}}, "notes",
     "status"}."""
     base = Path(folder) / check["name"]
@@ -321,15 +435,26 @@ def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None
         rows = selection(check, made)
         saved[side] = rows
         (base / side).mkdir()
+        counts = {}
         for name, _, picked in rows:
             files = made.get(name, (None, {}))[1]
             for f, s in picked:
                 (base / side / s).write_bytes(files[f])
+            counts["AFTER", name] = len(picked)
             if name not in made:
                 notes.append(f"{side}: {name} wasn't played")
             elif not picked:
                 notes.append(f"{side}: {name} took no screenshots")
-    pictures = {side: {f.name: digest(f.read_bytes()) for f in sorted((base / side).iterdir())} for side in saved}
+        extra = (beside or {}).get(side) or {}
+        for tag, other in extra.items():
+            for name, _, picked in selection(check, other, f"{tag}_", route=tag != "REFERENCE"):
+                files = other.get(name, (None, {}))[1]
+                for f, s in picked:
+                    (base / side / s).write_bytes(files[f])
+                counts[tag, name] = len(picked)
+        (base / side / READINGS).write_text(readings(check, made, extra, mobile, counts), encoding="utf-8")
+    pictures = {side: {f.name: digest(f.read_bytes()) for f in sorted((base / side).iterdir())
+                       if f.suffix.lower() == ".png"} for side in saved}
     (base / "pictures.json").write_text(json.dumps(pictures, indent=2) + "\n", encoding="utf-8")
     key, answered = None, {}
     if blind and saved and all(pictures.values()):

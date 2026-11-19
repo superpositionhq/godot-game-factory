@@ -176,7 +176,13 @@ A task is **VALID** when all of this holds:
   plays the exported player for 20 s through the probe (one screenshot), and passes it only when the export left its
   player and the player ran to its time with no crash. A mobile game's is the same desktop export, played at the
   phone's size; no APK is made. A machine without the release export template fails the check, saying so
-  (`machine\get-godot.ps1` installs the templates): it never passes a step it can't run;
+  (`machine\get-godot.ps1` installs the templates): it never passes a step it can't run. **The Lab's export is a
+  Linux one**: its grader runs on Linux, so it makes a preset of its own, platform `Linux`, from the same `Windows
+  Desktop` preset (its export filter and files, include and exclude filters, custom features, script export mode and
+  texture formats; the pck embedded, x86_64) and plays that player. What only a Windows export has passes here and
+  fails there: a GDExtension or native library with no Linux build, code or settings tied to the `windows` feature
+  tag or `OS.get_name()`, a path written with backslashes or in another letter case than the file's (Linux file names
+  are case-sensitive, in every play, not only the export). Keep a packaged game free of those;
 - **the no-op fails**: the start fails every required probe outside `still_works` (or doesn't build by design): each
   is one issue of the thread, and one the start already passes rewards no work. A required check of `"weight": 0` is
   a guard wherever it sits (it rewards nothing), so the start may pass it; that lets a task hold more guards than
@@ -228,9 +234,13 @@ A `judge` check is scored by you. The check plays its plays on the start and on 
 `look` and `drive`, which never press a task's keys or leave a title screen: a required judge with neither `plays`
 nor a `route` keeps the task from being VALID whatever its scores, `judge <check>: no play of its own ...`, and
 `tools/validate-game.py` refuses it; a play a probe names is the same play, played once, with the most screenshots a judge showing it
-asks; with a `route`, the route too, below) and saves the screenshots the cloud's judge would be shown
-([task-probes.md](task-probes.md), section 3.2) under `<task>\judge-shots\<check>\`: `start\` and `reference\`
-(`<play>_<nn>.png`, in the order taken), `ask.md` (the brief, the question, the rubric and what each picture is),
+asks; with a `route`, the route too, read from each side's own copy as the Lab reads it from the copy it grades) and
+saves the screenshots the cloud's judge would be shown ([task-probes.md](task-probes.md), section 3.2) under
+`<task>\judge-shots\<check>\`: `start\` and `reference\` (`<play>_<nn>.png`, in the order taken; for a judge that
+compares, also `BEFORE_<play>_<nn>.png` and `REFERENCE_<play>_<nn>.png`, the start's and the reference's plays the
+Lab's judge sees beside that side, with no cap of 20 and no route on the REFERENCE side; and `readings.md`, the
+position track and camera the Lab's judge prompt states), `ask.md` (the brief, the question, the rubric and what each
+picture is),
 `pictures.json` (each picture's sha256) and a blind copy, `blind\A\` and `blind\B\`, whose sides are in
 `blind\key.json` (one side alone, `blind\A\`, when the start isn't played). Until you score it, a required judge keeps
 the task from being VALID: its line says `judge <check>: shots saved for start/reference, answer needed`. To score:
@@ -257,13 +267,16 @@ Scores stand while the pictures they were given for are the same (`pictures.json
 (another commit, a play that changed) is asked again, with a note. `--no-judge-shots` skips the judge plays, so a task
 with a required judge can't be VALID in that run.
 
-A judge's `route` (a project file of key inputs `[{t, key, press}]`) is read from the reference's copy, as the Lab reads
-it from the graded copy, held to the Lab's limits (1 MiB, 1 to 400 inputs, each a key by its control path at 0 to
-118 s), and played on each side shown for 4 s past its last input (10 s at least, 120 s at most), 8 screenshots, after
-the judge's other plays; a judge is shown 20 screenshots of a side at most, so a route after 20 others shows nothing.
-A route that can't be played (the reference has no such file, or it isn't a route) is said in the notes, `<side>: the
-route <file> was NOT played: <why>`, and the judge is shown no route: score only what the pictures show, and nothing
-stands in for it.
+A judge's `route` (a project file of key inputs `[{t, key, press}]`) is read from each side's own copy, as the Lab
+reads it from the copy it grades (the start's when it grades the no-op, the reference's for the oracle, the agent's
+game in a try), held to the Lab's limits (1 MiB, 1 to 400 inputs, each a key by its control path at 0 to 118 s), and
+played on that side for 4 s past its last input (10 s at least, 120 s at most), 8 screenshots, after the judge's other
+plays; a judge is shown 20 screenshots of a side at most (unless it compares: then every one, in panels), so a route
+after 20 others shows nothing. For a judge that compares, BEFORE plays the graded side's route on the start, and
+REFERENCE shows none, as in the Lab. A route that can't be played (that copy has no such file, or it isn't a route) is
+said in the notes, `<side>: the route <file> was NOT played: <why>`, and the judge is shown no route: score only what
+the pictures show, and nothing stands in for it. So a route the reference adds is not shown on the start, as the
+Lab's no-op shows none.
 
 A `seen` probe ([task-probes.md](task-probes.md) section 2.22) is read by you too, since the check asks no model. Its
 task play is played on the start and on the reference (once, with the other probes of that play), and each named shot
