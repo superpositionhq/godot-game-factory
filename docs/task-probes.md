@@ -446,7 +446,10 @@ of the first visible, laid-out widget of that name (a wildcard) or type, whateve
 panel): a `Control` node, found as a `widgets` select finds one (section 2.6), by its node name first, then by its
 class, then by the caption a button shows, as a widget click finds one (section 1.1: exactly as the screen shows it
 first, in any language, `{"widget": "确定"}`, then read alike, `{"widget": "tap_me"}` touching a button reading
-"Tap Me"; a touch needn't find it enabled). A tap's widget that only its own scroll areas hide is scrolled into view
+"Tap Me"; a touch needn't find it enabled). Name the control by the words it shows where it shows some, else by a
+name or class the start (`seed.commit`) already has; never by a name only the reference has (a control the task's
+thread adds is named otherwise in another fair build). A point is the last resort: its place differs between
+landscape and portrait. A tap's widget that only its own scroll areas hide is scrolled into view
 first and tapped in the next frame, as a click is (section 1.1), and a tap on a widget something else is over is a
 miss that says `covered by another control`. A drag scrolls nothing and isn't asked what is over its widget: a drag's
 widget whose centre is scrolled out of its container's view is no spot, nothing is touched and the drag is a miss

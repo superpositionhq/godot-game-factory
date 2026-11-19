@@ -303,5 +303,18 @@ class TheChecksCanFail(unittest.TestCase):
         self.assertTrue(frontmatter_problems('a-skill', good.replace("'It''s one line.'", 'It is: two')))
 
 
+class OwnerRules(unittest.TestCase):
+    """Rules the owner decided (2026-11-19) that the skills must keep saying, in plain text."""
+
+    def test_a_touch_never_names_a_control_the_thread_creates(self):
+        mobile = read('skills/godot-mobile-game/SKILL.md')
+        self.assertNotIn('A task taps a control by its node name', mobile)
+        self.assertNotIn('Touch a control by its name or the caption', mobile)
+        for rel in ('skills/godot-mobile-game/SKILL.md', SKILL, PROBES):
+            text = ' '.join(read(rel).split())
+            self.assertIn('seed.commit', text, rel)
+            self.assertRegex(text, r"never (one|a name|by a name)[^.]*(thread|reference)", rel)
+
+
 if __name__ == '__main__':
     unittest.main()

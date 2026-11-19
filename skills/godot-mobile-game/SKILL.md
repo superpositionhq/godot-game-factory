@@ -79,9 +79,12 @@ player as the product, the rule here is the one that applies.
   or a gamepad.
 - **Controls are `Control` nodes with names of their own** (`FireButton`, `MoveStick`, `PauseButton`; never the
   default `Button2`), laid out in the UI scene: a `Button` or `TextureButton` for a press, a stick as a `Control`
-  that tracks a finger (the engine's `VirtualJoystick`, or one of your own). A task taps a control by its node name,
-  and a name that differs between landscape and portrait builds or changes between commits breaks it. Never a
-  `TouchScreenButton`: it is not a `Control`.
+  that tracks a finger (the engine's `VirtualJoystick`, or one of your own). Never a `TouchScreenButton`: it is not a
+  `Control`. A task presses a control by what a player sees on it: a button that shows words is touched by those
+  words (its caption), so give every button that means something a caption a player can read. A task names a
+  control by its node name or class only when that control already exists at the task's start (`seed.commit`), as a
+  desktop click does (godot-write-tasks, "A play does what a player must do"): a control the task's thread adds has
+  another name in another fair build, so its name is never one a task may rely on.
 - **Read touches as the engine sends them:** `InputEventScreenTouch` (a finger down or up, with its `index` and
   `position`) and `InputEventScreenDrag` (a finger moving), in a control's `_gui_input` for what the control owns and
   in `_unhandled_input` for touches on the world. Track fingers by `index`, so a stick held with one thumb and a
@@ -147,12 +150,15 @@ player as the product, the rule here is the one that applies.
   size in its arguments (`--rendering-method`, `--rendering-driver`, `--resolution`, `-size`): the validator refuses
   them.
 - **Drive the game by touch.** A play's inputs use `tap` and `drag` (docs/task-probes.md section 1.3): a spot on the
-  screen as fractions of its width and height, or a widget by name (`{"widget": "FireButton"}`: the centre of the
-  first visible `Control` of that node name); `hold` for a held touch, `finger` for a second finger. The back button
-  is the key `<Keyboard>/escape`. Touch a control by its name or the caption it shows, never by a spot of the
-  screen: a caption written exactly as the screen shows it, in the game's own language (`{"widget": "确定"}`), is
-  the words a player finds it by. Its place differs between landscape and portrait and between builds; a spot only where no control is (a
-  virtual stick's area, the open playfield). The checker's own `drive` play is by touch on a mobile game: a left thumb at the
+  screen as fractions of its width and height, or a widget (`{"widget": "确定"}`: the centre of the first visible
+  `Control` of that node name or class, else of the button showing those words); `hold` for a held touch, `finger`
+  for a second finger. The back button is the key `<Keyboard>/escape`. Touch a control by the caption it shows,
+  written exactly as the screen shows it in the game's own language (`{"widget": "确定"}`): the words a player finds
+  it by. A node name (`{"widget": "FireButton"}`) serves only for a control that exists at `seed.commit`, never one
+  the task's thread creates. A control that shows no words and that the thread adds is touched at its place on
+  screen only where the instruction or the start fixes that place. Otherwise never a spot: a place differs between
+  landscape and portrait and between builds; a spot only where no control is (a virtual stick's area, the open
+  playfield). The checker's own `drive` play is by touch on a mobile game: a left thumb at the
   lower left pushed along the route, a tap at the lower right. A brief written for a mobile game never asks for a
   key or a mouse. A touch whose control isn't on screen is a miss (`inputs_missed`): on the reference it makes the
   task INVALID (its own fix can't be driven by the play), on the start it fails that play's checks. A tap on a control

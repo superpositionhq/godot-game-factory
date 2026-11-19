@@ -422,7 +422,7 @@ looks up and a positive yaw turns left.
   another start. A task play's inputs, each at its time `t`: a key or button
   (`{"t": 1.0, "key": "<Keyboard>/f2", "press": true}`, later `"press": false`; `<Mouse>/leftButton`,
   `<Gamepad>/buttonSouth`; on a mobile game `<Keyboard>/escape` is the phone's back button), mouse movement (a `move` spread over seconds for a look around), the wheel, the cursor, a click
-  on a control by its node name, a touch (`tap`, `drag`: below, and docs/task-probes.md section 1.3), a teleport of the player (to a point, or
+  on a control by the words it shows (or a node name the start has), a touch (`tap`, `drag`: below, and docs/task-probes.md section 1.3), a teleport of the player (to a point, or
   `teleport_to` the node a select matches), a wait in real time, a named screenshot (`shot`), a scene load, a view
   turn, and the stages of a contact (`pin`, `damage`, `set`: "A contact ask is staged" below, and
   docs/task-probes.md section 1.4). docs/task-probes.md has each one's form.
@@ -525,10 +525,13 @@ looks up and a positive yaw turns left.
   `hold` seconds: a long press, a button kept down); `{"t": 2.0, "drag": [<spot>, <spot>, ...], "over": s, "hold": s,
   "finger": n}` moves it through the spots over `over` seconds and keeps it at the last for `hold` (a swipe, a
   slider, a virtual stick pushed over and held). A spot is a point of the screen `[fx, fy]` in fractions from its top
-  left, or `{"widget": "<node name>"}`: the centre of the first visible `Control` of that name (a wildcard) or class,
+  left, or `{"widget": "<text>"}`: the centre of the first visible `Control` of that name (a wildcard) or class,
   else of the button whose shown text is it as written (`{"widget": "确定"}`), else reads it alike (`{"widget":
   "tap_me"}` for a button reading "Tap Me").
-  Name the control where you can: its place differs between landscape and portrait, its name does not. Touches of
+  Name the control by the words it shows where it shows some, else by a node name or class that exists at
+  `seed.commit`, never a name the task's thread creates (another fair build names it otherwise). A control that
+  shows no words and that the thread adds is touched at its place only where the instruction or the start fixes it;
+  a place differs between landscape and portrait, a caption does not. Touches of
   different fingers may overlap; one finger's touches are at least 0.1 s apart and over by the play's end (the
   validator refuses otherwise); a touch whose control isn't on screen is a miss the play reports, and nothing is
   touched. A mobile game's plays use touches and the back button (the key `<Keyboard>/escape`), never another key,
@@ -1046,7 +1049,7 @@ task's solution.
 | Every input of a task play lands on the reference (`inputs_missed` empty, an optional click that found nothing and a disabled click on its disabled button aside) | an input that misses on the task's own fix makes the task ungradable |
 | A budget (`render`) is read in a task play of its own that goes to the view and reads nothing else | other readings and inputs change what is drawn |
 | A template game's task sets `play_args` and leaves `play_scene` null; `play_scene` only for a scene no scenario loads | naming the scenario's scene too loads it twice |
-| One finger's touches are at least 0.1 s apart; controls are touched by name | a touch that begins before the last lifts misses; a place differs between orientations, a name doesn't |
+| One finger's touches are at least 0.1 s apart; controls are touched by the words they show, or by a name the start has | a touch that begins before the last lifts misses; a place differs between orientations, and a name the thread creates differs between fair builds |
 
 **The check of the task**
 
