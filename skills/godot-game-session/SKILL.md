@@ -251,8 +251,7 @@ recorded commands. Never start the engine another way for something a mode does.
   it while you build: after each playable round, ask them to play or watch it and say what felt flat, too easy or
   missing, and take their answer into the next round. The more of the design that comes out of this back-and-forth
   the better; a session where the person only says "continue" is a weak one. Their choices are `user.direction` rows
-  (godot-commit-always skill). Ask about play, not about engine detail, and never stall on a question: when the
-  person is away, go on with your best proposal, say so, and bring it up when they are back.
+  (godot-commit-always skill). Ask about play, not about engine detail.
   _(why: loops an agent chooses alone come out thin, and the record then holds little of the person's judgement)_
 - **Quality bar and room for hard tasks:** in the skill of your game's platform: **godot-desktop-game**, or
   **godot-mobile-game** for a game made with `new-game.ps1 -Platform mobile` (its `Platform.json` says so). Read that

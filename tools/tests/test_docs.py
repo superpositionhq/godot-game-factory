@@ -321,6 +321,12 @@ class OwnerRules(unittest.TestCase):
         self.assertIn('it warns and never rejects', text)
         self.assertNotIn('the validator enforces the numbers', text)
 
+    def test_no_skill_tells_the_agent_to_go_on_without_the_person(self):
+        for rel in sorted(f for f in tracked() if f.startswith('skills/') and f.endswith('.md')):
+            text = ' '.join(read(rel).split()).lower()
+            self.assertNotIn('never stall', text, rel)
+            self.assertNotIn('when the person is away', text, rel)
+
 
 if __name__ == '__main__':
     unittest.main()
