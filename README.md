@@ -123,8 +123,8 @@ packager's first run.
   (`Platform.json`), its schemas and `tools/validate-game.py`.
 - [docs/task-check.md](docs/task-check.md): checking a game's task on your own machine (`tools/task-check.py`: the
   start fails, the reference passes), and [docs/task-probes.md](docs/task-probes.md): what a task's checks can
-  measure. [docs/task-try.md](docs/task-try.md) is internal: we run `tools/task-try.py` on submitted tasks to measure
-  how long a strong agent takes; contractors don't run it.
+  measure. [docs/task-try.md](docs/task-try.md) is internal: `tools/task-try.py` gives a task to a coding agent and
+  grades what it left; contractors don't run it.
 - [docs/godot-pipeline.md, Dataset packager](docs/godot-pipeline.md#dataset-packager): the per-game dataset
   (`tools/package-dataset.py`) and its scrub.
 - [AGENTS.md](AGENTS.md): what every session reads first (Claude Code through [CLAUDE.md](CLAUDE.md), Codex

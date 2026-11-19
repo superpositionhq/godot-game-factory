@@ -525,7 +525,7 @@ doesn't show what is asked gets a play that shows it, never a looser check, and 
 files as returned, only the tasks listed, with a note of what changed and why (godot-write-tasks, "When a picture
 doesn't show what is asked" and "Fixing a task that came back"). Judge each task's difficulty in the
 session against the bar (godot-write-tasks skill, section 6); never run a task with another coding agent
-(`tools/task-try.py` is ours, run on submitted tasks).
+(`tools/task-try.py` is internal, never a contractor's).
 
 ## Working with the coordinator
 
