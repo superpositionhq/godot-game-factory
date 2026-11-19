@@ -673,13 +673,18 @@ and saves the screenshots the cloud's judge would be shown under `.task-checks\<
 `ask.md` holding the brief, the question and the rubric, and `readings.md` in each side's folder holding the position
 track and camera the Lab's judge prompt states. A judge that compares (`before`, `reference`) also gets, in each side's
 folder, the start's and the reference's pictures the Lab's judge sees beside it (`BEFORE_*.png`, `REFERENCE_*.png`):
-score each side beside them, as the Lab's judge does. Look at the pictures blind: score every rubric item for A and for B from 0 to 1 into
-`blind\answers.json` before you open the key and `sides.md`, then check the task again. An item the pictures don't
-show (its moment isn't on screen, its subject is off view, hidden or never reached) scores 0 on that side: cannot be
-seen is a fail, never a pass. A required judge keeps the task from being VALID until both sides are scored; the reference must pass it, and the start must score every required
-item below 0.5 (a `still_works` judge of what still looks as it did must pass at the start too). If a side doesn't,
-reword the item or fix the plays so the pictures show the state, never by asking less of the solution
-([docs/task-check.md](../../docs/task-check.md), "VALID and INVALID").
+score each side beside them, as the Lab's judge does. Look at the pictures blind: score every rubric item for A and
+for B from 0 to 1 into `blind\answers.json` before you open the key and `sides.md`, then check the task again. An item
+the pictures don't show (its moment isn't on screen, its subject is off view, hidden or never reached) scores 0 on
+that side: cannot be seen is a fail, never a pass. A required judge keeps the task from being VALID until both sides
+are scored; the reference must pass it, and the start must score every required item below 0.5 (a `still_works`
+judge of what still looks as it did must pass at the start too). **When a picture does not show what an item asks,
+rewrite the play, never the check**: change its inputs and the moments its screenshots are taken (a named `shot`
+tied to the event with `when` where the moment moves between builds) until it shows that state on every run, or edit
+the game itself so the asked thing really appears on screen. Never drop the item, point it at something else, or
+loosen it or its wording to get a pass (no "wording may vary" against an instruction that names the wording): a
+rubric item keeps the instruction's words, and a check eased until the reference passes no longer asks what the
+instruction asks ([docs/task-check.md](../../docs/task-check.md), "VALID and INVALID").
 
 ### The no-op and the oracle, on your own machine
 

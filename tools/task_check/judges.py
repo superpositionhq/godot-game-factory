@@ -344,8 +344,9 @@ def ask_text(task, check, sides, notes=(), blind=False, saved=None):
         lines += ["", "A required judge holds the task's verdict until both sides are scored. The reference must pass "
                   f"(weighted score at least {PASS}, no required item below {REQUIRED}). A judge of what still looks as "
                   "it did (in `still_works`) must pass on the start too; any other required judge must have every "
-                  "required item below 0.5 on the start. Never ease an item to make it so: reword it so the "
-                  "pictures decide it, or fix the plays."]
+                  "required item below 0.5 on the start. Never ease an item to make it so: fix the plays (or the "
+                  "game, so the asked thing appears on screen); an item keeps the instruction's words, and is never "
+                  "dropped, pointed elsewhere or loosened."]
     elif "reference" in sides:
         lines += ["", "A required judge holds the task's verdict until the reference is scored, and it must pass."]
     elif "agent" in sides:

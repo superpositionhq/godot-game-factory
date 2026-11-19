@@ -494,7 +494,8 @@ as `reference/packaged/`.
 **`judge X: shots saved for start/reference, answer needed`** (or **`judge X: not played (--no-judge-shots), answer
 needed`**). A required judge isn't scored yet: score it (VALID and INVALID), then check again. **`reference fails judge
 X as you scored it (...)`**: the reference doesn't show what the rubric asks in the pictures; fix the plays so the
-pictures reach the moment, or reword the item so the pictures decide it, never by asking less. **`start already meets
+pictures reach the moment (or the game, so the asked thing appears on screen), never the item: it keeps the
+instruction's words, and is never dropped, pointed elsewhere or loosened. **`start already meets
 a required item of judge X as you scored it (...)`**: the unchanged game already looks as asked, so the item doesn't
 see the change. **`start fails still-works judge X as you scored it (...)`**: what must still look as it did doesn't
 at the start: the item or its plays are wrong.

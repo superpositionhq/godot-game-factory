@@ -127,6 +127,7 @@ class Saved(unittest.TestCase):
             for text in ("Does the door open?", "| door_open | yes | 1 | The door stands open. |",
                          "| lit | no | 2 | The room is lit. |", "Keep the hero on the ground.", "blind/key.json",
                          "every required item below 0.5 on the start", "the start as BEFORE",
+                         "an item keeps the instruction's words, and is never dropped, pointed elsewhere or loosened",
                          '{"A": {"door_open": 0.0, "lit": 0.0}, "B": {"door_open": 0.0, "lit": 0.0}}'):
                 self.assertIn(text, ask)
             record = records["door_looks_open"]
