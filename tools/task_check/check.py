@@ -58,9 +58,9 @@ DRIVE = [{"t": 1.0, "key": "<Keyboard>/w", "press": True}, {"t": 6.0, "key": "<K
          {"t": 13.0, "key": "<Keyboard>/a", "press": True}, {"t": 15.0, "key": "<Keyboard>/a", "press": False},
          {"t": 15.0, "key": "<Keyboard>/w", "press": True}, {"t": 21.0, "key": "<Keyboard>/w", "press": False}]
 PLAYS = {"look": (20, 6, None), "drive": (22, 8, DRIVE)}  # seconds, screenshots, inputs
-# seconds a play may run past its own seconds (boot, shader compiles) when that is longer than --timeout: a task play
-# may last up to 1200 s (the schema's, the Lab game grader 1.18.0's)
-PLAY_MARGIN = 600
+# seconds a play may run past its own seconds (boot, shader compiles) when that is longer than --timeout, the Lab's
+# Godot grader's (grade.PLAY_MARGIN): a task play may last up to 1200 s (the schema's, the Lab game grader 1.18.0's)
+PLAY_MARGIN = 300
 # A mobile game's drive (docs/task-probes.md): the same route by touch, a left thumb pushing where a virtual stick
 # usually is (down at its middle, over to a side, held there) and a right thumb's tap for the jump.
 STICK = [0.15, 0.75]

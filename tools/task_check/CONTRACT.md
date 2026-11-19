@@ -86,7 +86,7 @@ Plays and inputs:
   input's `t`, a `hold` (`tap`, `drag`, `teleport`, `teleport_to`, `pin`), a `move`'s or a `drag`'s `over`, a
   measure's `at`, an event's `within`; the probe plays a spec's `seconds` up to 1200 and holds every `hold` and `over`
   to it (`PLAY_SECONDS`). A play's waits add at most 300 s of real time in all; a boot check's `seconds` stays up to
-  600. A play's timeout is `--timeout`, or its seconds and 600 s (`check.PLAY_MARGIN`) when that is longer, plus its
+  600. A play's timeout is `--timeout`, or its seconds and 300 s (`check.PLAY_MARGIN`, the Lab's) when that is longer, plus its
   waits.
 - The stages of a contact: `pin` (an object select, `hold` above 0 up to 1200 s, `front` 0 to 1000 m or `at` a point,
   `offset`), `damage` (above 0, `to` and optionally `from`, object selects), `set` (a path of up to 6 members without
