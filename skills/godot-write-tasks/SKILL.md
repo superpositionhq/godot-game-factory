@@ -915,6 +915,26 @@ When tasks are returned for a fix:
   rediscovered by comparing them.
 - Every rule of this skill holds for a fix as for a new task: nothing gets easier, and the task check says VALID
   after the last edit.
+- **You may change the game to fix a returned task, and the new commits are its reference (owner, 2026-11-18, as
+  the Unreal factory).** A check that fails on the reference is fixed in its play first: its staged state, its inputs
+  and their timing, the moments of its shots, until the play gets the game into the state the check needs on the
+  start and on the reference. That is the cheapest fix, so try it first. When the play is not the cause, the game is:
+  the thing the instruction asks for was never finished, or something in the game stops it (a prop in a doorway, a
+  panel over a button, a level with no path between two rooms). Then fix the game. You have authority to write that
+  fix now, as new work, and to commit it: a reference does not have to be something the game's history already did.
+  Commit the fix on main (small commits, as for any work on the game, with their `workflow.jsonl` rows), then give
+  the task a start and a reference that hold it on `starts/<task name>` (section 2, "Starts on the engine"): B is
+  main's head with the fix, S (`seed.commit`) is B with the task's whole change taken back out (the thread and the
+  new fix), R (`seed.reference`) is the child of S with B's tree (`git commit-tree <B^{tree}> -p S -m "<message>"`).
+  S and R must both import and run on Godot 4.7, every `.import` and `.uid` with its file; push main and the
+  `starts/` branch with the game, then run the task check again. "No commit in the game's history changes this" is
+  never a reason to stop, to narrow a check or to drop the task: make the commit. Keep the fix to what the
+  instruction asks, and add nothing it doesn't ask for. A fix that also changes what another task of the game
+  measures is that task's business too: say so in your note, and leave that task's files alone unless the return
+  lists it.
+- **A returned task is never "not fixable" for its size.** Its start and reference, rebuilt around a fix, are often
+  smaller than the thread the task was written from, and the validator only warns about the size of a span (section
+  6). Give the task's own numbers in your note (`tools/thread-stats.py`) and go on with the fix.
 
 ## 6. Difficulty, limits and what the validator checks
 
@@ -1089,6 +1109,7 @@ task's solution.
 | A visual check whose picture doesn't show what is asked is fixed by rewriting its play (inputs, shot moments, a `when` shot where the moment moves) or by editing the game so the thing appears; the check and its rubric are never dropped, repurposed or loosened | the picture was wrong, not the ask: a looser check passes builds that don't do what the instruction says |
 | A rubric keeps the wording the instruction names: no "wording may vary" against a named wording | the instruction is what the agent is told; a rubric that accepts something else grades a different task |
 | A fix of a returned task starts from the files as returned, touches only the tasks listed, and comes with a note of what changed and why | the returned files are the current version, other tasks were not asked for, and a change nobody described has to be found again by comparing files |
+| A returned task whose check fails on the reference is fixed in its play first, then in the game: the fix is new work committed on main, and the task gets a start and a reference on `starts/<task name>` that hold it; never "not fixable" for its size | a reference need not be in the game's history, and a smaller span only warns |
 | A task ships only when the task check says VALID after its last edit, however small the edit | a check passed before an edit proves nothing about the task after it |
 | Judge a task's difficulty in the session; never run it with another agent | a try takes long and slows contractors down; the thread itself shows whether it is long |
 
