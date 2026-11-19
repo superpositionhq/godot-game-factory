@@ -104,7 +104,8 @@ machine renders: a long play that needs more than 300 s past its own seconds on 
    backtrace` or `Out of memory`), `log_absent`, `file_exists` (the copy's files, without `.godot`, `Build`, `Logs`,
    `android` and `.git`), `package` (the game's release export made and booted, below), and every probe against its
    threshold. A probe no version of the game could pass is a **task error** (below).
-5. Checks the start on its probes (the no-op).
+5. Checks the start on its probes, and on every other check that carries weight (the no-op: the Lab scores a no-op on
+   every check, so a weighted `log_absent`, `file_exists` or `package` check is run on the start too).
 6. Writes the result and deletes the scratch copies (unless `--keep`) and, kept or not, what their plays left outside
    them: each copy's own user data folder, `%APPDATA%\TaskProbe.<hash>`, and nothing else.
 
@@ -188,8 +189,10 @@ A task is **VALID** when all of this holds:
   that finds nothing to measure in a start that ran does;
 - a no-op scores zero: no check the start passes carries weight, so build, boot and `still_works` checks take
   `"weight": 0` (`tools/validate-game.py` refuses a task where one doesn't), and so does any other check true of the
-  start: a `log_absent` or `file_exists` check (nothing measures those at the start, so their weight is yours to set)
-  or a probe, a `"required": false` one too (the task check measures that);
+  start, as the Lab scores a no-op on every check: a `log_absent`, `file_exists` or `package` check (the task check
+  runs one that carries weight on the start), a probe, a `"required": false` one too, and a `judge` the start passes
+  as you scored it (one that carries weight and isn't scored on the start keeps the task from VALID: what a no-op
+  earns can't be told). A `code_judge` earns a no-op nothing: the Lab's has no change to review;
 - every probe has a threshold, required or not: one that can't be calibrated (`uncalibrated`) stops the Lab's check of
   the task, whichever probe it is;
 - no probe that carries weight, outside `still_works`, reads the same on the start and the reference, whatever its
@@ -540,7 +543,8 @@ process outside the checker (a game that outlived an interrupt, a viewer); the r
 delete the folder.
 
 **`a no-op scores N, not 0: give X "weight": 0, or drop them`.** Those checks already pass at the start (`still_works`
-probes, probes that aren't required), so a run that changes nothing would score `N` (the weighted share of checks
+probes, probes that aren't required, a weighted `log_absent`, `file_exists` or `package` check, a weighted judge you
+scored as passing on the start), so a run that changes nothing would score `N` (the weighted share of checks
 passed). Give each `"weight": 0` (a required one still gates), or drop it.
 
 **`no required probe outside still_works to check the start with`.** Nothing is left to show the start failing: every

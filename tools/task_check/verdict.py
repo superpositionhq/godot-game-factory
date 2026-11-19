@@ -36,8 +36,12 @@ every required check, as the Lab's own no-op and oracle check of a task holds th
   nothing to measure in a start that ran is;
 - a required check of weight 0 outside still_works that the start passes is a guard, not refused (it rewards
   nothing; a task may hold more guards than still_works' 32);
-- a no-op scores zero: no check the start passes carries weight. The cloud's score is the weighted
-  share of checks passed, so build, boot and still-works checks and anything else true of the start take `"weight": 0`;
+- a no-op scores zero: no check the start passes carries weight. The cloud's score is the weighted share of every
+  check passed, judges and log_absent, file_exists and package checks too, so build, boot and still-works checks and
+  anything else true of the start take `"weight": 0`. The start is run on every check that carries weight, and a
+  judge that carries weight counts by the writer's score of the start (`judged`); an optional one the start isn't
+  scored on keeps the task from VALID, since what a no-op earns can't be told (a required one waits anyway). A code_judge earns a no-op nothing (the Lab's: no
+  change to review);
 - no required `code_judge`: a model reads the change in the Lab and nothing here can, so code review stays a quality
   check (`"required": false`).
 Judges' screenshots and seen probes' crops are answered by the task's writer (check.check_task holds the verdict until
@@ -128,20 +132,33 @@ def describe(check, value, limit, start, fix, why=None):
     return detail + (f": {why}" if why else "")
 
 
-def noop_score(task, start):
-    """(score, names): what doing nothing earns, the weighted share of the deterministic checks the start passes, and
-    the passed checks that carry weight. Judges aren't measured here (`detail` "not asked")."""
-    weights = {c["name"]: c["weight"] for _, c in tasks.checks(task) if c["kind"] not in JUDGES}
+def noop_score(task, start, judged=None):
+    """(score, names, unscored): what doing nothing earns, the weighted share of every check the start passes as the
+    Lab scores a no-op, the passed checks that carry weight, and the `judge` checks that carry weight whose start
+    score isn't known. `judged`: {judge name: whether the start passes it as the writer scored it, or None when it
+    isn't scored}; a code_judge earns a no-op nothing (it has no change to review)."""
+    weights = {c["name"]: c["weight"] for _, c in tasks.checks(task)}
+    kinds = {c["name"]: c["kind"] for _, c in tasks.checks(task)}
     total = sum(weights.values())
     names = [c["name"] for c in start["checks"]
-             if c["name"] in weights and c["passed"] and weights[c["name"]] > 0
+             if kinds.get(c["name"]) not in JUDGES and c["passed"] and weights.get(c["name"], 0) > 0
              and not str(c["detail"]).startswith("not asked")]
-    return (round(sum(weights[n] for n in names) / total, 3) if total else 0.0), names
+    unscored = []
+    for name, kind in kinds.items():
+        if kind != "judge" or not weights[name] > 0:
+            continue
+        passed = (judged or {}).get(name)
+        if passed is None:
+            unscored.append(name)
+        elif passed:
+            names.append(name)
+    return (round(sum(weights[n] for n in names) / total, 3) if total else 0.0), names, unscored
 
 
-def verdict(task, reference, start):
+def verdict(task, reference, start, judged=None):
     """(valid, why, notes) from the reference's and the start's check rows ({"checks": [{name, kind, passed,
-    detail}]}). `reference` None: a start-only check."""
+    detail}]}). `reference` None: a start-only check. `judged`: the writer's scores of the start on its `judge` checks
+    (noop_score)."""
     why, notes = [], []
     every = {c["name"]: (group, c) for group, c in tasks.checks(task)}
     required = tasks.gating(task)
@@ -192,11 +209,14 @@ def verdict(task, reference, start):
     why.extend(f"{n} is a required code_judge: a model reads the change in the Lab and no check here can, so make it "
                "\"required\": false (code review is a quality check)" for n, (_, c) in every.items()
                if c["kind"] == "code_judge" and c.get("required", True))
-    earned, names = noop_score(task, start)
+    earned, names, unscored = noop_score(task, start, judged)
     told = (required - still) | ({build["name"]} if build is not None else set())  # those have their own reasons below
     if earned and set(names) - told:
         why.append(f"a no-op scores {earned}, not 0: give {', '.join(n for n in names if n not in told)} "
                    "\"weight\": 0, or drop them")
+    why.extend(f"judge {n} carries weight and the start isn't scored on it: what a no-op earns can't be told (the Lab's "
+               "judge scores the start too); score it, or give it \"weight\": 0" for n in unscored
+               if not every[n][1].get("required", True))  # a required judge's own reason says it (check.judged)
     if reference is None and broken:  # a start-only check's gate: the start doesn't build by design
         return not why, why, notes
     gates = [c for c in start["checks"] if c["name"] in required and c["name"] not in still] + broken

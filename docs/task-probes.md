@@ -1555,8 +1555,9 @@ Before any agent is given a task, the checker grades the start and the fix with 
 - the start (the no-op) fails every required probe outside `still_works`, of which there is at least one that isn't
   `seen` (or the `fails_at_start` build check);
 - a no-op scores zero: no check the start passes carries weight, so build, boot and `still_works` checks take
-  `"weight": 0`, as does any other check true of the start, a `log_absent` or `file_exists` check or a probe,
-  `"required": false` ones included (the score is the weighted share of checks passed);
+  `"weight": 0`, as does any other check true of the start, a `log_absent`, `file_exists` or `package` check, a probe
+  or a `judge` the start passes, `"required": false` ones included (the score is the weighted share of every check
+  passed, as the Lab scores a no-op);
 - every required `still_works` probe passes at the start;
 - every calibrated probe, required or not, measures differently on the start and the fix (a probe that can't be
   calibrated stops the Lab's check of the task, whichever it is), and so does every probe that carries weight outside

@@ -712,9 +712,12 @@ class Grade:
         if self.mode == "start":
             if kind == "build" and check["fails_at_start"]:
                 return (True, "the start built") if self.start.built() else (False, self.start.why_unbuilt())
-            if kind != "probe":
+            if kind == "probe":
+                return self.probe_check(check)
+            if not check.get("weight", 1) > 0:
                 return True, "not asked: the start is checked on its probes"
-            return self.probe_check(check)
+            # a check that carries weight is run on the start too: the Lab scores a no-op on every check, so what the
+            # start passes is what doing nothing earns (verdict.noop_score)
         side = self.side
         if kind == "build":
             r = side.build()
@@ -862,6 +865,16 @@ def judged(task, records, played=True):
     return out
 
 
+def start_judged(records):
+    """{judge: whether the start passes it as the writer scored it, or None when it isn't scored} from
+    save_judge_shots' records (verdict.noop_score)."""
+    out = {}
+    for name, record in (records or {}).items():
+        own = (record.get("answered") or {}).get("start")
+        out[name] = None if own is None else bool(own["passed"])
+    return out
+
+
 def save_seen_shots(task, sides, folder, where="", held=None, log=print, rng=None):
     """Save every `seen` check's crops of `sides` ({folder name: Side}, a side that didn't build noted) under
     <folder>/<check>/ (seen.save), each with its blind copy and the answers `held` (seen.kept) still stand for:
@@ -978,15 +991,17 @@ def check_task(repo, task, raw, scratch, out_dir, keep=False, direct=False, time
             start_grade = start_unbuilt(task, start.why_unbuilt())
         else:
             start_grade = Grade(task, "start", start, reference, thresholds).run()
-        valid, why, notes = verdict.verdict(task, ref_grade, start_grade)
+        shots = []
+        if judges.judges(task) and judge_shots:
+            shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None}
+            result["judges"] = save_judge_shots(task, shown, evidence / "judge-shots", f"{name}/judge-shots/",
+                                                blind=True, log=log, held=scores)
+            shots = [judges.line(n, r) for n, r in result["judges"].items()]
+        valid, why, notes = verdict.verdict(task, ref_grade, start_grade, start_judged(result["judges"]))
+        notes += shots
         if reference is None:  # the start's rows still tell the writer what it does, but nothing proves the checks
             valid, why = False, [NO_REFERENCE] + list(why)
         if judges.judges(task):
-            if judge_shots:
-                shown = {label: s for label, s in (("start", start), ("reference", reference)) if s is not None}
-                result["judges"] = save_judge_shots(task, shown, evidence / "judge-shots", f"{name}/judge-shots/",
-                                                    blind=True, log=log, held=scores)
-                notes += [judges.line(n, r) for n, r in result["judges"].items()]
             found = judged(task, result["judges"], judge_shots)
             valid, why = valid and not found, list(why) + found
         if seen.checks(task):  # a start that doesn't build by design is never played, so it has nothing to read

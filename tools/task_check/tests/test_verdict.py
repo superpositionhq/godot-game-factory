@@ -211,7 +211,7 @@ class Verdict(unittest.TestCase):
                                            {"name": "fixed", "checks": [probe("hud")]},
                                            {"name": "still_works", "checks": [probe("runs", weight=0)]}])
         self.assertEqual(verdict.verdict(weightless, ref, start), (True, [], []))
-        self.assertEqual(verdict.noop_score(weightless, start), (0.0, []))
+        self.assertEqual(verdict.noop_score(weightless, start), (0.0, [], []))
 
     def test_a_weighted_probe_that_reads_the_same_on_both_sides_is_uncalibrated_whatever_its_threshold(self):
         """A literal threshold too: the same reading on the start and the reference measures nothing the change
@@ -239,10 +239,29 @@ class Verdict(unittest.TestCase):
         self.assertEqual(verdict.verdict(task, side_of(4.0, 3.0, True), missing)[:2], (True, []),
                          "a start that measured nothing (the bug crashes it) is no same reading")
 
-    def test_a_judge_is_not_counted_in_a_no_op(self):
-        task = task_with(probe("hud"), {"kind": "judge", "name": "taste", "question": "q", "required": False, "rubric": [{"key": "k", "criterion": "c"}]})
-        start = record(checked("hud", "probe", False), checked("taste", "judge", False, "not asked"))
-        self.assertEqual(verdict.noop_score(task, start), (0.0, []))
+    def test_a_no_op_is_scored_on_judges_and_log_file_and_package_checks_as_the_lab_scores_it(self):
+        """The Lab scores a no-op on every check: a judge by the writer's score of the start, a log_absent, file_exists
+        or package check run on the start; a code_judge earns it nothing (no change to review)."""
+        judge = {"kind": "judge", "name": "taste", "question": "q", "required": False,
+                 "rubric": [{"key": "k", "criterion": "c"}]}
+        code = {"kind": "code_judge", "name": "clean", "question": "q", "required": False,
+                "rubric": [{"key": "k", "criterion": "c"}]}
+        logs = {"kind": "log_absent", "name": "no_errors", "pattern": "SCRIPT ERROR"}
+        task = task_with(probe("hud"), judge, code, logs)
+        start = record(checked("hud", "probe", False), checked("taste", "judge", True, "not asked"),
+                       checked("clean", "code_judge", True, "not asked"), checked("no_errors", "log_absent", True))
+        self.assertEqual(verdict.noop_score(task, start, {"taste": False}), (0.25, ["no_errors"], []))
+        self.assertEqual(verdict.noop_score(task, start, {"taste": True}), (0.5, ["no_errors", "taste"], []))
+        self.assertEqual(verdict.noop_score(task, start, {}), (0.25, ["no_errors"], ["taste"]))
+        ref = record(checked("hud", "probe", True), checked("taste", "judge", True, "not asked"),
+                     checked("clean", "code_judge", True, "not asked"), checked("no_errors", "log_absent", True))
+        valid, why, _ = verdict.verdict(task, ref, start, {"taste": True})
+        self.assertFalse(valid)
+        self.assertEqual(why, ['a no-op scores 0.5, not 0: give no_errors, taste "weight": 0, or drop them'])
+        valid, why, _ = verdict.verdict(task, ref, start, {})
+        self.assertIn("judge taste carries weight and the start isn't scored on it", why[-1])
+        light = task_with(probe("hud"), {**judge, "weight": 0}, code, {**logs, "weight": 0})
+        self.assertEqual(verdict.verdict(light, ref, start, {}), (True, [], []))
 
     def test_a_still_works_probe_must_hold_at_the_start(self):
         """A still-works probe that never finds what it looks for would make a start-only task look valid."""

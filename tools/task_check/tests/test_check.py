@@ -200,7 +200,15 @@ class Grades(unittest.TestCase):
                           (True, check.NOT_JUDGED), (False, "not run: needs boots_clean")])
         start = grade(task, "start", side("start", FakeProject(measuring(-5)), task))
         self.assertEqual([c["passed"] for c in start["checks"]], [True, True, True, False])
-        self.assertEqual(start["checks"][0]["detail"], "not asked: the start is checked on its probes")
+        self.assertEqual([c["detail"] for c in start["checks"][:2]], ["built", "ran 10 s with no crash or fatal error"],
+                         "a check that carries weight is run on the start: the Lab scores a no-op on it")
+        weightless = task_with({"kind": "build", "name": "player_builds", "weight": 0},
+                               {"kind": "log_absent", "name": "no_errors", "pattern": "SCRIPT ERROR", "weight": 0},
+                               {"kind": "file_exists", "name": "has_save", "glob": "saves/*.json"},
+                               probe())
+        start = grade(weightless, "start", side("start", FakeProject(measuring(-5)), weightless))
+        self.assertEqual([c["detail"] for c in start["checks"][:3]],
+                         ["not asked: the start is checked on its probes"] * 2 + ["0 file(s) match"])
 
     def test_a_boot_and_its_log(self):
         task = task_with({"kind": "boot", "name": "boots_clean", "seconds": 10},
@@ -682,8 +690,9 @@ class Whole(unittest.TestCase):
 
     def test_a_valid_task_with_a_reference(self):
         with tempfile.TemporaryDirectory() as tmp:
-            task = task_with({"kind": "build", "name": "player_builds"},
-                             {"kind": "boot", "name": "boots_clean", "seconds": 10, "needs": ["player_builds"]},
+            task = task_with({"kind": "build", "name": "player_builds", "weight": 0},
+                             {"kind": "boot", "name": "boots_clean", "seconds": 10, "needs": ["player_builds"],
+                              "weight": 0},
                              probe(expect={"op": ">=", "calibrate": 0.5}, needs=["boots_clean"]))
             result = self.check(task, {"start": FakeProject(measuring(-500)),
                                        "reference": FakeProject(measuring(100))}, tmp)

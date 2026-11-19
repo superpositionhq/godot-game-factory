@@ -254,8 +254,10 @@ class Checked(unittest.TestCase):
     def test_an_unbuilt_game_is_not_packaged_and_the_start_is_not_asked(self):
         self.assertEqual(grade_package(FakeProject(build_exit=1), PACKAGE_TASK)[0], False)
         start = check.Grade(PACKAGE_TASK, "start", side("start", FakeProject(), PACKAGE_TASK), None, {})
-        self.assertEqual(start.check({"kind": "package", "name": "packs"}),
+        self.assertEqual(start.check({"kind": "package", "name": "packs", "weight": 0}),
                          (True, "not asked: the start is checked on its probes"))
+        self.assertFalse(start.check({"kind": "package", "name": "packs", "weight": 1})[1].startswith("not asked"),
+                         "a weighted package check is run on the start: the Lab scores a no-op on it")
 
     def test_a_required_package_check_decides_as_any_required_check(self):
         task = task_with(probe(), {"kind": "package", "name": "packs", "weight": 0})

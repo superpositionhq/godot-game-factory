@@ -340,11 +340,12 @@ Each milestone is a reward group; a run that gets part of the way earns part of 
 milestones and a milestone 1 to 32 checks; their names are lower-case letters, digits and `_` (a milestone's at most
 32 characters, a check's 48). **A no-op scores zero (permanent):** the score is the weighted share of checks passed,
 so every check the start already passes takes `"weight": 0`: `builds`, `boots`, all of `still_works`, any
-`log_absent` or `file_exists` true of the start, and any probe the start already passes, required or not. They still
-gate: a run must pass the required ones to be solved.
-`validate-game.py` refuses a weighted `build`, `boot` or `still_works` check, and the task check a weighted probe the
-start passes; nothing checks a `log_absent` or `file_exists` outside `still_works`, so their `"weight": 0` is yours to
-set. The usual order:
+`log_absent`, `file_exists` or `package` check true of the start, any probe the start already passes, required or
+not, and any `judge` the start passes (the Lab scores a no-op on every check). They still gate: a run must pass the
+required ones to be solved.
+`validate-game.py` refuses a weighted `build`, `boot` or `still_works` check; the task check runs every other weighted
+check on the start and refuses one it passes, and a weighted judge you scored as passing on the start (score every
+weighted judge on the start). The usual order:
 
 1. `builds`: `build` (`project_builds`: the project imports and every script parses).
 2. `boots`: `boot` 60 s (`boots_clean`: the game runs 60 s without a crash), `needs` the build. A script error the
@@ -729,7 +730,8 @@ What each failure means and what to do (the exact lines and more fixes: [docs/ta
 | the check says | it means | do this |
 |---|---|---|
 | `start already passes every required probe`, `start already passes required probe X` | the no-op passes: the checks don't detect the change (the play never reaches the moment, or the measure doesn't see the issue) | compare both sides' `probe.json` for that measure; give the probe a play that reaches the moment and a measure the change moves |
-| `a no-op scores N, not 0: give X "weight": 0` | doing nothing earns reward | give the named checks `"weight": 0` (builds, boots, still-works, anything true at the start) |
+| `a no-op scores N, not 0: give X "weight": 0` | doing nothing earns reward | give the named checks `"weight": 0` (builds, boots, still-works, anything true at the start, a judge the start passes) |
+| `judge X carries weight and the start isn't scored on it` | an optional judge with weight, unscored on the start: what a no-op earns can't be told | score it on the start in its `blind/answers.json`, or give it `"weight": 0` |
 | `start fails still-works X` | the probe is broken: what still works fails where it works | fix the probe's select, play or window, never the threshold |
 | `reference fails X: ...` | the oracle fails a required check: the check or the reference is wrong | read the reference's row and play: a threshold on the wrong side (`op`), a play that doesn't reach the state, a `log_absent` pattern or `file_exists` glob the reference itself fails, or a reference that doesn't do the ask (pick another reference, or take the ask out of the instruction) |
 | `uncalibrated: ... the reference measured nothing`, `... task error: ... reads nothing even on the task's own fix` | a reference that measures nothing: the select finds nothing there, so no build can pass | select by what the thing does or carries, or by names the start has; read the rows in the reference's `probe.json` and check the play reaches the place |
