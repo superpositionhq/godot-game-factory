@@ -251,7 +251,7 @@ then copy `History/lfs` into `<game>/.git/lfs`, `git lfs install --local`, `git 
 row per line, in two files. `messages.jsonl` has every prompt the person typed, every reply the model wrote and every
 reasoning summary the agent saved: `time`, `project`, `session_id`, `agent`, `role` (`user`, `assistant` or
 `thinking`), `message_id`, `text`, and where they apply `model`, `images` (pictures attached to a prompt), `mid_turn`
-(a prompt typed while the model was working), `phase`, `subagent`. `actions.jsonl` has every tool call with its input
+(a prompt typed while the model was working), `phase`, `subagent` (a subagent's row), `encrypted` (a Codex message between agents, kept as its readable header only). `actions.jsonl` has every tool call with its input
 and its whole result (up to 1,000,000 characters, `response_chars` and `response_truncated` on a longer one; a picture
 or other binary payload as a short marker). In `messages.jsonl`, a `thinking` row is a reasoning summary the agent
 saved for a turn (`redacted` true and no text when the agent saved it without readable text). Not in either: text the

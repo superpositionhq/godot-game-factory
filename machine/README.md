@@ -148,13 +148,13 @@ they share on purpose:
 | `lib/ggfroot.py` | | the same for Python tools (`root`, `ggb`, `org`, `engine`, `godot_exe`, `android`, `android_env`, `ffmpeg`, `computed_slots`, `slot_plan`, `out`, `check_free`) |
 | `lib/codex-hooks.ps1` | | Codex hook trust: the `[hooks.state]` entries Codex needs in `config.toml` before it runs a hook (bootstrap writes ours, check compares) |
 | `tools/godot-heavy.ps1` | `<root>\tools\godot-heavy.ps1` | machine-wide job limiter: `heavy_slots` general slots + `gpu_slots` GPU slots, one named mutex per slot (shared with other factories, see above: a killed job leaks none; VRAM guard), counts from the config or the hardware formula above, `-Low` for background work, GPU auto-detected (the Godot exe without `--headless`, an exported player under a `Build` or `builds` folder, also behind a launcher; `-Gpu` forces it, `--headless` always rules it out), log `.recording\_heavy-jobs.jsonl`. Installed next to a copy of `lib\ggf-root.ps1` |
-| `hooks/record-godot-action.ps1` | the hooks dir | the agent hook (Claude Code: PostToolUse / PostToolUseFailure / Stop, and UserPromptSubmit / SessionEnd with `-Messages`; Codex: PostToolUse / Stop, and UserPromptSubmit / SessionEnd with `-Messages`, all with `-Agent codex`): every tool call of a game session to `.recording\<project>\actions.jsonl` (earlier calls backfilled from the transcript, see Recording), every prompt the person typed and every reply the model wrote to `.recording\<project>\messages.jsonl` (read from the transcript); Stop auto-commits leftovers as `WIP` (none while conflicts are unresolved or HEAD is detached) |
+| `hooks/record-godot-action.ps1` | the hooks dir | the agent hook (Claude Code: PostToolUse / PostToolUseFailure / Stop, and UserPromptSubmit / SessionEnd with `-Messages`; Codex: PostToolUse / Stop, and UserPromptSubmit / SessionEnd / SubagentStop with `-Messages`, all with `-Agent codex`): every tool call of a game session to `.recording\<project>\actions.jsonl` (earlier calls backfilled from the transcript, see Recording), every prompt the person typed and every reply the model wrote to `.recording\<project>\messages.jsonl` (read from the transcript); Stop auto-commits leftovers as `WIP` (none while conflicts are unresolved or HEAD is detached) |
 | `hooks/record-godot-commit.ps1` | the hooks dir | called by each game repo's post-commit hook: `.recording\<repo>\commits.jsonl` |
 | `hooks/settings-hooks.json` | merged into `~\.claude\settings.json` | Claude Code: the five hook entries (PostToolUse, PostToolUseFailure, Stop, UserPromptSubmit, SessionEnd; `{{HOOKS_DIR}}` filled in) |
-| `hooks/codex-hooks.json` | merged into `~\.codex\hooks.json` | Codex: the four hook entries (PostToolUse, Stop, UserPromptSubmit, SessionEnd; `{{HOOKS_DIR}}` filled in), trusted in `~\.codex\config.toml` |
+| `hooks/codex-hooks.json` | merged into `~\.codex\hooks.json` | Codex: the five hook entries (PostToolUse, Stop, SubagentStop, UserPromptSubmit, SessionEnd; `{{HOOKS_DIR}}` filled in), trusted in `~\.codex\config.toml` |
 | `hooks/recording-exclude.txt` | the hooks dir (once) | session ids never recorded (the coordinator) |
 | `install-git-hook.ps1` | `<game>\.git\hooks\post-commit` | appends the commit recorder's line after Git LFS's own lines (before another tool's final `exit` or `exec`); warns when the recorder isn't in the hooks dir or another tool's hook can end before it. bootstrap.ps1 runs it for every game under `<root>\games` |
-| `tests/test-recording.ps1` | | the recording hook and the reasoning-summary settings on made-up transcripts in a scratch folder of its own (`-Scratch`, else `<clone>\.local\tests\`): whole tool results, the cut at 1,000,000 characters, picture markers, a saved command output, a session of no game of this root leaving nothing, `thinking` rows of both agents, `-Backfill`, `config.toml`: `powershell -NoProfile -ExecutionPolicy Bypass -File machine\tests\test-recording.ps1`; exit code = failed checks |
+| `tests/test-recording.ps1` | | the recording hook and the reasoning-summary settings on made-up transcripts in a scratch folder of its own (`-Scratch`, else `<clone>\.local\tests\`): whole tool results, the cut at 1,000,000 characters, picture markers, a saved command output, a session of no game of this root leaving nothing, `thinking` rows of both agents, subagents of both agents, `-Backfill`, `config.toml`: `powershell -NoProfile -ExecutionPolicy Bypass -File machine\tests\test-recording.ps1`; exit code = failed checks |
 
 The hooks dir is `hooks_dir` in the config, default `~\.godot-game-factory\hooks\`. One copy serves both agents.
 `recording-sessions.json` (session id -> project map) is runtime state: bootstrap creates it empty next to the hooks
@@ -181,8 +181,9 @@ replay (`tools/godot-replay/`, [../docs/godot-replay.md](../docs/godot-replay.md
   PowerShell.
 - **Backfill.** At that first mapping the hook imports the session's earlier tool calls (reading docs, drafting the
   design) from its transcript (`transcript_path` in the hook input; Claude Code: plus `<session>\subagents\*.jsonl`
-  beside it; Codex: the rollout file's completed shell, file-change and MCP items, shell calls as `Bash` with the
-  command, file changes as `apply_patch` with `input.changes` since the rollout keeps no patch text). They
+  beside it; Codex: the rollout file's completed shell, file-change and MCP items and those of its subagents'
+  rollouts, shell calls as `Bash` with the command, file changes as `apply_patch` with `input.changes` since the
+  rollout keeps no patch text; see Subagents). They
   are written in order, just before the mapping call's own row, with `"status": "from_transcript"` and the transcript's
   times (`time` = the call, `result_time` = its result). Only calls with a result, logged under this session id and no
   older than the transcript file are imported (a fork's copied context predates the file). Each session is backfilled
@@ -194,13 +195,22 @@ replay (`tools/godot-replay/`, [../docs/godot-replay.md](../docs/godot-replay.md
   `~\.codex\sessions\` with `-Agent codex`, when not given); a second run does nothing. The same call also imports
   that session's messages.
 - Live rows carry no `status`; every row of a backfill carries `from_transcript`, so the two are never confused.
+- **Subagents.** A subagent's tool calls and messages are filed under its session, each row with `subagent`: Claude
+  Code `agent-<agent_id>` (its transcript `<session>\subagents\agent-<agent_id>.jsonl`), Codex its thread id (its own
+  rollout `rollout-<time>-<thread id>.jsonl`, named in the parent's rollout by `SubAgentActivity` items). A live row
+  takes it from the hook input's `agent_id` and also carries `agent_type`. Codex: the subagent's messages are read from
+  its rollout at `SubagentStop` (`agent_transcript_path`) and whenever the parent's rollout names it; the context copied
+  from the parent at its start is left out (its items carry the parent's thread id). Codex encrypts the task and every
+  other message one agent sends another, so such a message is a `user` row with only its readable header (message
+  type, task name, sender) and `encrypted` true. When a subagent's call maps the session (its hook names its own rollout
+  as `transcript_path`), the backfill reads the session's rollout and every subagent's.
 - **Messages.** Every prompt the person typed, every reply the model wrote and every reasoning summary the agent saved
   goes to `<root>\.recording\<project>\messages.jsonl`, one row each: `time`, `project`, `session_id`, `agent`, `role`
   (`user`, `assistant` or `thinking`), `message_id`, `text`, and where they apply `model`, `images` (pictures attached
-  to a prompt), `mid_turn` (a prompt typed while the model was working), `phase` (Codex) and `subagent` (a Claude Code
-  subagent's transcript, where `user` is the prompt the session gave it). They are read from the session's transcript,
+  to a prompt), `mid_turn` (a prompt typed while the model was working), `phase` (Codex) and `subagent` and
+  `encrypted` (a subagent's messages, see Subagents). They are read from the session's transcript,
   never from the hook input, so each is written once, with the transcript's own id and time. Every `Stop`, and the
-  `UserPromptSubmit` and `SessionEnd` hooks (which call the script with `-Messages` and write no `actions.jsonl` row),
+  `UserPromptSubmit`, `SessionEnd` and (Codex) `SubagentStop` hooks (which call the script with `-Messages` and write no `actions.jsonl` row),
   read what the transcript gained since the last read (`recording-messages.json` next to the hooks: transcript file ->
   bytes read), so a session mapped late gets its earlier messages too. A `thinking` row is a reasoning summary the
   agent saved for a turn (`redacted` true and no text when the agent saved it without readable text);
