@@ -485,11 +485,10 @@ looks up and a positive yaw turns left.
   over it. Close the dialog, popup or overlay first with the player's own input (its button, the key the game closes
   it with), or wait for it to go, then press the control. A see-through overlay that ignores the mouse covers
   nothing. The `widgets` field `covered` reads whether a control is covered, for a check that a button can be
-  pressed where it shows. A button inside the open dialog or popup itself is not covered by it in the task check;
-  the Lab's grader (at origin/main 0ab4015) still counts the dialog as over its own buttons, a grader bug, so until
-  that is fixed no play clicks or taps a button inside an embedded `Window` (`AcceptDialog`, `ConfirmationDialog`,
-  `PopupPanel` and the like) and no check reads `covered` of one: drive it by the key the dialog answers to (a game
-  still being built can draw its dialogs as `Control` panels instead).
+  pressed where it shows. A button inside an embedded `Window` (`AcceptDialog`, `ConfirmationDialog`, `PopupPanel`
+  and the like) is out of every play's reach, in the task check and the Lab alike: the probe reads the game window's
+  own controls, and a dialog window's are its own, so no click, tap or `widgets` select finds one. Drive such a
+  dialog by the key it answers to (a game still being built can draw its dialogs as `Control` panels instead).
 - **An optional click is for a control that appears only in some states**, never to hide a click that should land.
   `"optional": true` on a widget click is for a control the game shows only sometimes (a confirmation that appears
   only when something exists): when nothing on screen matches it, the play goes on. A miss is how a play says it

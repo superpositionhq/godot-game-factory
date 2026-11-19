@@ -241,13 +241,17 @@ class Saved(unittest.TestCase):
 
     def test_the_readings_state_the_track_and_camera_as_the_labs_prompt(self):
         probe_file = {"track": [[float(t), 1.0, 2.0, 3.0] for t in range(20)],
-                      "camera": [[float(t), 1.0, 2.0, 503.0, -20.0, 0.0, 70.0] for t in range(20)]}
+                      "camera": [[float(t), 1.0, 7.0, 3.0 + 4.0, -20.0, 0.0, 70.0] for t in range(20)]}
         self.assertEqual(judges.camera_text(probe_file), "camera (median of 20 samples): 5.00 m above the player, "
-                         "0.00 m from it horizontally, pitch -20.0°, field of view 70°")
+                         "4.00 m from it horizontally, pitch -20.0°, field of view 70°")
+        flat = {"track": [[0.0, 100.0, 300.0, 0.0]], "camera": [[0.0, 160.0, 250.0, 0.0, 0.0, 0.0, 0.0]]}
+        self.assertEqual(judges.camera_text(flat), "2D camera (median of 1 samples): its view's centre 60 units right "
+                         "of the player and 50 units above it (the game's 2D units)")
         chk = judges.judges(task_with(probe(), judge()))[0]
         said = judges.readings(chk, {"look": (probe_file, {}), "drive": (None, {})}, counts={("AFTER", "look"): 6})
         self.assertIn('- idle play, 20 s, no input (screenshots: 6); inputs: none; player position track (seconds, x, '
-                      'y, z in cm): [[0.0, 1.0, 2.0, 3.0], [2.0, 1.0, 2.0, 3.0]', said)
+                      "y, z in m, y up; a 2D game's x, y in its 2D units, y down, z 0): [[0.0, 1.0, 2.0, 3.0], "
+                      '[2.0, 1.0, 2.0, 3.0]', said)
         self.assertIn("- scripted drive, 22 s: W 1-6 s", said)
         self.assertIn("none (no player pawn)", said)
 

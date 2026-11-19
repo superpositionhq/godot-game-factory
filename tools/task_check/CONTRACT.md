@@ -367,9 +367,10 @@ read <op> <value>[ in the play's first <within> s])` (`probes.NEVER`).
   match. A widget wholly outside such a Control is not on screen (`visible`); one partly inside is. `covered`
   (`UiScan.covered`): 1 when a press at its centre goes to something else (`UiScan.press_reaches`, section 4), 0 when
   it reaches it; null when it isn't on screen, has no size, its centre is outside a `clip_contents` Control above it
-  or the frame, or it can't be told. An embedded window that holds the control itself, and the probe's own nodes,
-  cover nothing (`_window_at`, `picked_at`: local only, the Lab's grader at origin/main 0ab4015 counts both, a
-  grader bug reported to the owner). How text is read: task-probes.md 2.6.
+  or the frame, or it can't be told. A Control inside an embedded window (a dialog, a popup) is not one of the game
+  window's Controls (`UiScan.controls` takes the window's own viewport alone), so no click, touch or widgets select
+  reaches one, as in the Lab's grader; `_window_at` and `picked_at` also pass over a window that holds the control
+  and the probe's own nodes, which no reading reaches either. How text is read: task-probes.md 2.6.
 - **pieces** (`queries/pieces.gd`): over every node in the tree (`Find.all_nodes`, not the probe's own): a
   `MeshInstance3D` whose mesh has faces (`Mesh.get_faces().size() / 3` triangles, read once a mesh a sample) is one
   piece at its global position; a `MultiMeshInstance3D` is one piece an instance it draws (the first

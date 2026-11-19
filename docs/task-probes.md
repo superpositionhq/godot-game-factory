@@ -218,11 +218,11 @@ thing instead of removing it still pass? If not, move the probe to what the play
       mouse, a sibling that passes the press on to its own parent, a scroll bar, a control on a higher `CanvasLayer`),
       no embedded window (a dialog, a popup) holding that point, and no exclusive dialog shown anywhere; a control
       below it whose press climbs to it (a label on a button) is no cover, and one whose mouse filter is `IGNORE` (a
-      see-through overlay that takes no press) neither. A control inside the open dialog or popup itself is
-      not covered by it: its own window holds the point, and the press reaches the control as a player's does
-      (local only: the Lab's Godot grader, at origin/main 0ab4015, still counts the open dialog as over its own
-      buttons, a grader bug sent to the owner; until it is fixed, a play that must pass in the Lab clicks no button
-      inside an embedded `Window`, and a check reads no `covered` of one). Otherwise nothing is sent and the click is a miss that says
+      see-through overlay that takes no press) neither. A control inside an embedded `Window` (`AcceptDialog`,
+      `ConfirmationDialog`, `PopupPanel` and the like) is not one of the game window's controls: no click, tap or
+      `widgets` select finds it, here or in the Lab (the miss says `no visible control that takes a click matches
+      it`); drive such a dialog by the key it answers to, or draw a dialog a play must click as `Control` panels.
+      Otherwise nothing is sent and the click is a miss that says
       `covered by another control`, which neither `optional` nor `disabled` excuses, and `probe.log` names what is
       over it: `Buy (Button) matches 'Buy', but Shop/Tooltip (Panel) is over it: not clicked`. Close the dialog,
       popup or overlay first with the player's own input. The test redoes the engine's picking (mouse filters, the

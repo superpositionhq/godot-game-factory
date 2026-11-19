@@ -162,7 +162,9 @@ def selection(check, played, prefix="", route=True):
 
 
 def camera_text(probe):
-    """The camera as the Lab's judge prompt states it (judging.camera_text, its numbers as it computes them), or None."""
+    """The camera as the Lab's judge prompt states it (judging.camera_text with Godot's axes, its numbers as it computes
+    them), or None: a 3D camera's height from y and distances in metres over x and z; a Camera2D (every row's z, pitch,
+    yaw and fov 0) as where its view's centre is from the player, in the game's 2D units, y down."""
     try:
         camera = [row for row in (probe or {}).get("camera") or [] if isinstance(row, list) and len(row) == 7]
         if not camera:
@@ -171,11 +173,19 @@ def camera_text(probe):
                 if isinstance(row, list) and len(row) == 4}
         pitch, fov = _median([row[4] for row in camera]), _median([row[6] for row in camera])
         pairs = [(row[1:4], pawn[round(row[0], 2)]) for row in camera if round(row[0], 2) in pawn]
+        flat = all(row[3] == row[4] == row[5] == row[6] == 0 for row in camera)
         if not pairs:
+            if flat:
+                return f"2D camera (median of {len(camera)} samples, no player to measure from)"
             return (f"camera (median of {len(camera)} samples, no player pawn to measure from): pitch {pitch:.0f}°, "
                     f"field of view {fov:.0f}°")
-        above = _median([(c[2] - q[2]) / 100 for c, q in pairs])
-        away = _median([((c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2) ** 0.5 / 100 for c, q in pairs])
+        if flat:
+            right = _median([c[0] - q[0] for c, q in pairs])
+            above = _median([q[1] - c[1] for c, q in pairs])
+            return (f"2D camera (median of {len(pairs)} samples): its view's centre {right:.0f} units right of the "
+                    f"player and {above:.0f} units above it (the game's 2D units)")
+        above = _median([c[1] - q[1] for c, q in pairs])
+        away = _median([((c[0] - q[0]) ** 2 + (c[2] - q[2]) ** 2) ** 0.5 for c, q in pairs])
         return (f"camera (median of {len(pairs)} samples): {above:.2f} m above the player, {away:.2f} m from it "
                 f"horizontally, pitch {pitch:.1f}°, field of view {fov:.0f}°")
     except (ArithmeticError, TypeError, ValueError):
@@ -233,7 +243,8 @@ def readings(check, own, beside=None, mobile=False, counts=None):
         span = (f"screenshots: {count}, in the panels" if compares(check) else f"screenshots: {count}") if count \
             else "no screenshots"
         seen = camera_text(probe)
-        lines.append(f"- {label} ({span}); inputs: {inputs}; player position track (seconds, x, y, z in cm): "
+        lines.append(f"- {label} ({span}); inputs: {inputs}; player position track (seconds, x, y, z in m, y up; "
+                     "a 2D game's x, y in its 2D units, y down, z 0): "
                      f"{json.dumps(sampled)[:1200] if sampled else 'none (no player pawn)'}"
                      + (f"; {seen}" if seen else ""))
     return "\n".join(lines) + "\n"
