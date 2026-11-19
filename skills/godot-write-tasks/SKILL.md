@@ -704,6 +704,7 @@ What each failure means and what to do (the exact lines and more fixes: [docs/ta
 | `no samples in the window (the play ended at N s)`, `a stage of the play didn't land`, `... an input did not land ...` | a play that never reaches its moment: it ended early, a stage found nothing, a click or touch found no control | read `probe.log` and `inputs_missed`; drive the play as a player would (the start control by the text the instruction quotes, a wait for the scene, a stage on something both sides have) |
 | a value just past its threshold, `... did not go as its first play`, a crop you can read only with a `?` | an unsteady reading: a window at the edge of the event, a sample at a moment that moves, text that changes while the shot is taken | read the samples, not only the reduced value; move the window into the steady part of the event, read a quantity with a clear gap between the sides, take the shot at a still moment; never ease what the instruction asks |
 | `reference fails X: packaging failed ...`, `... packaged, but the packaged game didn't run cleanly` | the release export wasn't made (the engine's error, no `Windows Desktop` preset, or a machine without the release export template), or its player crashed or stopped before its time | read `reference/package/package.log` or the `packaged` play's log; fix the game's `Windows Desktop` preset or the crash; install the templates with `machine\get-godot.ps1` |
+| a judge's or a `seen` probe's picture doesn't show what its rubric asks (the reference's own picture included) | the play doesn't produce that picture: it ends before the moment, the shot is taken too early or too late, or the game never puts the asked thing on screen | rewrite the play, its inputs and its shot moments, until it produces that picture every time (a `shot` with `when` where the moment moves between builds); or edit the game so the asked thing really appears on screen; never drop the check, point it at something else, or loosen its rubric |
 | `<side>: the route X was NOT played: ...` (a judge's notes) | the judge's route file isn't in the reference, or isn't a route | score only what the pictures show; nothing stands in for the route |
 | `X is a required code_judge`, `no required probe outside still_works but seen ones` | a check nothing here can run, or no outcome probe for the start to fail | make code review `"required": false`; add a required probe of the outcome |
 
@@ -807,6 +808,35 @@ what you find in the task before it is packed:
   calibrated threshold has nothing to sit between: use a literal, or a threshold relative to the start.
 - **A check's name says what it decides** (`hud_shows_ammo`, not `check3`): the result files and every reader of the
   task go by it.
+
+### When a picture doesn't show what is asked
+
+A visual check (a judge, a `seen` probe) that fails because its picture doesn't show what its rubric asks is fixed at
+the picture, never at the check:
+
+- **Rewrite the play so it reliably produces that picture.** Change its inputs and its shot moments until the asked
+  thing is on screen in the shots, on the start and on the reference, run after run. Where the moment moves between
+  builds or machines, take the shot when the thing is there (`when`), not at a fixed second.
+- **Editing the game is allowed too**, when the asked thing never really appears on screen: make the game show it
+  and commit that as any other work; the task's reference is then a commit that has the change.
+- **Never drop the check, repurpose it or loosen its rubric.** A rubric item that the instruction's own words decide
+  keeps those words: no "wording may vary" against an instruction that names the wording, no "or similar", no item
+  quietly pointed at something easier to photograph. A loosened check passes builds that don't do what was asked, so
+  the task stops measuring its own instruction.
+
+### Fixing a task that came back
+
+When tasks are returned for a fix:
+
+- **Start from the task files as returned.** They are the current version; an older copy in the session or on the
+  `tasks` branch may lack changes made since, and a fix written on it silently undoes them. Put the returned files in
+  place first, then edit.
+- **Touch only the tasks listed.** A change to any other task ships unreviewed and unasked for.
+- **Write a note of what changed and why**, per task, in plain sentences: the check or play changed, what it was,
+  what it is now, and the reason. Whoever takes the fix reads the note against the files; a fix without one has to be
+  rediscovered by comparing them.
+- Every rule of this skill holds for a fix as for a new task: nothing gets easier, and the task check says VALID
+  after the last edit.
 
 ## 6. Difficulty, limits and what the validator enforces
 
@@ -972,6 +1002,9 @@ task's solution.
 | The task has a reference, and you run its oracle side before submitting | a task with no reference, or one whose reference fails its own checks, can't be validated |
 | Passing the no-op and oracle check is not enough: every sentence of the instruction has a check that decides it | a sentence no check decides passes every build that skips it, whatever the two checks say |
 | Required judges and `seen` probes are answered blind, from the pictures the check saves, before the task is called finished | the check asks no model, so your blind answer stands in for it |
+| A visual check whose picture doesn't show what is asked is fixed by rewriting its play (inputs, shot moments, a `when` shot where the moment moves) or by editing the game so the thing appears; the check and its rubric are never dropped, repurposed or loosened | the picture was wrong, not the ask: a looser check passes builds that don't do what the instruction says |
+| A rubric keeps the wording the instruction names: no "wording may vary" against a named wording | the instruction is what the agent is told; a rubric that accepts something else grades a different task |
+| A fix of a returned task starts from the files as returned, touches only the tasks listed, and comes with a note of what changed and why | the returned files are the current version, other tasks were not asked for, and a change nobody described has to be found again by comparing files |
 | A task ships only when the task check says VALID after its last edit, however small the edit | a check passed before an edit proves nothing about the task after it |
 | Judge a task's difficulty in the session; never run it with another agent | a try takes long; every submitted task is tried and measured anyway |
 

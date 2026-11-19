@@ -447,7 +447,10 @@ scene, deterministic probe checks, what must never reach the agent); never point
 validate-game.py checks their format, and `tools/task-check.py <games>/<slug> --all` (docs/task-check.md), started
 once all the tasks are written as a background process the person can leave running (godot-write-tasks section 5),
 checks them on the engine: a task ships only when the task check says VALID, its no-op failing and its oracle
-passing (godot-write-tasks, "The no-op and the oracle, on your own machine"). Judge each task's difficulty in the
+passing (godot-write-tasks, "The no-op and the oracle, on your own machine"). A visual check whose picture
+doesn't show what is asked gets a play that shows it, never a looser check, and a task that came back is fixed from the
+files as returned, only the tasks listed, with a note of what changed and why (godot-write-tasks, "When a picture
+doesn't show what is asked" and "Fixing a task that came back"). Judge each task's difficulty in the
 session against the bar (godot-write-tasks skill, section 6); never run a task with another coding agent
 (`tools/task-try.py` is ours, run on submitted tasks).
 
