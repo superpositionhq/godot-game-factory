@@ -1643,56 +1643,120 @@ def check_repo_tasks(rep, repo, files=None):
             on_main = all(_git(repo, 'merge-base', '--is-ancestor', seed[k], 'HEAD').returncode == 0
                           for k in ('commit', 'reference'))
             report_thread_span(rep, a, label, repo, seed, on_main)
-            for check, name in reference_only_names(repo, t):
-                rep.error(a, f'{label}: check {check} names {name}, which only the reference has: another fair build '
-                             'names it otherwise; select by what it does or where it is (godot-write-tasks section 5)')
+            for check, name, how in reference_only_names(repo, t):
+                who = 'the task' if check == 'the task' else f'check {check}'
+                if how == 'control':
+                    rep.error(a, f'{label}: {who} clicks or touches {name!r}, which only the reference has and the '
+                                 'instruction doesn\'t state: another fair build names it otherwise; press it by words '
+                                 'the instruction quotes or a name the start has (godot-write-tasks section 4)')
+                elif how == 'start':
+                    rep.error(a, f'{label}: {who} starts with {name}, which only the reference has: a play starts from '
+                                 'a scene, scenario or flag the start has (godot-write-tasks section 4)')
+                else:
+                    rep.error(a, f'{label}: {who} names {name}, which only the reference has: another fair build '
+                                 'names it otherwise; select by what it does or where it is (godot-write-tasks section 5)')
     for e in task_bar_errors(levels):
         rep.error(a, f'{ref}: {e} (godot-write-tasks section 1)')
     rep.note(a, f'{len(paths)} task(s) on {ref} (at least {MIN_TASKS}, up to about 10, every one a long thread)')
 
 
-# What a probe names: the component, tag, name and mesh keys of its selects (owner selects and `has` included) and the
-# scene paths of its play and the task's play_scene. A name that exists in the reference and not at the start can only
-# be matched by a build that chose the reference's names; another fair build reads as absent (godot-write-tasks
-# section 5).
+# What a check names: the component, tag, name and mesh keys of its selects (owner selects and `has` included), the
+# property paths it reads or writes (a `prop:` field, a `where`, a `set` stage), the scene paths of its play and the
+# task's play_scene, the controls its play clicks or touches (`widget`, a touch's `{"widget": ...}` spot) and the flags
+# and scenario numbers its play starts with. A name that exists in the reference and not at the start can only be
+# matched by a build that chose the reference's names; another fair build reads as absent, and the no-op plays
+# something else (godot-write-tasks sections 4 and 5).
 NAMED_KEYS = ('component', 'tag', 'name', 'mesh')
 PATH_KEYS = ('scene',)
 GAME_ROOTS = ('scenes', 'game', 'assets', 'addons', 'project.godot')   # where a name is looked for at a commit
 # a field that names a part: world_yaw:<Part>, forward:<Part>.x
 FIELD_PART = re.compile(r'(?:rel_yaw|world_yaw|world_pitch|world_roll):(.+)$|forward:(.+)\.[xyz]$')
+NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_ ]{2,120}')
+MEMBER = re.compile(r'[A-Za-z_][A-Za-z0-9_]{2,120}')
+SCENARIO_FLAG = re.compile(r'^-+scenario$', re.I)
+
+
+def _path_names(path):
+    """The member and node names of a property path (`Health.current`, `Hud/Lap:text`), engine-sized words left in:
+    a word in neither commit's game files is the engine's and passes."""
+    return {w for w in re.split(r'[./:]', path) if MEMBER.fullmatch(w)} if isinstance(path, str) else set()
+
+
+def _walk_names(v, names, paths, key=None):
+    if isinstance(v, dict):
+        for k, x in v.items():
+            if k == 'where' and isinstance(x, list):
+                for cond in x:
+                    if isinstance(cond, dict):
+                        names |= _path_names(cond.get('prop'))
+            _walk_names(x, names, paths, k)
+    elif isinstance(v, list):
+        for x in v:
+            _walk_names(x, names, paths, key)
+    elif isinstance(v, str) and not any(ch in v for ch in '*?'):
+        if key in PATH_KEYS and v.startswith(RES):
+            paths.add(v[len(RES):])
+        elif key in NAMED_KEYS and NAME.fullmatch(v):
+            names.add(v)
+        elif key == 'field' and v.startswith('prop:'):
+            names |= _path_names(v[len('prop:'):])
 
 
 def probe_names(c):
     """The literal names and project paths a probe check depends on (wildcards skipped: they match by pattern)."""
     names, paths = set(), set()
-
-    def walk(v, key=None):
-        if isinstance(v, dict):
-            for k, x in v.items():
-                walk(x, k)
-        elif isinstance(v, list):
-            for x in v:
-                walk(x, key)
-        elif isinstance(v, str) and not any(ch in v for ch in '*?'):
-            if key in PATH_KEYS and v.startswith(RES):
-                paths.add(v[len(RES):])
-            elif key in NAMED_KEYS and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_ ]{2,120}', v):
-                names.add(v)
-
-    walk(c.get('measure'))
+    _walk_names(c.get('measure'), names, paths)
     field = c['measure'].get('field') if isinstance(c.get('measure'), dict) else None
     found = FIELD_PART.match(field) if isinstance(field, str) else None
     part = next((g for g in found.groups() if g), None) if found else None
-    if part and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_ ]{2,120}', part):
+    if part and NAME.fullmatch(part):
         names.add(part)
     play = c.get('play')
     if isinstance(play, dict):
-        walk({'scene': play.get('scene')})
-        for i in play.get('inputs') or []:
-            if isinstance(i, dict):
-                for key in ('teleport_to', 'pin', 'to', 'from', 'on', 'when'):
-                    walk(i.get(key))
+        n, p, _controls, _starts = play_refs(play)
+        names |= n
+        paths |= p
     return names, paths
+
+
+def play_refs(play):
+    """What a task play names: (names, paths, controls, starts). names: the selects of its teleports, stages and events
+    and the property paths a `set` writes; paths: its own scene and the scenes it loads; controls: what its clicks and
+    touches press (a name, a class or the words shown); starts: the flags and scenario numbers of its own `args`."""
+    names, paths, controls, starts = set(), set(), set(), set()
+    if not isinstance(play, dict):
+        return names, paths, controls, starts
+    _walk_names({'scene': play.get('scene')}, names, paths)
+    for i in play.get('inputs') or []:
+        if not isinstance(i, dict):
+            continue
+        for key in ('teleport_to', 'pin', 'to', 'from', 'on', 'when'):
+            _walk_names(i.get(key), names, paths)
+        _walk_names({'scene': i.get('scene')}, names, paths)
+        names |= _path_names(i.get('set'))
+        spots = [i.get('tap')] + (i.get('drag') if isinstance(i.get('drag'), list) else [])
+        for w in [i.get('widget')] + [x.get('widget') for x in spots if isinstance(x, dict)]:
+            if isinstance(w, str) and w.strip() and not any(ch in w for ch in '*?'):
+                controls.add(w)
+    starts |= arg_starts(play.get('args'))
+    return names, paths, controls, starts
+
+
+def arg_starts(args):
+    """The flags (`-devmenu`) and scenario numbers (`('scenario', 3)`) a list of game arguments starts with."""
+    out = set()
+    args = args if isinstance(args, list) else []
+    for k, a in enumerate(args):
+        if not isinstance(a, str):
+            continue
+        m = PLAY_FLAG.match(a)
+        if not m:
+            continue
+        out.add(a)
+        nxt = args[k + 1] if k + 1 < len(args) else None
+        if SCENARIO_FLAG.match(a) and isinstance(nxt, str) and nxt.isdigit():
+            out.add(('scenario', int(nxt)))
+    return out
 
 
 def _has_name(repo, commit, name, tree):
@@ -1700,12 +1764,30 @@ def _has_name(repo, commit, name, tree):
     resources saved as text, project.godot with its groups, layers and autoloads)."""
     if any(re.search(rf'(^|/){re.escape(name)}(\.|$)', p) for p in tree):
         return True
-    return _git(repo, 'grep', '-q', '-I', '-w', '-F', name, commit, '--', *GAME_ROOTS).returncode == 0
+    word = ['-w'] if re.fullmatch(r'\w+', name, re.A) else []
+    return _git(repo, 'grep', '-q', '-I', *word, '-F', name, commit, '--', *GAME_ROOTS).returncode == 0
+
+
+def _scenario_count(repo, commit):
+    """How many scenarios the game's scenario list (`game/scenarios.gd`, `SCENES`) holds at `commit`; None without one."""
+    r = _git(repo, 'show', f'{commit}:game/scenarios.gd')
+    if r.returncode:
+        return None
+    m = re.search(r'(?s)\bconst\s+SCENES\b[^=]*=\s*\[(.*?)\]', r.stdout.decode('utf-8', 'replace'))
+    return len(re.findall(r'"[^"]*"', m.group(1))) if m else None
+
+
+def _alike(text):
+    """Text as a caption compares it: case, spaces and punctuation aside (each run of anything else one `_`)."""
+    return '_' + re.sub(r'[\W_]+', '_', text.casefold()).strip('_') + '_'
 
 
 def reference_only_names(repo, t):
-    """[(check, name)] of required probes that name something the reference has and the start doesn't (a script
-    class, group, node or scene the thread itself created). Engine names are in neither tree and pass."""
+    """[(check, name, how)] of what a required check names that the reference has and the start doesn't. how: 'name'
+    (a class, group, node, property, scene or asset its measure, its play's stages or teleports, or the task's player
+    select names), 'control' (a control its play clicks or touches, by a name or the words shown, that the instruction
+    doesn't state) or 'start' (a flag or a scenario its play, or the task's play_args, starts with). Engine names are in
+    neither tree and pass."""
     seed = t.get('seed') if isinstance(t.get('seed'), dict) else {}
     start, ref = seed.get('commit'), seed.get('reference')
     if not (start and ref):
@@ -1713,22 +1795,65 @@ def reference_only_names(repo, t):
     trees = {k: set(_git(repo, '-c', 'core.quotepath=off', 'ls-tree', '-r', '--name-only', k).stdout
                     .decode('utf-8', 'replace').splitlines()) for k in (start, ref)}
     scene = t.get('play_scene') if isinstance(t.get('play_scene'), str) else None
+    told = _alike(' '.join(x for x in (t.get('title'), t.get('instruction')) if isinstance(x, str)))
+    counts = {}
     found, cache = [], {}
+
+    def only_ref(n):
+        if n not in cache:
+            cache[n] = (_has_name(repo, ref, n, trees[ref]), _has_name(repo, start, n, trees[start]))
+        return cache[n][0] and not cache[n][1]
+
+    def scenarios(k):
+        if k not in counts:
+            counts[k] = _scenario_count(repo, k)
+        return counts[k]
+
+    def judge(label, names, paths, controls, starts):
+        for p in sorted(paths):
+            if p in trees[ref] and p not in trees[start]:
+                found.append((label, RES + p, 'name'))
+        for n in sorted(names):
+            if only_ref(n):
+                found.append((label, n, 'name'))
+        for w in sorted(controls):
+            if _alike(w) not in told and only_ref(w):
+                found.append((label, w, 'control'))
+        for a in sorted((x for x in starts if isinstance(x, str))):
+            word = PLAY_FLAG.match(a).group(1)
+            if only_ref(word):
+                found.append((label, a, 'start'))
+        for _, n in sorted(x for x in starts if isinstance(x, tuple)):
+            have, ref_have = scenarios(start), scenarios(ref)
+            if have is not None and ref_have is not None and have < n <= ref_have:
+                found.append((label, f'scenario {n}', 'start'))
+
+    names, paths = set(), set()
+    if isinstance(t.get('player'), dict):
+        _walk_names(t['player'], names, paths)
+    judge('the task', names, paths, set(), arg_starts(t.get('play_args')))
     for m in t.get('milestones') or []:
         for c in (m.get('checks') or []) if isinstance(m, dict) else []:
-            if not (isinstance(c, dict) and c.get('kind') == 'probe' and c.get('required', True)):
+            if not (isinstance(c, dict) and c.get('required', True)):
                 continue
-            names, paths = probe_names(c)
-            if scene and scene.startswith(RES) and not isinstance(c.get('play'), dict):
-                paths.add(scene[len(RES):])
-            for p in sorted(paths):
-                if p in trees[ref] and p not in trees[start]:
-                    found.append((c.get('name'), RES + p))
-            for n in sorted(names):
-                if n not in cache:
-                    cache[n] = (_has_name(repo, ref, n, trees[ref]), _has_name(repo, start, n, trees[start]))
-                if cache[n][0] and not cache[n][1]:
-                    found.append((c.get('name'), n))
+            if c.get('kind') == 'probe':
+                plays = [c.get('play')]
+                names, paths = probe_names(dict(c, play=None))
+            elif c.get('kind') == 'judge':
+                plays = c.get('plays') if isinstance(c.get('plays'), list) else []
+                names, paths = set(), set()
+            else:
+                continue
+            controls, starts = set(), set()
+            for play in plays:
+                n, p, w, a = play_refs(play)
+                names |= n
+                paths |= p
+                controls |= w
+                starts |= a
+                if scene and scene.startswith(RES) and not (isinstance(play, dict) and 'scene' in play):
+                    paths.add(scene[len(RES):])
+            judge(c.get('name'), names, paths, controls, starts)
     return found
 
 

@@ -448,7 +448,8 @@ class, then by the caption a button shows, as a widget click finds one (section 
 first, in any language, `{"widget": "确定"}`, then read alike, `{"widget": "tap_me"}` touching a button reading
 "Tap Me"; a touch needn't find it enabled). Name the control by the words it shows where it shows some, else by a
 name or class the start (`seed.commit`) already has; never by a name only the reference has (a control the task's
-thread adds is named otherwise in another fair build). A point is the last resort: its place differs between
+thread adds is named otherwise in another fair build). `tools/validate-game.py` refuses a required check's click or
+touch whose name or words only the reference has, unless the instruction states those words. A point is the last resort: its place differs between
 landscape and portrait. A tap's widget that only its own scroll areas hide is scrolled into view
 first and tapped in the next frame, as a click is (section 1.1), and a tap on a widget something else is over is a
 miss that says `covered by another control`. A drag scrolls nothing and isn't asked what is over its widget: a drag's

@@ -562,6 +562,68 @@ class TaskRules(Base):
         ms[2]['checks'][1]['play']['inputs'].append({'t': 3, 'pin': {'component': 'Enemy'}, 'hold': 1})
         self.assertEqual(len([e for e in self.tasks(milestones=ms) if 'names Enemy, which only the reference' in e]), 1)
 
+    def test_reference_only_play_inputs(self):
+        """A play's clicks and touches, its stages' property paths, the scenes it loads and the flags and scenarios it
+        starts with name nothing only the reference has; a control the instruction states is the instruction's."""
+        def play_errs(ms, **over):
+            return [e for e in self.tasks(milestones=ms, **over) if 'only the reference has' in e]
+
+        def with_input(*inputs, args=None):
+            ms = task(self.start, self.ref)['milestones']
+            play = ms[2]['checks'][1]['play']
+            play['inputs'] = play['inputs'] + list(inputs)
+            if args is not None:
+                play['args'] = args
+            return ms
+
+        ms = with_input({'t': 9, 'widget': 'Enemy', 'click': True})
+        self.assertEqual(play_errs(ms), [f"tasks:Tasks/{SLUG}-{TASKS[0]}.json: check score_counts clicks or touches "
+                                         "'Enemy', which only the reference has and the instruction doesn't state: "
+                                         "another fair build names it otherwise; press it by words the instruction "
+                                         "quotes or a name the start has (godot-write-tasks section 4)"])
+        told = task(self.start, self.ref)['instruction'] + ' Then QA presses the button reading ENEMY.'
+        self.assertEqual(play_errs(ms, instruction=told), [])               # the instruction states it
+        self.assertEqual(play_errs(with_input({'t': 9, 'widget': 'Kiln', 'click': True})), [])   # the start has it
+        self.assertEqual(play_errs(with_input({'t': 9, 'widget': 'Ene*', 'click': True})), [])   # a wildcard
+        errs = play_errs(with_input({'t': 9, 'set': 'field30', 'on': {'component': 'Kiln'}, 'value': 1}))
+        self.assertEqual(len(errs), 1, errs)                                # a member only the reference has
+        self.assertIn('check score_counts names field30', errs[0])
+        self.assertEqual(play_errs(with_input({'t': 9, 'set': 'field5', 'on': {'component': 'Kiln'}, 'value': 1})), [])
+        errs = play_errs(with_input({'t': 9, 'scene': 'res://scenes/Hero.tscn'}))   # a scene load
+        self.assertEqual(len([e for e in errs if 'names res://scenes/Hero.tscn' in e]), 1, errs)
+        errs = play_errs(with_input(args=['-scenario', '3', '-field30']))   # a flag only the reference reads
+        self.assertEqual(errs, [f'tasks:Tasks/{SLUG}-{TASKS[0]}.json: check score_counts starts with -field30, which '
+                                'only the reference has: a play starts from a scene, scenario or flag the start has '
+                                '(godot-write-tasks section 4)'])
+        self.assertEqual(play_errs(with_input(args=['-scenario', '3', '-field5'])), [])
+        errs = play_errs(task(self.start, self.ref)['milestones'], play_args=['-scenario', '2', '--field30'])
+        self.assertEqual(len([e for e in errs if 'the task starts with --field30' in e]), 1, errs)
+        ms = task(self.start, self.ref)['milestones']                       # a measure's property path
+        ms[2]['checks'][2]['measure'] = {'probe': 'objects', 'select': {'component': 'Kiln'}, 'field': 'prop:field30',
+                                         'of': 'max'}
+        self.assertEqual(len([e for e in play_errs(ms) if 'names field30' in e]), 1)
+        ms = task(self.start, self.ref)['milestones']                       # a required judge's own plays
+        judge = {'name': 'looks_as_asked', 'kind': 'judge', 'needs': ['boots_clean'], 'question': 'q',
+                 'rubric': [{'key': 'k', 'criterion': 'c'}],
+                 'plays': [{'name': 'open_enemy', 'seconds': 6, 'inputs': [{'t': 1, 'widget': 'Enemy', 'click': True}]}]}
+        ms[2]['checks'].append(judge)
+        self.assertEqual(len([e for e in play_errs(ms) if 'check looks_as_asked clicks or touches' in e]), 1)
+        judge['required'] = False                                           # an optional judge gates nothing
+        self.assertEqual(play_errs(ms), [])
+
+    def test_reference_only_scenario(self):
+        """A scenario number the start's scenario list doesn't hold and the reference's does is never played."""
+        scenarios = 'extends Node\nconst SCENES: Array[String] = [{}]\n'
+        write(self.repo, 'game/scenarios.gd', scenarios.format('"res://scenes/Main.tscn", "res://scenes/Main.tscn"'))
+        start = commit(self.repo, 'Two scenarios')
+        write(self.repo, 'game/scenarios.gd', scenarios.format(', '.join(['"res://scenes/Main.tscn"'] * 3)))
+        ref = commit(self.repo, 'A third scenario')
+        t = task(start, ref)
+        t['milestones'][2]['checks'][1]['play']['args'] = ['-scenario', '3']
+        self.assertIn(('score_counts', 'scenario 3', 'start'), vg.reference_only_names(self.repo, t))
+        t['milestones'][2]['checks'][1]['play']['args'] = ['-scenario', '2']
+        self.assertEqual(vg.reference_only_names(self.repo, t), [])
+
     def test_never_literal(self):
         ms = self.probe(2, probe='objects', select={'component': 'Kiln'}, field='spin', of='max')
         ms[2]['checks'][2]['expect'] = {'op': '>', 'value': 3}
@@ -1214,6 +1276,20 @@ class Units(unittest.TestCase):
              'measure': {'probe': 'widgets', 'select': {'name': 'Buy'}, 'field': 'covered', 'of': 'max'}}
         t = task('a' * 40, 'b' * 40, milestones=[{'name': 'm', 'checks': [c]}])
         self.assertEqual(list(vg.check_schema(t, vg.SCHEMAS['game-task'])), [])
+
+    def test_a_plays_touches_and_clicks_are_its_controls(self):
+        """What a play presses (a widget click, a tap's or a drag's widget spot) and the flags it starts with."""
+        play = {'name': 'p', 'seconds': 8, 'args': ['-scenario', '4', '-devmenu', '2:quest'],
+                'inputs': [{'t': 1, 'widget': 'Begin Run', 'click': True}, {'t': 2, 'tap': {'widget': 'FireButton'}},
+                           {'t': 3, 'drag': [{'widget': 'MoveStick'}, [0.2, 0.6]], 'over': 0.3},
+                           {'t': 4, 'tap': [0.5, 0.5]}, {'t': 5, 'widget': 'Shop*', 'click': True},
+                           {'t': 6, 'set': 'Health.current', 'on': {'tag': 'foe'}, 'value': 1},
+                           {'t': 7, 'scene': 'res://scenes/Yard.tscn'}]}
+        names, paths, controls, starts = vg.play_refs(play)
+        self.assertEqual(controls, {'Begin Run', 'FireButton', 'MoveStick'})
+        self.assertEqual(starts, {'-scenario', ('scenario', 4), '-devmenu'})
+        self.assertEqual(names, {'Health', 'current', 'foe'})
+        self.assertEqual(paths, {'scenes/Yard.tscn'})
 
     def test_an_events_names_count_as_the_checks(self):
         """A name an event selects by (a measure's since, a shot's when) is one the check depends on."""

@@ -147,8 +147,12 @@ The validator's rules beyond the schema include:
 - a warning, never an error, when a `teleport_to`, a `pin`, a `damage`'s `to`, a `set`'s `on` without `all`, an
   object point or an `"of": "first"` measure takes its one object by a wildcard name and nothing else: a spawner, a
   pool or a parent named like the things fits too;
-- a required probe's play names nothing only the reference has in a `teleport_to` or a stage's select (`pin`, `to`,
-  `from`, `on`), as in its measure (`probe_names`).
+- a required check names nothing only the reference has (`reference_only_names`): a probe in its measure (selects,
+  `prop:` and `where` paths; `probe_names`), a probe's play or a required judge's own plays in a `teleport_to`, a
+  stage's select (`pin`, `to`, `from`, `on`), a `set` path, the play's scene or a scene load (`play_refs`), the task's
+  `player` select; a click or touch (`widget`, a touch's widget spot) by a name or words only the reference has,
+  unless the instruction (or title) states them, compared as captions are; a flag or a scenario number (more than the
+  start's `game/scenarios.gd` lists) a play's `args` or the task's `play_args` start with, whatever the instruction says.
 
 Fields whose threshold is never a literal (calibrated or relative to the start only; the validator's `NEVER_LITERAL`):
 objects `spread`, `bounds_change`, `pose_change`, `glow`, `spin`; components `intensity`, `extent_*`, `glow`, `spin`;
