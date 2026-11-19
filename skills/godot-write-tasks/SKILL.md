@@ -89,7 +89,8 @@ the tag `long-thread`. A game needs at least 4 hard tasks; the others may be med
 difficulty is), none easier. Four is the floor, not a target: pick threads that make every task hard, and call a task
 medium only when its thread is.
 
-A thread qualifies only when all of these hold (the validator enforces the numbers, section 6):
+A thread qualifies only when all of these hold (the validator measures the numbers and warns when a span is short,
+never rejecting the task: section 6):
 
 1. **Many edits.** From `seed.commit` to `seed.reference`, at least 4 commits change the game itself (`scenes/`,
    `game/`, `assets/`, `project.godot` and the game's own addons under `addons/`; not the AutoPlay drop-in, `steps/`,
@@ -896,19 +897,23 @@ When tasks are returned for a fix:
 - Every rule of this skill holds for a fix as for a new task: nothing gets easier, and the task check says VALID
   after the last edit.
 
-## 6. Difficulty, limits and what the validator enforces
+## 6. Difficulty, limits and what the validator checks
 
 - `difficulty` is `hard`; a game needs at least 4 `hard` tasks, the others may be `medium`, none easier (a task that
   names no difficulty counts as medium; four is the floor, so aim every task at hard), and `tags` hold `long-thread`.
   It is your own estimate of the thread; our runs of the task decide its difficulty (last item below).
 - `limits`: 400 turns, 480 min, 150 USD, 1800 s tool timeout unless the task needs more; a long thread needs room.
 - `tools/validate-game.py` fails a game with fewer than 5 tasks or fewer than 4 `hard` ones, and a task that is
-  `easy`, has no `seed.reference`, has fewer than 3 required probes of weight above 0
-  outside `still_works` (a required probe of weight 0 is a guard, not an outcome), or whose reference changes fewer than 5 game files, fewer than 100 code lines or fewer than 2
-  systems against its start; for a seed on main it also fails fewer than 4 game-changing commits from `seed.commit` to
-  `seed.reference`, and any required probe that names a class, group, scene or asset the reference has
-  and the start doesn't (section 5). These are floors, not targets: pick the longest threads the history has. It also
-  refuses a task without the `long-thread` tag, a weighted check a no-op passes (section 5), a touch that breaks the
+  `easy`, has no `seed.reference`, has fewer than 3 required probes of weight above 0 outside `still_works` (a
+  required probe of weight 0 is a guard, not an outcome), or has a required probe that names a class, group, scene
+  or asset the reference has and the start doesn't (section 5). **The size of the span is a soft bar (owner,
+  2026-11-19, as the Unreal factory since 2026-11-18): it warns and never rejects.** The validator warns when the
+  reference changes fewer than 5 game files, fewer than 100 code lines or fewer than 2 systems against its start, and
+  for a seed on main when fewer than 4 game-changing commits lie from `seed.commit` to `seed.reference`. For a new
+  task these are still floors, not targets: pick the longest threads the history has, and don't write a task you
+  know is under them. A warning on a task that came back is no reason to stop, to call the task unfixable or to drop
+  it ("Fixing a task that came back", section 5): say the numbers in your note (`tools/thread-stats.py`) and carry
+  on. It also refuses a task without the `long-thread` tag, a weighted check a no-op passes (section 5), a touch that breaks the
   touch rules, a mobile game's play that chooses a renderer or a size, and anything against the format rules of
   section 0.
 - **Judge difficulty in the session; never run the task with another agent** (a try takes long and slows contractors

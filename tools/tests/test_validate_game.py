@@ -701,11 +701,17 @@ class TaskRules(Base):
         self.assertFalse(any('seed.reference' in e and 'project' in e for e in errs), errs)
 
     def test_short_thread(self):
-        errs = self.tasks(seed={'game': SLUG, 'commit': git(self.repo, 'rev-parse', f'{self.ref}~1'),
-                                'reference': self.ref, 'kind': 'bug_fix'})
+        """The size of a span is a soft bar: a start and a reference one commit apart get a warning for each number
+        they are under, and no error."""
+        set_tasks(self.repo, game_tasks(self.start, self.ref, seed={
+            'game': SLUG, 'commit': git(self.repo, 'rev-parse', f'{self.ref}~1'), 'reference': self.ref,
+            'kind': 'bug_fix'}))
+        rep = self.check()
+        self.assertEqual(errors(rep, 'repo: Tasks'), [])
+        warned = [m for s, a, m in rep.items if s == 'warning' and a.startswith('repo: Tasks')]
         for floor in ('game file(s) against the start, fewer than 5', 'code line(s) against the start, fewer than 100',
                       'commit(s) change the game from seed.commit to seed.reference, fewer than 4'):
-            self.assertTrue(any(floor in e for e in errs), (floor, errs))
+            self.assertTrue(any(floor in m and 'soft bar' in m for m in warned), (floor, warned))
         if not os.path.isfile(os.path.join(TOOLS, 'thread-stats.py')):
             self.skipTest('no thread-stats.py')
         r = subprocess.run([sys.executable, os.path.join(TOOLS, 'thread-stats.py'), self.repo, self.ref, '--span',

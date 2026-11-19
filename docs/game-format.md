@@ -279,7 +279,8 @@ the bar of a long thread: tagged `long-thread`, with `seed.reference`, at least 
 `still_works` (a required probe of weight 0 is a guard, not an outcome), and from start to reference at least 5 game files (`scenes/`, `game/`, `assets/`, `addons/` but the
 AutoPlay drop-in and the task probe, and `project.godot`; a step script, an `.import` or a `.uid` is not one), 100
 code lines and 2 systems, and for a seed on main 4 commits that change the game (`tools/validate-game.py` holds the
-numbers).
+numbers). The span's size (files, code lines, systems, commits) is a soft bar: a span under it is warned of, never
+rejected; the tag, `seed.reference` and the outcome probes still reject.
 
 In a dataset (`godot-dataset-layout/v1`) the packager copies the tasks from the tip of the tasks branch, maps each
 seed's commits through the history rewrite, scrubs them, and splits each into `Tasks/<name>/task.json` (what the agent

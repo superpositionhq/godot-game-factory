@@ -315,6 +315,12 @@ class OwnerRules(unittest.TestCase):
             self.assertIn('seed.commit', text, rel)
             self.assertRegex(text, r"never (one|a name|by a name)[^.]*(thread|reference)", rel)
 
+    def test_a_short_span_warns_and_never_rejects(self):
+        text = ' '.join(read(SKILL).split())
+        self.assertIn('The size of the span is a soft bar', text)
+        self.assertIn('it warns and never rejects', text)
+        self.assertNotIn('the validator enforces the numbers', text)
+
 
 if __name__ == '__main__':
     unittest.main()
