@@ -260,8 +260,11 @@ the task from being VALID: its line says `judge <check>: shots saved for start/r
    ```
 
 3. Check the task again. The checker scores each side by the Lab judge's pass mark (a weighted score of at least 0.6
-   and no required item below 0.5). The reference must pass. On the start, a judge in `still_works` (what still looks
-   as it did) must pass too, and any other required judge must have every required item below 0.5. The line then says
+   and no required item below 0.5). The reference must pass. On the start, every required `asked_` item of the look
+   judge (`looks_as_asked`, a look the brief asks for) is below 0.5 and every required `keep_` item (a look that must
+   stay as it was) at least 0.5; a look judge of `keep_` items only, in `still_works`, passes there. A judge of a task
+   written before the look judges were merged keeps its old rule: one in `still_works` passes on the start, any other
+   has every required item below 0.5. The line then says
    `judge <check>: scored in blind/answers.json`. If a side doesn't come out as it must, fix the rubric or the plays
    (never by easing what the task asks) and check again.
 

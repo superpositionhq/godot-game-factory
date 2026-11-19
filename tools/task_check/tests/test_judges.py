@@ -300,6 +300,46 @@ class Saved(unittest.TestCase):
                           moved["notes"])
 
 
+class LookItems(unittest.TestCase):
+    """The one look judge (looks_as_asked) marks its items asked_ (a look the brief asks for) and keep_ (a look that
+    must stay as it was): the start scores its asked items below 0.5 and its keep items at least 0.5."""
+
+    RUBRIC = [{"key": "asked_door_open", "criterion": "The door stands open.", "required": True},
+              {"key": "keep_sign_shown", "criterion": "The sign over the door is shown.", "required": True}]
+
+    def looks(self):
+        return judge("looks_as_asked", plays=[play()], rubric=self.RUBRIC, before=True, reference=True)
+
+    def records(self, start, reference):
+        c = judges.judge(self.looks())
+        return {"looks_as_asked": {"status": judges.ANSWERED,
+                                   "answered": {"start": judges.answer(c, start),
+                                                "reference": judges.answer(c, reference)}}}
+
+    def test_asked_items_low_and_keep_items_held_on_the_start(self):
+        c = judges.judge(self.looks())
+        self.assertEqual(judges.look_items(c), (["asked_door_open"], ["keep_sign_shown"]))
+        own = judges.answer(c, {"asked_door_open": 0, "keep_sign_shown": 1})
+        self.assertEqual((own["low"], own["kept"]), (True, True))
+        own = judges.answer(c, {"asked_door_open": 0, "keep_sign_shown": 0.2})
+        self.assertEqual((own["low"], own["kept"]), (True, False))
+        old = judges.judge(judge(plays=[play()]))                    # a judge written before the merge: old rules
+        self.assertEqual(judges.look_items(old), ([], []))
+        own = judges.answer(old, {"door_open": 0, "lit": 1})
+        self.assertEqual((own["low"], own["kept"]), (True, True))
+
+    def test_the_verdict_reads_both_kinds(self):
+        task = task_with(probe(), self.looks())
+        reference = {"asked_door_open": 1, "keep_sign_shown": 1}
+        self.assertEqual(check.judged(task, self.records({"asked_door_open": 0, "keep_sign_shown": 1}, reference)), [])
+        why = check.judged(task, self.records({"asked_door_open": 0, "keep_sign_shown": 0}, reference))
+        self.assertEqual(len(why), 1, why)
+        self.assertIn("start fails a keep_ item of judge looks_as_asked", why[0])
+        why = check.judged(task, self.records({"asked_door_open": 1, "keep_sign_shown": 1}, reference))
+        self.assertEqual(len(why), 1, why)
+        self.assertIn("start already meets a required item of judge looks_as_asked", why[0])
+
+
 class Whole(unittest.TestCase):
     def run_check(self, tmp, plays=True, **kw):
         if getattr(self, "game", (None,))[-1] != tmp:

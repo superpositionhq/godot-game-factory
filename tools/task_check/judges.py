@@ -356,7 +356,8 @@ def ask_text(task, check, sides, notes=(), blind=False, saved=None):
         lines += ["", "A required judge holds the task's verdict until both sides are scored. The reference must pass "
                   f"(weighted score at least {PASS}, no required item below {REQUIRED}). A judge of what still looks as "
                   "it did (in `still_works`) must pass on the start too; any other required judge must have every "
-                  "required item below 0.5 on the start. Never ease an item to make it so: fix the plays (or the "
+                  "required item below 0.5 on the start, but for a `keep_` item (a look that must stay as it was), "
+                  "which must be at least 0.5 there. Never ease an item to make it so: fix the plays (or the "
                   "game, so the asked thing appears on screen); an item keeps the instruction's words, and is never "
                   "dropped, pointed elsewhere or loosened."]
     elif "reference" in sides:
@@ -431,12 +432,26 @@ def scored(check, scores):
     return value >= PASS and not low, why
 
 
+def look_items(check):
+    """(asked, keep): the keys of a look judge's rubric items marked `asked_...` (a look the brief asks for) and
+    `keep_...` (a look that must stay as it was), godot-write-tasks section 5; both empty when no item is marked (a
+    judge written before the two look judges were merged, which keeps its old rules)."""
+    keys = [i["key"] for i in check["rubric"]]
+    return [k for k in keys if k.startswith("asked_")], [k for k in keys if k.startswith("keep_")]
+
+
 def answer(check, scores):
     """A side's answered judge from its scores (scored): {"passed", "why", "low": every required item below
-    REQUIRED}. ValueError as scored."""
+    REQUIRED, "kept": every required keep item at least REQUIRED}. A look judge whose items are marked asks "low" of
+    its asked items alone (look_items); one with none marked asks it of every required item, and "kept" is true.
+    ValueError as scored."""
     passed, why = scored(check, scores)
-    return {"passed": passed, "why": why,
-            "low": all(scores[i["key"]] < REQUIRED for i in check["rubric"] if i["required"])}
+    asked, keep = look_items(check)
+    required = [i["key"] for i in check["rubric"] if i["required"]]
+    low_of = [k for k in required if k in asked] if asked or keep else required
+    held = [k for k in required if k in keep]
+    return {"passed": passed, "why": why, "low": all(scores[k] < REQUIRED for k in low_of),
+            "kept": all(scores[k] >= REQUIRED for k in held)}
 
 
 def save(task, check, played, folder, blind=False, notes=(), rng=None, held=None, beside=None, mobile=False):

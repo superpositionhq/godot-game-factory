@@ -550,7 +550,7 @@ fix's play.
 - `objects` `damage_taken`: what a staged hit did, as the game's `take_damage` returned it (a guard or a shield
   that takes nothing reads 0; an object no stage struck has no value).
 
-**What it looks like** (sparks, colours, glow, readability) goes to the required `looks_as_asked` judge, with its own
+**What it looks like** (sparks, colours, glow, readability) is an `asked_` item of the required `looks_as_asked` judge, with its own
 play staged the same way and named `shot` frames a few hundredths of a second apart across the contact. A pose may be
 an extra rubric item, never the only check of a behaviour.
 
@@ -1555,7 +1555,8 @@ probe names is the same play and is played once.
 Score them yourself, blind, into `blind\answers.json`, then check the task again, or settle that run when its pictures
 change on every run ([task-check.md](task-check.md), "VALID and INVALID" and "Settling a run"): a required
 judge keeps the task from being VALID until both sides are scored, the reference passes it, and the start fails every
-required item (or, for a judge of what still looks as it did, passes it). A task try saves the same for the agent's
+required `asked_` item and passes every required `keep_` item of the task's one look judge, `looks_as_asked` (a
+task written before the look judges were merged: fails every required item, or passes a judge in `still_works`). A task try saves the same for the agent's
 game (`agent\`) under `<task>\run<N>\judge-shots\`: score its judges the same way before calling the task too easy or
 held. `tools/validate-game.py` checks the rules of a judge's plays.
 
@@ -1581,8 +1582,9 @@ Before any agent is given a task, the checker grades the start and the fix with 
 - no probe is a task error (section 3): a select that reads nothing on the fix, a task play whose input doesn't land on
   the fix;
 - every required `judge` check names plays of its own and, scored by the task's writer from the screenshots the check
-  saves (section 3.2), passes on the fix and fails on the start, item by item (a judge of what still looks as it did
-  passes on both); an item the pictures don't show scores 0;
+  saves (section 3.2), passes on the fix and, on the start, fails its `asked_` items and passes its `keep_` items
+  (the one look judge, `looks_as_asked`; an older task's judge in `still_works` passes on both, any other fails every
+  required item); an item the pictures don't show scores 0;
 - no `code_judge` is required (a model reads the change in the Lab, and nothing checks it before; local only: the
   Lab's grader runs a required one);
 - every required `seen` probe, read by the task's writer from the crops the check saves (section 2.22), fails on the

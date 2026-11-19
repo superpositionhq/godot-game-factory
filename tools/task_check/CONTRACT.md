@@ -147,6 +147,11 @@ The validator's rules beyond the schema include:
 - a warning, never an error, when a `teleport_to`, a `pin`, a `damage`'s `to`, a `set`'s `on` without `all`, an
   object point or an `"of": "first"` measure takes its one object by a wildcard name and nothing else: a spawner, a
   pool or a parent named like the things fits too;
+- the one look judge, `looks_as_asked` (`looks_judge_findings`): every rubric item keyed `asked_...` or `keep_...`,
+  the judge required, in an outcome milestone with weight when it has an `asked_` item, else in `still_works` (where
+  weight is 0 anyway); a warning when no item is marked (a task written before the merge keeps its judges) and when
+  another required judge stands beside it. The task check asks the start to score its `asked_` items below 0.5 and its
+  `keep_` items at least 0.5 (`judges.answer`, `check.judged`);
 - a required check names nothing only the reference has (`reference_only_names`): a probe in its measure (selects,
   `prop:` and `where` paths; `probe_names`), a probe's play or a required judge's own plays in a `teleport_to`, a
   stage's select (`pin`, `to`, `from`, `on`), a `set` path, the play's scene or a scene load (`play_refs`), the task's

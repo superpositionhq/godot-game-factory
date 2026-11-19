@@ -893,7 +893,8 @@ def _beside(check, side, start, reference, notes, label, gone=False):
 def judged(task, records, played=True):
     """Why the task's required `judge` checks keep it from being VALID, from the writer's scores (save_judge_shots'
     records): every one scored on every side shown, the reference passing it, and the start passing a judge of what
-    still looks as it did (in still_works) or scoring every required item below judges.REQUIRED on any other. A judge
+    still looks as it did (in still_works) or, on any other, scoring every required item below judges.REQUIRED but
+    its keep_ items, which it scores at least that (judges.look_items). A judge
     is a required check like any other, so a task isn't VALID on scores nobody gave. A required judge with no play of
     its own (no `plays`, no `route`) never passes here, whatever its scores (local only: the Lab's grader judges it on
     them): it is shown only the idle look and the drive, which never press a task's keys or leave a title screen."""
@@ -915,8 +916,13 @@ def judged(task, records, played=True):
             out.append(f"reference fails judge {c['name']} as you scored it ({ref['why']})")
         if own is not None and group == tasks.STILL_WORKS and not own["passed"]:
             out.append(f"start fails still-works judge {c['name']} as you scored it ({own['why']})")
-        elif own is not None and group != tasks.STILL_WORKS and not own["low"]:
-            out.append(f"start already meets a required item of judge {c['name']} as you scored it ({own['why']})")
+        elif own is not None and group != tasks.STILL_WORKS:
+            if not own["low"]:
+                out.append(f"start already meets a required item of judge {c['name']} as you scored it "
+                           f"({own['why']})")
+            if not own.get("kept", True):
+                out.append(f"start fails a keep_ item of judge {c['name']} as you scored it: a look that must stay "
+                           f"as it was passes at the start ({own['why']})")
     return out
 
 

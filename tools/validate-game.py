@@ -1510,6 +1510,53 @@ def required_quality_judges(t):
                 c.get('name') == 'looks_as_asked' or m.get('name') == 'still_works'))]
 
 
+LOOKS = 'looks_as_asked'          # the one judge of a task's looks (godot-write-tasks section 5)
+LOOK_ITEM = re.compile(r'^(asked|keep)_')   # its items: a look the brief asks for, or one that must stay as it was
+
+
+def looks_judge_findings(t):
+    """(errors, warnings) of the task's one look judge, `looks_as_asked` (owner, 2026-11-19): each rubric item is marked
+    by its key, `asked_...` for a look the brief asks for, `keep_...` for a look that must stay as it was. It is
+    required; with an asked item it sits outside still_works with weight, with keep items only it sits in still_works
+    with weight 0. A task written before the merge (no item marked) keeps its judges, with a warning."""
+    errs, warns = [], []
+    for m in t.get('milestones') or []:
+        if not isinstance(m, dict):
+            continue
+        for c in m.get('checks') or []:
+            if not (isinstance(c, dict) and c.get('kind') == 'judge' and c.get('name') == LOOKS):
+                continue
+            keys = [r.get('key') for r in c.get('rubric') or [] if isinstance(r, dict)]
+            kinds = [LOOK_ITEM.match(k).group(1) if isinstance(k, str) and LOOK_ITEM.match(k) else None for k in keys]
+            if not any(kinds):
+                warns.append(f'judge {LOOKS} marks none of its rubric items: a new task marks each one asked_ (a look '
+                             'the brief asks for) or keep_ (a look that must stay as it was) (godot-write-tasks '
+                             'section 5)')
+                continue
+            unmarked = [k for k, kind in zip(keys, kinds) if not kind]
+            if unmarked:
+                errs.append(f'judge {LOOKS}: rubric item(s) {", ".join(map(str, unmarked))} are marked neither asked_ '
+                            'nor keep_ (godot-write-tasks section 5)')
+            if not c.get('required', True):
+                errs.append(f'judge {LOOKS} is "required": false: the look judge is required (godot-write-tasks '
+                            'section 5)')
+            if 'asked' in kinds:
+                if m.get('name') == 'still_works' or not outcome_weight(c):
+                    errs.append(f'judge {LOOKS} has asked_ items: it sits in an outcome milestone, not still_works, '
+                                'and carries weight (godot-write-tasks section 5)')
+            elif m.get('name') != 'still_works':
+                errs.append(f'judge {LOOKS} has keep_ items only: it sits in still_works with "weight": 0 '
+                            '(godot-write-tasks section 5)')
+            others = [x.get('name') for mm in t.get('milestones') or [] if isinstance(mm, dict)
+                      for x in mm.get('checks') or [] if isinstance(x, dict) and x.get('kind') == 'judge'
+                      and x is not c and x.get('required', True)]
+            if others:
+                warns.append(f'judge {LOOKS} holds the task\'s looks, asked and kept; required judge(s) '
+                             f'{", ".join(map(str, others))} beside it: one look judge per task (godot-write-tasks '
+                             'section 5)')
+    return errs, warns
+
+
 def judges_without_own_play(t):
     """([required], [optional]) names of the `judge` checks that name no play of their own (no `plays`, no `route`):
     they are shown only the shared idle look and the drive, which never press a task's keys or leave a title screen,
@@ -1532,6 +1579,11 @@ def check_task(rep, a, label, t, game, has_commit):
     for e in task_semantic_errors(t)[:5]:
         rep.error(a, f'{label}: {e}')
     for w in task_warnings(t)[:5]:
+        rep.warn(a, f'{label}: {w}')
+    look_errs, look_warns = looks_judge_findings(t)
+    for e in look_errs:
+        rep.error(a, f'{label}: {e}')
+    for w in look_warns:
         rep.warn(a, f'{label}: {w}')
     gated = [c for m in t.get('milestones') or [] if isinstance(m, dict) for c in m.get('checks') or []
              if isinstance(c, dict) and c.get('kind') == 'probe' and c.get('required', True) and not is_seen(c)]

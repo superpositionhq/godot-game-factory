@@ -1279,9 +1279,9 @@ class Units(unittest.TestCase):
 
     def test_the_skills_example_task_keeps_every_rule(self):
         """The whole example task of the godot-write-tasks skill (section 9) passes the task rules with no finding, and
-        keeps the rules the validator can't see from one file: required looks_as_asked and still_works judges, at least
-        3 weighted outcome probes, nothing calibrated (its tuning asks are relative to the start), every still_works
-        check of weight 0."""
+        keeps the rules the validator can't see from one file: one required look judge holding asked_ and keep_ items,
+        at least 3 weighted outcome probes, nothing calibrated (its tuning asks are relative to the start), every
+        still_works check of weight 0."""
         with open(os.path.join(REPO, 'skills', 'godot-write-tasks', 'SKILL.md'), encoding='utf-8') as f:
             text = f.read()
         block = re.search(r'## 9\. Examples.*?```json\n(.*?)\n```', text, re.S)
@@ -1291,14 +1291,48 @@ class Units(unittest.TestCase):
         self.assertEqual(rep.items, [])
         checks = {m['name']: m['checks'] for m in t['milestones']}
         judges = [(m, c) for m, cs in checks.items() for c in cs if c['kind'] == 'judge']
-        self.assertTrue(any(c['name'] == 'looks_as_asked' and c.get('required', True) and c.get('before')
-                            and c.get('reference') for _m, c in judges))
-        self.assertTrue(any(m == 'still_works' and c.get('required', True) and c.get('before') for m, c in judges))
+        self.assertEqual([c['name'] for _m, c in judges], ['looks_as_asked'])
+        looks = judges[0][1]
+        self.assertTrue(looks.get('required', True) and looks.get('before') and looks.get('reference'))
+        keys = [r['key'] for r in looks['rubric']]
+        self.assertTrue(any(k.startswith('asked_') for k in keys) and any(k.startswith('keep_') for k in keys), keys)
         outcomes = [c for m, cs in checks.items() if m != 'still_works' for c in cs
                     if c['kind'] == 'probe' and c.get('required', True) and c.get('weight', 1) > 0]
         self.assertGreaterEqual(len(outcomes), 3)
         self.assertEqual([c['name'] for c in checks['still_works'] if c.get('weight', 1) != 0], [])
         self.assertNotIn('calibrate', json.dumps(t))
+
+    def test_one_look_judge_marks_its_items_asked_or_keep(self):
+        """The one look judge, looks_as_asked: every item asked_ or keep_; with an asked_ item it sits outside
+        still_works with weight, with keep_ items only in still_works with weight 0. A task written before the merge
+        (no item marked) keeps its judges, with a warning."""
+        def looks(*keys, **over):
+            return {'name': 'looks_as_asked', 'kind': 'judge', 'needs': ['boots_clean'], 'before': True,
+                    'question': 'q', 'rubric': [{'key': k, 'criterion': 'c', 'required': True} for k in keys],
+                    'plays': [{'name': 'p', 'seconds': 5}], **over}
+
+        def findings(judge, milestone='fixed'):
+            return vg.looks_judge_findings({'milestones': [{'name': milestone, 'checks': [judge]}]})
+
+        self.assertEqual(findings(looks('asked_a', 'keep_b')), ([], []))
+        self.assertEqual(findings(looks('keep_b', weight=0), 'still_works'), ([], []))
+        errs, _ = findings(looks('asked_a', 'keep_b'), 'still_works')
+        self.assertTrue(errs and 'has asked_ items' in errs[0], errs)
+        errs, _ = findings(looks('asked_a', weight=0))
+        self.assertTrue(errs and 'has asked_ items' in errs[0], errs)
+        errs, _ = findings(looks('keep_b'))
+        self.assertTrue(errs and 'keep_ items only' in errs[0], errs)
+        errs, _ = findings(looks('asked_a', 'readable'))
+        self.assertTrue(errs and 'readable are marked neither' in errs[0], errs)
+        errs, _ = findings(looks('asked_a', required=False))
+        self.assertTrue(errs and 'is "required": false' in errs[0], errs)
+        errs, warns = findings(looks('readable'))                      # written before the merge
+        self.assertEqual(errs, [])
+        self.assertTrue(warns and 'marks none of its rubric items' in warns[0], warns)
+        other = {'name': 'hud_kept', 'kind': 'judge', 'question': 'q', 'rubric': [{'key': 'k', 'criterion': 'c'}]}
+        _, warns = vg.looks_judge_findings({'milestones': [{'name': 'fixed', 'checks': [looks('asked_a')]},
+                                                           {'name': 'still_works', 'checks': [other]}]})
+        self.assertTrue(any('one look judge per task' in w for w in warns), warns)
 
     def test_a_plays_touches_and_clicks_are_its_controls(self):
         """What a play presses (a widget click, a tap's or a drag's widget spot) and the flags it starts with."""
