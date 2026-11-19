@@ -263,7 +263,9 @@ recorded commands. Never start the engine another way for something a mode does.
   is fine.
 - **Every state reachable by a scenario.** Each scenario starts straight in the situation it shows, so a check reaches
   any moment in a short play from `play_scene` and `play_args`; no state reachable only after minutes of play or only
-  from the title menu.
+  from the title menu. A task's plays use only the scenarios, scenes and flags that exist at the task's start
+  commit; one a later commit adds is never used by a task that starts before it (godot-write-tasks section 4), so add
+  a scenario when its situation first exists, not at the end of the work it shows.
 
 ## Names
 

@@ -314,6 +314,13 @@ project's main scene (a project path, `"play_scene": "res://scenes/Harbor.tscn"`
   the game time to change scene. A control's node name serves too when the control exists at `seed.commit`, never a
   name only the reference has. Or the instruction states the scene QA plays (`play_scene`, or the `play_args` that
   start it). Never a shortcut only the reference has (a flag, a debug key, a scene the fix added).
+- **A scenario or a flag exists at the start, or it isn't used.** The game-session skill gives every hard-to-reach
+  state a scenario start option; a task's plays may use one (`play_scene`, `play_args`, a play's own `scene` and
+  `args`, a scene load) only when it exists at `seed.commit`: the scene is in the start's tree, the scenario number is
+  in its scenario list, the flag is read by its code. One only the reference adds (the thread's own scenario, a debug
+  flag the fix brought) is never used, whatever the instruction says: the start doesn't have it, so the no-op plays
+  something else, and another fair build has no reason to add it. Reach that moment from a start option the start
+  has, with the player's own inputs. `validate-game.py` refuses a scene or a flag only the reference has.
 - Check in the task check's screenshots and `track` that the reference's plays really start where the issue shows.
 
 The plays also need to know which node is the player (for `player` measures, teleports, a `near` around the
@@ -607,8 +614,13 @@ looks up and a positive yaw turns left.
 Write probes from the game's own code at `seed.commit`: the real classes, groups, node names, `res://` scene paths
 and `Control` names. **Never a name only the reference has** (a class, group, node, scene or asset the thread itself
 created): another fair build names it otherwise and reads as absent. Select what the thread creates by
-what it does or where it is (`has`, `near`, `ui` with a `rect` or text); `validate-game.py` refuses a required
-probe that names something the start lacks and the reference has. **Select by what the thing is, never by where the
+what it does or where it is (`has`, `near`, `ui` with a `rect` or text). `validate-game.py` refuses a required
+check (a probe, or a judge through its own plays) that names something the start lacks and the reference has: in its
+measure (selects, a `prop:` path, a `where`), in its play's teleports and stages (`teleport_to`, `pin`, `damage`,
+`set` and the property path it writes), its scene and the scenes it loads, the task's `player` select, and the
+controls a play clicks or taps (`widget`, a touch's `{"widget": ...}` spot) by a name or by words the reference alone
+has, unless the instruction states those words (a caption it quotes); and a flag or a scenario number a play or the
+task's `play_args` starts with that only the reference has, whatever the instruction says (section 4). **Select by what the thing is, never by where the
 old one was**: no `near` around the start's place for something the task asks to move (a camera that must stand
 further back leaves the sphere around its old place); `near` only around a place the task doesn't change. **Test the
 outcome a player sees, never the implementation**: another valid fix must
@@ -912,8 +924,8 @@ When tasks are returned for a fix:
 - `limits`: 400 turns, 480 min, 150 USD, 1800 s tool timeout unless the task needs more; a long thread needs room.
 - `tools/validate-game.py` fails a game with fewer than 5 tasks or fewer than 4 `hard` ones, and a task that is
   `easy`, has no `seed.reference`, has fewer than 3 required probes of weight above 0 outside `still_works` (a
-  required probe of weight 0 is a guard, not an outcome), or has a required probe that names a class, group, scene
-  or asset the reference has and the start doesn't (section 5). **The size of the span is a soft bar (owner,
+  required probe of weight 0 is a guard, not an outcome), or has a required check that names a class, group, node,
+  property, scene, asset, control, flag or scenario the reference has and the start doesn't (sections 4 and 5). **The size of the span is a soft bar (owner,
   2026-11-19, as the Unreal factory since 2026-11-18): it warns and never rejects.** The validator warns when the
   reference changes fewer than 5 game files, fewer than 100 code lines or fewer than 2 systems against its start, and
   for a seed on main when fewer than 4 game-changing commits lie from `seed.commit` to `seed.reference`. For a new
@@ -996,7 +1008,7 @@ task's solution.
 | Pass/fail is decided by checks the grader computes itself: build, boot, `log_absent`, `file_exists` and probes | a model's reading can misread; a measurement doesn't |
 | Checks grade the game's outcome, never the agent's tool calls, its diff or how it worked | the task measures what the game does, however it was built |
 | Test what a player sees, never one way of building it (no global time scale for "faster", no parent-relative position, no count of samples for a count of events) | another correct build must pass |
-| Every name, string, coordinate and input a required check relies on is in the instruction or exists at `seed.commit` | a name only the reference has fails every build that names it otherwise |
+| Every name, string, coordinate and input a required check relies on, its play's clicks, taps, stages and scene loads included, is in the instruction or exists at `seed.commit` (`validate-game.py` refuses a name only the reference has) | a name only the reference has fails every build that names it otherwise |
 | A check is never tied to the reference: a fair build that names, lays out, words or hides things otherwise still passes | the solver doesn't see the reference |
 | Select by what a thing is, does or carries (`has`, a group or class the start has, `near` a place the task doesn't change), never by where the old one was | a thing the task moves leaves a select aimed at its old place |
 | A select takes every node that fits (`Coin*` takes `CoinSpawner` too): select the things themselves by class, group or whole name, and check in the reference's `probe.log` what it reached | a wildcard or a broad select reads, or teleports to, the wrong node |
@@ -1039,6 +1051,7 @@ task's solution.
 | A menu or HUD the game paints itself is clicked by a cursor input onto it and a press | the cursor is the game's own mouse, as a player's is; no widget click finds what isn't a Control |
 | After typing into a field, a play leaves it by the player's own input before driving the game | a key goes to the focused control first, and a field takes every key it would type |
 | No shortcut only the reference has (a flag, a debug key, a scene the fix added) | the start and other builds don't have it |
+| A play starts only from a scene, scenario or flag that exists at `seed.commit`; one only the reference adds is never used | the no-op would play something else, and another fair build has no reason to add it |
 | `play_args` (and `play_scene` where needed) are always set, and checked to exist at both seeds | every grader play starts from them |
 | A place is reached by `teleport_to` or `pin` on a node, never raw coordinates of something a build places | each build places things itself |
 | A menu that runs on real time is waited for with a `wait` input | a play's clock runs faster than real time |

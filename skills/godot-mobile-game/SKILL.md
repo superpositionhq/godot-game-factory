@@ -155,7 +155,8 @@ player as the product, the rule here is the one that applies.
   for a second finger. The back button is the key `<Keyboard>/escape`. Touch a control by the caption it shows,
   written exactly as the screen shows it in the game's own language (`{"widget": "确定"}`): the words a player finds
   it by. A node name (`{"widget": "FireButton"}`) serves only for a control that exists at `seed.commit`, never one
-  the task's thread creates. A control that shows no words and that the thread adds is touched at its place on
+  the task's thread creates (`validate-game.py` refuses a name or words only the reference has, unless the
+  instruction states the words). A control that shows no words and that the thread adds is touched at its place on
   screen only where the instruction or the start fixes that place. Otherwise never a spot: a place differs between
   landscape and portrait and between builds; a spot only where no control is (a virtual stick's area, the open
   playfield). The checker's own `drive` play is by touch on a mobile game: a left thumb at the
