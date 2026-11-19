@@ -563,11 +563,13 @@ looks up and a positive yaw turns left.
   - `widgets`: a `Control`'s own state on screen (visible, text, a bar's percent, a slider's value);
   - `ui`: what the UI shows on screen, element by element (the text, pictures and boxes that are drawn, their count
     and place; `match` for a text). It reads the text of Controls and of `Label3D`s only, never text a script draws
-    in `_draw`, a shader draws or a texture holds. You can't know how a solver will draw text the thread creates, so
-    a check of new text reads it with `seen` (below) or reads the state behind it, never `ui` text alone;
+    in `_draw`, a shader draws or a texture holds. You can't know how a solver will draw text in a place the thread
+    creates (a new label, panel or screen), so a check of such text reads it with `seen` (below) or reads the state
+    behind it, never `ui` text alone. Text in a Control the start already has (a HUD label whose value the thread
+    corrects) is read with `ui` or `widgets`;
   - `seen`: text the visual checks' model reads from a named shot of the check's own task play (docs/task-probes.md
-    2.22). **Read text from the game's UI first** (`ui`, `widgets`): `seen` only for text nothing else gives, drawn
-    by a script, a shader or a texture. Give it a loose `rect` or none, and take the shot at a still moment (a clock
+    2.22). **Read text from the game's UI first** (`ui`, `widgets`) where a Control the start has shows it: `seen`
+    only for text nothing else gives, drawn by a script, a shader or a texture, or in a place the thread creates. Give it a loose `rect` or none, and take the shot at a still moment (a clock
     ticks). It is a visual check: the task still needs a required probe besides it, and the task check saves its
     crops for you to read blind;
   - `screen`: the frame's mean luminance, never a literal threshold;
@@ -854,7 +856,7 @@ what you find in the task before it is packed:
   data table", "add it to the README"): no check of the game's outcome can decide it. Anything about what the player
   sees, hears or can do is never such an ask, however it is worded.
 - **Exactly five kinds of sentence need no check**, because the grader cannot run them: an exported or packaged
-  build's own behaviour; given screen sizes or resolutions (the size itself: what must be visible on screen still
+  build's own behaviour (that the release export builds and its player runs is a `package` check's, section 5); given screen sizes or resolutions (the size itself: what must be visible on screen still
   needs a check); a frame rate or performance on given hardware; how a sound sounds; a statement of what the task does
   not add or change. Everything else stays an ask, however hard to check: a value the running game holds, a timing, a
   random or rare event, something a play must set up first, something saved and found again (a play that names the
@@ -999,7 +1001,7 @@ task's solution.
 | A break is read by what changes there (a `prop:` the start names, `changed`, `spread`, `simulating`, the frame) | a dissolve, a swapped mesh or particle debris is invisible to fields that read a whole object |
 | `ui` and `widgets` read what is on screen; `"visible": false` only when the check means "exists while hidden" | a build may hide or remove, and both are "not shown" |
 | "Shown" is what is on screen, parents included: a node's own `visible` with a hidden parent is not shown | a widget under a hidden panel reads as there while the player sees nothing |
-| Text is read from the game's UI first (`ui`, `widgets`); `seen` only for text drawn by a script, a shader or a texture | a node's text is exact; a model's reading of a picture is not |
+| Text a Control the start has shows is read from the game's UI first (`ui`, `widgets`); `seen` only for text drawn by a script, a shader or a texture, or in a place the thread creates | a node's text is exact and a model's reading of a picture is not; a solver may draw new text any way |
 | A `seen` probe is a visual check, never an outcome: it doesn't count toward the outcome probes, and the start must fail a probe that isn't `seen` | a model's reading can't be the deterministic proof that the start fails |
 | A threshold comes from the instruction, from the start or from calibration, never from what the reference happens to pass | a number fitted to one build fails another correct one |
 | Where the reference is only one fair way to the outcome, the threshold is relative to the start (`start_times`, `start_plus`), not calibrated | calibration holds every solution to the reference's own tuning |
@@ -1130,5 +1132,7 @@ never passed the task check: copy its shape, never its names or thresholds.
 
 `builds`, `boots` and `still_works` carry `"weight": 0` because the start already passes them; the three probes of
 `fixed`, one per issue of the brief, carry the weight. The game is a template game, so `play_args` alone start its
-scenario. The task play reaches its spot with `teleport_to` a node by its whole name, then drives on. `limits` are
+scenario. The task play reaches its spot with `teleport_to` a node by its whole name, then drives on.
+`lap_count_updates` reads the lap with `ui` because the label is on the start's HUD already (it shows LAP 1/3) and
+only its value changes; text in a place the thread creates would be read with `seen` beside the state behind it. `limits` are
 written out: left out, the schema's lower defaults apply. The optional `quality` milestone is left out.
