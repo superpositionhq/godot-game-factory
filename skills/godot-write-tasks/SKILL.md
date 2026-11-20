@@ -946,6 +946,13 @@ When tasks are returned for a fix:
 - **A returned task is never "not fixable" for its size.** Its start and reference, rebuilt around a fix, are often
   smaller than the thread the task was written from, and the validator only warns about the size of a span (section
   6). Give the task's own numbers in your note (`tools/thread-stats.py`) and go on with the fix.
+- **Hand the fix back on the game's page in the Lab.** Once the task check says VALID on the final file, split the
+  tasks (`python <GGF_ROOT>\godot-game-factory\tools\split-tasks.py <tasks dir> <out dir>`) and upload the returned
+  task's `<out>\<name>\task.json` and `grader.json` on the game's Tasks tab, on that task ("Upload the fix"). The Lab
+  saves them as the task's next version and checks it again; the task is settled once that version passes its check
+  and its review. Only the game's writer hands in a fix, and the game is paid once every returned task of it is
+  settled. _(why: the Lab holds the task's current version, and a fix left on the tasks branch alone never reaches it;
+  a game is paid for tasks that work)_
 
 ## 6. Difficulty, limits and what the validator checks
 
