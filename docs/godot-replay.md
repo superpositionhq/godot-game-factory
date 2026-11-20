@@ -188,9 +188,10 @@ at the boundary.
 A session keeps these so its history replays (godot-game-session skill):
 
 - **Scenes and resources are text, written with the agent's own file tools** (Claude Code: Write/Edit; Codex:
-  apply_patch). The recording then holds each write, and the file is an input. A `sed -i`, a Python rewrite or a
-  change made in the editor's window leaves a file the recording cannot explain: the replay takes it from the commit
-  and lists it.
+  apply_patch; Antigravity: write_file/edit_file, which the ledger reads as Write/Edit; a file another of its tools
+  writes is one the replay takes from the commit). The recording then holds each write, and the file is an input. A `sed
+  -i`, a Python rewrite or a change made in the editor's window leaves a file the recording cannot explain: the replay
+  takes it from the commit and lists it.
 - **Every generator step committed under `steps/` and run only through**
   `Scripts/godot.ps1 step -Script steps/<name>.gd -Reason "..."`, never by calling the engine directly and never from a
   scratch folder. The replay finds step runs by that call shape.

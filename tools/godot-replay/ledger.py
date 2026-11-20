@@ -2,7 +2,7 @@
 
   git history          the commits on the first-parent chain up to the final commit (the windows' boundaries)
   actions.jsonl        the agent's tool calls: step runs (command lines), Write/Edit of files, apply_patch,
-                       shell commands
+                       Antigravity's own tools (as_claude), shell commands
   workflow.jsonl       the row each step run logged (source.script, source.sha256) at the final commit
 
 Output (work/ledger.json, schema godot-replay.ledger/v1):
@@ -336,6 +336,38 @@ def repo_rel(path, repo_abs):
     return None
 
 
+# Antigravity's rows (agent "antigravity") keep its own tool names and arguments. Those whose effect is known are read as
+# Claude Code's: run_command (CommandLine) as Bash, write_file (Path, Content) as Write, or as "Append" with Append
+# set (the content added to the file's end; a new file when there is none), edit_file (Path, Target, Replacement,
+# AllowMultiple) as Edit. Any other of its tools that writes a file it names (write_to_file, replace_file_content, ...)
+# becomes "Unreplayed": the ledger cannot replay it, so the file is unknown until the next boundary, as after an Edit
+# whose old text is not there.
+WRITES = re.compile(r"(?i)write|replace|edit|delete|move|rename")
+PATH_ARGS = ("Path", "TargetFile", "AbsolutePath", "File", "FilePath")
+
+
+def as_claude(a):
+    """`a` (an actions.jsonl row) as the ledger reads it: an Antigravity row in Claude Code's shape where it can be."""
+    if a.get("agent") != "antigravity":
+        return a
+    inp = a.get("input") or {}
+    tool = a.get("tool")
+    if tool == "run_command" and isinstance(inp.get("CommandLine"), str):
+        return dict(a, tool="Bash", input=dict(inp, command=inp["CommandLine"]))
+    if tool == "write_file" and isinstance(inp.get("Path"), str) and isinstance(inp.get("Content"), str):
+        return dict(a, tool="Append" if inp.get("Append") else "Write",
+                    input={"file_path": inp["Path"], "content": inp["Content"]})
+    if tool == "edit_file" and isinstance(inp.get("Path"), str) and isinstance(inp.get("Target"), str) \
+            and isinstance(inp.get("Replacement"), str):
+        return dict(a, tool="Edit", input={"file_path": inp["Path"], "old_string": inp["Target"],
+                                           "new_string": inp["Replacement"],
+                                           "replace_all": bool(inp.get("AllowMultiple"))})
+    path = next((inp[k] for k in PATH_ARGS if isinstance(inp.get(k), str)), None)
+    if path and WRITES.search(tool or ""):
+        return dict(a, tool="Unreplayed", input={"file_path": path, "tool": tool})
+    return a
+
+
 ABSENT = object()  # sentinel: the file does not exist yet
 
 
@@ -424,7 +456,7 @@ def build(cfg):
             for line in f:
                 if line.strip():
                     try:
-                        actions.append(json.loads(line))
+                        actions.append(as_claude(json.loads(line)))
                     except ValueError:
                         pass
     actions.sort(key=lambda a: a["time"])
@@ -591,6 +623,22 @@ def build(cfg):
                 for e in inp.get("edits") or []:
                     ok = fs.edit(p, e.get("old_string", ""), e.get("new_string", ""), e.get("replace_all", False))
                     w["events"]["edit" if ok else "edit_unapplied"] += 1
+        elif tool == "Append":   # Antigravity's write_file with Append (as_claude)
+            p = repo_rel(inp.get("file_path", ""), repo_abs)
+            if p:
+                cur = fs.get(p)
+                if cur is ABSENT:
+                    fs.write(p, inp.get("content", ""))
+                elif cur is None:
+                    fs.put(p, None, "append")
+                else:
+                    fs.write(p, cur.decode("utf-8", "replace") + inp.get("content", ""))
+                w["events"]["write"] += 1
+        elif tool == "Unreplayed":   # an Antigravity file tool the ledger cannot replay (as_claude)
+            p = repo_rel(inp.get("file_path", ""), repo_abs)
+            if p:
+                fs.put(p, None, inp.get("tool") or "unreplayed")
+                w["events"]["unreplayed"] += 1
         elif tool == "apply_patch" and isinstance(inp.get("command"), str):
             # one patch adds, deletes, updates or moves files (patchfx.py); a patch that does not parse or a hunk that
             # does not apply leaves the file unknown, like an Edit whose old text is not there

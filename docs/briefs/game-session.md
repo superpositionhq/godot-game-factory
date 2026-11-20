@@ -28,8 +28,8 @@ each game its packs. Everything shares one Windows PC ({{MACHINE}}). I am the co
 the GPU slots, review your commits and tell you when to push.
 
 Rules: follow the godot-game-session, godot-desktop-game, godot-commit-always and godot-sound skills (installed in
-~\.claude\skills\ or ~\.agents\skills\, source godot-game-factory/skills/), and no other skill: never install, enable
-or invoke a personal, project, plugin, marketplace or agent built-in skill, nor another factory's skills. In short:
+~\.claude\skills\, ~\.agents\skills\ or ~\.gemini\config\skills\, source godot-game-factory/skills/), and no other
+skill: never install, enable or invoke a personal, project, plugin, marketplace or agent built-in skill, nor another factory's skills. In short:
 every heavy or GPU job through {{GGF_ROOT}}\tools\godot-heavy.ps1 (the game's Scripts\godot.ps1 does it for you);
 scenes, resources and scripts are text files you write with your own file tools and commit (.tscn, .tres, .gd), and
 what only the engine can make comes from a committed generator script (steps/, run with Scripts\godot.ps1 step);

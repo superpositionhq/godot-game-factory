@@ -409,7 +409,7 @@ records:
 |---|---|
 | git history (`games\<slug>`) | the exact files at every commit, and the committed generated files to compare against |
 | `workflow.jsonl` | the row of each step run (`source.script`, `source.sha256`, `status`) |
-| `.recording\<slug>\actions.jsonl` | the agent's tool calls in order: every step run (with the command line and its output), every `Write`/`Edit` (`apply_patch` under Codex) of a file, every shell command |
+| `.recording\<slug>\actions.jsonl` | the agent's tool calls in order: every step run (with the command line and its output), every `Write`/`Edit` (`apply_patch` under Codex; under Antigravity `write_file`/`edit_file`, read as `Write`/`Edit`) of a file, every shell command |
 
 It also reads `.recording\<slug>\commits.jsonl` for the moment each commit was made. What makes that work is the
 godot-game-session skill's rules for a history that replays: scenes and resources written as text with the agent's

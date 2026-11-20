@@ -29,21 +29,25 @@ AutoPlay drop-in with one run of
 ([docs/autoplay-contract.md](docs/autoplay-contract.md)).
 
 On a fresh Windows 11 PC (8+ threads, 16 GB RAM or more, 100 GB free, a GPU with Vulkan and a current driver), with
-an account for the coding agent (Claude Code, or OpenAI Codex CLI with a ChatGPT account or API key). The engine
+an account for the coding agent (Claude Code, OpenAI Codex CLI with a ChatGPT account or API key, or Google
+Antigravity with a Google account). The engine
 needs no account and no licence. Contractors need no GitHub account: the game stays on the PC and ships in the
 dataset zip. Only staff who push the private `godot-game-<slug>` repos need a GitHub account in `<org>` (the
 organisation that owns the game repos):
 
 1. Get `machine/setup.ps1` (Download ZIP on github.com, or `gh api`; [docs/new-machine.md](docs/new-machine.md)) and
-   run the one command: `powershell -ExecutionPolicy Bypass -File setup.ps1 -Org <org>` (add `-Agent codex` or
-   `-Agent both`; without it, the agents the machine has; add `-Android` on a machine that builds mobile games' APKs). It installs the
-   toolchain through winget (git, the GitHub CLI, Python, and the Codex CLI for Codex), offers the GitHub sign-in
-   (staff only), clones this repo into the root, puts the pinned Godot editor and its export templates into
-   `<root>\godot\<version>\` (`machine/get-godot.ps1`; nothing machine-wide), runs `machine/bootstrap.ps1` (which asks
-   before installing the recording hooks), with `-Android` `machine/get-android.ps1` (the JDK, the Android SDK and the
-   keystores, into `<root>\android\`), and `machine/check.ps1`, and ends with a PASS / TODO list.
-2. Do the TODOs only you can do (signing in to Claude Code or Codex) and run setup again until nothing is left.
-3. Start the first session: solo in a terminal in the root (`claude`, or `codex -s danger-full-access`), one game with
+   run the one command: `powershell -ExecutionPolicy Bypass -File setup.ps1 -Org <org>` (add `-Agent codex`,
+   `-Agent antigravity`, `-Agent both` or `-Agent all`; without it, the agents the machine has; add `-Android` on a
+   machine that builds mobile games' APKs). It installs the toolchain through winget (git, the GitHub CLI, Python, the
+   Codex CLI for Codex and the Antigravity CLI `agy` for Antigravity), offers the GitHub sign-in (staff only), clones
+   this repo into the root, puts the pinned Godot editor and its export templates into `<root>\godot\<version>\`
+   (`machine/get-godot.ps1`; nothing machine-wide), runs `machine/bootstrap.ps1` (which asks before installing the
+   recording hooks), with `-Android` `machine/get-android.ps1` (the JDK, the Android SDK and the keystores, into
+   `<root>\android\`), and `machine/check.ps1`, and ends with a PASS / TODO list.
+2. Do the TODOs only you can do (signing in to Claude Code, Codex or Antigravity) and run setup again until nothing
+   is left.
+3. Start the first session: solo in a terminal in the root (`claude`, `codex -s danger-full-access` or `agy`), one game
+   with
    [docs/briefs/solo-game.md](docs/briefs/solo-game.md).
 
 ## How a game goes from idea to dataset
@@ -54,10 +58,10 @@ organisation that owns the game repos):
    game or, with `-Platform mobile -Orientation landscape|portrait`, an Android phone game (`Platform.json` at its
    root): the AutoPlay drop-in (`addons/autoplay/`) and the scenario list, `ReplayConfig.json`, `Scripts/godot.ps1`,
    hooks that record every action and commit, the first import, a private GitHub repo.
-3. **Build**: the session (Claude Code or Codex) follows the `godot-commit-always`, `godot-game-session` and
-   `godot-sound` skills and the skill of the game's platform (`godot-desktop-game` or `godot-mobile-game`). Scenes,
+3. **Build**: the session (Claude Code, Codex or Antigravity) follows the `godot-commit-always`, `godot-game-session`
+   and `godot-sound` skills and the skill of the game's platform (`godot-desktop-game` or `godot-mobile-game`). Scenes,
    resources and scripts are text files it writes and commits; what only the engine can make comes from committed
-   generator scripts (`steps/`); every action is recorded (`workflow.jsonl`, the action hooks of either agent, git
+   generator scripts (`steps/`); every action is recorded (`workflow.jsonl`, the action hooks of every agent, git
    history).
 4. **AutoPlay, then the recording**: once scenario 1 plays, the game wires the drop-in and its bot
    ([docs/autoplay-contract.md](docs/autoplay-contract.md)), tests one run by hand (`Scripts/godot.ps1 autoplay`,
@@ -127,10 +131,10 @@ packager's first run.
   grades what it left; contractors don't run it.
 - [docs/godot-pipeline.md, Dataset packager](docs/godot-pipeline.md#dataset-packager): the per-game dataset
   (`tools/package-dataset.py`) and its scrub.
-- [AGENTS.md](AGENTS.md): what every session reads first (Claude Code through [CLAUDE.md](CLAUDE.md), Codex
-  directly): the skills in `skills/` (godot-commit-always, godot-game-session, godot-desktop-game, godot-mobile-game,
-  godot-sound, godot-write-tasks), the priorities, how the two agents differ, and the rules for agents working here
-  (each with the failure behind it).
+- [AGENTS.md](AGENTS.md): what every session reads first (Claude Code through [CLAUDE.md](CLAUDE.md), Codex and
+  Antigravity directly): the skills in `skills/` (godot-commit-always, godot-game-session, godot-desktop-game,
+  godot-mobile-game, godot-sound, godot-write-tasks), the priorities, how the three agents differ, and the rules for
+  agents working here (each with the failure behind it).
 - [docs/new-machine.md](docs/new-machine.md): setting up another Windows machine (`machine/setup.ps1`, which runs
   `machine/get-godot.ps1`, `machine/bootstrap.ps1` and `machine/check.ps1`; `machine/get-android.ps1` for the APKs).
 - [docs/briefs/](docs/briefs/README.md): the prompts that start a game session (solo and coordinated).

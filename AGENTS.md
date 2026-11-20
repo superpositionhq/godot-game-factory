@@ -1,11 +1,11 @@
 # AGENTS.md — godot-game-factory: instructions for every session
 
-This repo coordinates coding-agent sessions (Claude Code or OpenAI Codex CLI) that build Godot 4.7 games, for the
-desktop (Windows) or for Android phones (`%GGF_ROOT%\games\<slug>`, private `<org>/godot-game-<slug>` repos, `<org>` =
-`github_org` in the machine config) and turn them into game-creation datasets. `%GGF_ROOT%` is the machine root (env
-`GGF_ROOT`, else `%USERPROFILE%\.godot-game-factory\config.json`, else `%USERPROFILE%\GodotWork`); see
-[machine/README.md](machine/README.md). Claude Code reads this file through [CLAUDE.md](CLAUDE.md); Codex reads it
-directly (and through `<root>\AGENTS.md`).
+This repo coordinates coding-agent sessions (Claude Code, OpenAI Codex CLI or Google Antigravity) that build Godot 4.7
+games, for the desktop (Windows) or for Android phones (`%GGF_ROOT%\games\<slug>`, private `<org>/godot-game-<slug>`
+repos, `<org>` = `github_org` in the machine config) and turn them into game-creation datasets. `%GGF_ROOT%` is the
+machine root (env `GGF_ROOT`, else `%USERPROFILE%\.godot-game-factory\config.json`, else `%USERPROFILE%\GodotWork`); see
+[machine/README.md](machine/README.md). Claude Code reads this file through [CLAUDE.md](CLAUDE.md); Codex and
+Antigravity read it directly (and through `<root>\AGENTS.md`).
 
 **Before every new game, update godot-game-factory:** `git -C <GGF_ROOT>\godot-game-factory pull`, then
 `powershell -ExecutionPolicy Bypass -File <GGF_ROOT>\godot-game-factory\machine\bootstrap.ps1` so the skills your
@@ -16,9 +16,10 @@ AutoPlay drop-in with one run of
 (its own commit; [docs/autoplay-contract.md](docs/autoplay-contract.md)). Every release starts by running it again to
 ensure AutoPlay, a required step (godot-game-session skill, "Dataset", release step 1).
 
-Skills (one source, [skills/](skills/); `machine/bootstrap.ps1` copies them to `~\.claude\skills\` for Claude Code and
-`~\.agents\skills\` for Codex; read the `SKILL.md` named here before the work it covers, whichever agent you are). They
-carry a `godot-` prefix so they install next to another factory's skills on a machine that also runs one:
+Skills (one source, [skills/](skills/); `machine/bootstrap.ps1` copies them to `~\.claude\skills\` for Claude Code,
+`~\.agents\skills\` for Codex and `~\.gemini\config\skills\` for Antigravity; read the `SKILL.md` named here before
+the work it covers, whichever agent you are). They carry a `godot-` prefix so they install next to another factory's
+skills on a machine that also runs one:
 
 - **godot-commit-always** ([skills/godot-commit-always/SKILL.md](skills/godot-commit-always/SKILL.md)): every session.
   Commit after every meaningful step, never end a turn with uncommitted work, every imported file with its `.import`
@@ -46,13 +47,13 @@ carry a `godot-` prefix so they install next to another factory's skills on a ma
 skills above (of godot-desktop-game and godot-mobile-game, the one of the game's platform, never both) and no others.
 Never install, enable or invoke any other skill: not the person's own personal or project skills, not a plugin's or a
 marketplace's skills, not the skills bundled with the agent (Claude Code's built-in skills and slash-command skills,
-Codex's system skills), and not another factory's skills (`commit-always`, `game-session`, `desktop-game`,
-`mobile-game`, `sound`, `write-tasks`, `unity-commit-always`, `unity-game-session`, `unity-sound`,
-`unity-write-tasks`) even when the machine has them installed. A skill the agent offers by name or description that
-is not one of them is ignored. Work no skill here covers is done by hand under these rules, or asked about (the
-coordinator, or the person in a solo session). _(why: the recorded sessions are the dataset, so how a game gets made
-must follow these rules only; another skill brings instructions and habits nobody here reviewed into the creation
-record, and another factory's skills give answers for another engine to Godot questions)_
+Codex's system skills, Antigravity's built-in skills), and not another factory's skills (`commit-always`,
+`game-session`, `desktop-game`, `mobile-game`, `sound`, `write-tasks`, `unity-commit-always`, `unity-game-session`,
+`unity-sound`, `unity-write-tasks`) even when the machine has them installed. A skill the agent offers by name or
+description that is not one of them is ignored. Work no skill here covers is done by hand under these rules, or asked
+about (the coordinator, or the person in a solo session). _(why: the recorded sessions are the dataset, so how a game
+gets made must follow these rules only; another skill brings instructions and habits nobody here reviewed into the
+creation record, and another factory's skills give answers for another engine to Godot questions)_
 
 Session briefs: [docs/briefs/](docs/briefs/README.md). New machine: [docs/new-machine.md](docs/new-machine.md).
 Pipeline: [docs/godot-pipeline.md](docs/godot-pipeline.md). AutoPlay:
@@ -118,22 +119,24 @@ hand or with another factory's tool.
 
 ## Agents
 
-Both agents run the same skills, the same recording hooks and the same workflow; what differs:
+All three agents run the same skills, the same recording hooks and the same workflow; what differs:
 
-| | Claude Code | Codex CLI |
-|---|---|---|
-| start | `claude` in `<root>` (reads `<root>\CLAUDE.md`) | `codex -s danger-full-access` in `<root>` (reads `<root>\AGENTS.md`) |
-| skills | `~\.claude\skills\godot-*` (also offered by name) | `~\.agents\skills\godot-*` (`$<name>` or `/skills`; also offered by description) |
-| recording hooks | `~\.claude\settings.json`: PostToolUse, PostToolUseFailure, Stop, UserPromptSubmit, SessionEnd | `~\.codex\hooks.json`: PostToolUse, Stop, UserPromptSubmit, SessionEnd (trusted in `config.toml`; `/hooks` shows them) |
-| file edits in `actions.jsonl` | `Write` / `Edit` rows | `apply_patch` rows (the patch text) |
-| permissions | as set in Claude Code (asks before commands by default) | `codex -s danger-full-access`: the default workspace sandbox blocks what game sessions need (the machine-wide job-slot mutexes, `git push` / `gh`) |
-| transcript (backfill) | `~\.claude\projects\…\<session>.jsonl` | `~\.codex\sessions\YYYY\MM\DD\rollout-…-<session>.jsonl` |
+| | Claude Code | Codex CLI | Antigravity |
+|---|---|---|---|
+| start | `claude` in `<root>` (reads `<root>\CLAUDE.md`) | `codex -s danger-full-access` in `<root>` (reads `<root>\AGENTS.md`) | `agy` in `<root>` (reads `<root>\AGENTS.md`), or `<root>` opened in the Antigravity App or IDE |
+| skills | `~\.claude\skills\godot-*` (also offered by name) | `~\.agents\skills\godot-*` (`$<name>` or `/skills`; also offered by description) | `~\.gemini\config\skills\godot-*` (offered by description) |
+| recording hooks | `~\.claude\settings.json`: PostToolUse, PostToolUseFailure, Stop, UserPromptSubmit, SessionEnd | `~\.codex\hooks.json`: PostToolUse, Stop, UserPromptSubmit, SessionEnd (trusted in `config.toml`; `/hooks` shows them) | `~\.gemini\config\hooks.json`: PostToolUse, Stop (the hook `godot-game-factory-recording`; `/hooks` shows it) |
+| file edits in `actions.jsonl` | `Write` / `Edit` rows | `apply_patch` rows (the patch text) | its own tool rows (`write_file`, `edit_file`, `replace_file_content`, ...) with their arguments |
+| permissions | as set in Claude Code (asks before commands by default) | `codex -s danger-full-access`: the default workspace sandbox blocks what game sessions need (the machine-wide job-slot mutexes, `git push` / `gh`) | as set in Antigravity (asks before commands by default); keep its terminal sandbox off (no `agy --sandbox`): like Codex's workspace sandbox, it blocks what game sessions need |
+| transcript (backfill) | `~\.claude\projects\…\<session>.jsonl` | `~\.codex\sessions\YYYY\MM\DD\rollout-…-<session>.jsonl` | `~\.gemini\antigravity-cli\brain\<conversation>\.system_generated\logs\transcript_full.jsonl` (App: `antigravity`, IDE: `antigravity-ide` in place of `antigravity-cli`) |
 
-Under Codex, the shell tool is recorded as `Bash` whatever shell ran the command. Read a skill by opening its
-`SKILL.md` when the task matches, even if the agent did not offer it. Both agents' hooks also store every prompt the
-person typed, every reply the model wrote and every reasoning summary the agent saved (`messages.jsonl`, read from the
-session's transcript; `machine/bootstrap.ps1` turns the summaries on in both agents' settings), and each tool call with
-its whole result (`actions.jsonl`); a dataset carries them in `History/sessions/`. The person's directions are still
+Under Codex, the shell tool is recorded as `Bash` whatever shell ran the command. Under Antigravity, a tool call's row
+is written once its result reaches the transcript (at the next tool call, or at the end of the turn), and the shell
+tool is `run_command` (`input.CommandLine`). Read a skill by opening its `SKILL.md` when the task matches, even if the
+agent did not offer it. Every agent's hooks also store every prompt the person typed, every reply the model wrote and
+every reasoning summary the agent saved (`messages.jsonl`, read from the session's transcript; `machine/bootstrap.ps1`
+turns the summaries on in Claude Code's and Codex's settings), and each tool call with its whole result
+(`actions.jsonl`); a dataset carries them in `History/sessions/`. The person's directions are still
 `user.direction` rows that the session writes itself (godot-commit-always skill).
 
 Commands with Windows paths in these docs are written as PowerShell reads them. Typed in Git Bash (the shell of Claude

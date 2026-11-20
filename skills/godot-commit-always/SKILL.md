@@ -38,8 +38,8 @@ The user's standing rule: **every session commits its work continuously.**
   human direction also names it: `Direction: td-00398 (<the direction in a few words>)`.
 - Game repos: no AI attribution trailers or footers (`Co-Authored-By: <agent> ...`, `Generated with <tool>`) and never
   the names Superposition, game-factory or godot-game-factory: commit messages ship in the dataset's `git.log`. Agent,
-  model and provider names (Claude, Anthropic, Opus, OpenAI, Codex CLI, GPT model ids) stay out too; deliverables
-  block or scrub them. godot-game-factory commits follow the normal attribution rules.
+  model and provider names (Claude, Anthropic, Opus, OpenAI, Codex CLI, GPT model ids, Google Antigravity, Gemini model
+  ids) stay out too; deliverables block or scrub them. godot-game-factory commits follow the normal attribution rules.
 
 ## workflow.jsonl (game repos)
 
@@ -158,9 +158,9 @@ made: the recorded commits are the ones the replay follows (the godot-game-sessi
 
 ## The WIP auto-commit
 
-The Stop hook (`record-godot-action.ps1 -Stop`, wired into Claude Code and Codex alike) commits leftover changes in a
-game repo as `WIP` at the end of every turn, except while conflicts are unresolved or HEAD is detached (a merge, a
-rebase, a bisect under way): finish those and commit yourself.
+The Stop hook (`record-godot-action.ps1 -Stop`, wired into Claude Code, Codex and Antigravity alike) commits leftover
+changes in a game repo as `WIP` at the end of every turn, except while conflicts are unresolved or HEAD is detached (a
+merge, a rebase, a bisect under way): finish those and commit yourself.
 It is a safety net so nothing is lost, not a way of working: a `WIP` commit carries no reason and no row ids, and it
 reads as sloppy in the dataset's `git.log`. If one of yours appears, say in your next commit's body what the WIP
 commit contained. Don't squash or amend it away; the history is the record. The hook does not cover

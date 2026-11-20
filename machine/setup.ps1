@@ -5,7 +5,8 @@
 .DESCRIPTION
   1. Hardware precheck against the stated minimums (below).
   2. Software through winget (asks once, lists what is missing; winget accepts each package's licence):
-     Git (+ Git LFS), GitHub CLI, Python 3.12, and the Codex CLI when Codex is one of the agents.
+     Git (+ Git LFS), GitHub CLI, Python 3.12, the Codex CLI when Codex is one of the agents, and the Antigravity CLI
+     (agy) when Antigravity is.
   3. GitHub sign-in (asked first: only people who push game repos need it) and git user.name / user.email.
   4. godot-game-factory: cloned into <root>\godot-game-factory when this script runs from outside a clone, then
      machine\get-godot.ps1 (the pinned Godot editor and its export templates into <root>\godot\<version>\; nothing
@@ -14,8 +15,9 @@
      game's APK needs, into <root>\android\; it asks before accepting the Android SDK licence agreements), and
      machine\check.ps1.
   5. What cannot be scripted (signing in to the coding agent): exact steps.
-  The coding agent: -Agent claude (Claude Code), codex (OpenAI Codex CLI) or both; passed on to bootstrap.ps1, which
-  wires the recording hooks, skills and root instructions into each (default: the config's, else what is installed).
+  The coding agent: -Agent claude (Claude Code), codex (OpenAI Codex CLI), antigravity (Google Antigravity), both
+  (Claude Code and Codex), all, or a list such as claude,antigravity; passed on to bootstrap.ps1, which wires the
+  recording hooks, skills and root instructions into each (default: the config's, else what is installed).
   Ends with a PASS / TODO list. Log: <root>\.setup\setup.log.
   Other factories may already be set up on this PC: this one uses its own root, config, hooks and skills (godot-*) and
   leaves theirs alone; they share only the machine-wide job slots.
@@ -30,7 +32,8 @@
   # dry run against a scratch root (installs, downloads, sign-ins and game clones are only reported):
   powershell -ExecutionPolicy Bypass -File machine\setup.ps1 -Org <org> -DryRun -Root C:\ggf-test\GodotWork `
       -ClaudeDir C:\ggf-test\home\.claude -CodexDir C:\ggf-test\home\.codex -AgentsSkillsDir C:\ggf-test\home\.agents\skills `
-      -HooksDir C:\ggf-test\home\.godot-game-factory\hooks -ConfigPath C:\ggf-test\home\.godot-game-factory\config.json -Agent both
+      -AntigravityDir C:\ggf-test\home\.gemini\config -HooksDir C:\ggf-test\home\.godot-game-factory\hooks `
+      -ConfigPath C:\ggf-test\home\.godot-game-factory\config.json -Agent all
 #>
 param(
     # default: the config's root, else asked (%USERPROFILE%\GodotWork offered)
@@ -44,17 +47,19 @@ param(
     # answer yes to every question (installs, the Android SDK licence agreements, hooks)
     [switch]$Yes,
     # no installs, downloads, sign-ins or game clones; bootstrap runs only
-    # given -ConfigPath, -ClaudeDir, -CodexDir, -AgentsSkillsDir and -HooksDir
+    # given -ConfigPath, -ClaudeDir, -CodexDir, -AgentsSkillsDir and -HooksDir (and -AntigravityDir with Antigravity)
     [switch]$DryRun,
     # where to clone godot-game-factory from (default https://github.com/<org>/godot-game-factory)
     [string]$RepoUrl,
-    # the coding agent(s); default: the config's, else what is installed
-    [ValidateSet('', 'claude', 'codex', 'both')][string]$Agent = '',
+    # the coding agent(s) (see above); default: the config's, else what is installed
+    [string]$Agent = '',
     [string]$ClaudeDir = (Join-Path $env:USERPROFILE '.claude'),
     # default: CODEX_HOME / %USERPROFILE%\.codex
     [string]$CodexDir,
     # default: %USERPROFILE%\.agents\skills (Codex's personal skills)
     [string]$AgentsSkillsDir,
+    # default: %USERPROFILE%\.gemini\config (Antigravity's hooks.json and skills)
+    [string]$AntigravityDir,
     # default: the config's hooks_dir
     [string]$HooksDir,
     [string]$ConfigPath,
@@ -113,10 +118,18 @@ Write-Host "godot-game-factory setup: root $Root$(if ($DryRun) { ' (dry run: not
 
 if (-not $Org -and $cfgNow -and $cfgNow.PSObject.Properties['github_org']) { $Org = [string]$cfgNow.github_org }
 if (-not $Org -and $interactive -and -not $Yes) { $Org = (Read-Host '  GitHub organisation (or user) that owns godot-game-factory and the godot-game-<slug> repos').Trim() }
-if (-not $Agent -and $cfgNow -and $cfgNow.PSObject.Properties['agents'] -and @($cfgNow.agents).Count) {
-    $Agent = if (@($cfgNow.agents).Count -ge 2) { 'both' } else { [string]@($cfgNow.agents)[0] }
+# both = Claude Code and Codex; all = the three; or a list such as claude,antigravity
+function Get-AgentSet([string]$Text) {
+    return @(foreach ($a in @($Text -split '[,\s]+' | Where-Object { $_ })) {
+            switch ($a.ToLower()) { 'both' { 'claude'; 'codex' } 'all' { 'claude'; 'codex'; 'antigravity' } default { $a.ToLower() } }
+        })
 }
-$useCodex = $Agent -in 'codex', 'both'
+if (-not $Agent -and $cfgNow -and $cfgNow.PSObject.Properties['agents'] -and @($cfgNow.agents).Count) { $Agent = @($cfgNow.agents) -join ',' }
+$badAgent = @(Get-AgentSet $Agent | Where-Object { $_ -notin 'claude', 'codex', 'antigravity' })
+if ($badAgent) { throw "-Agent $($badAgent -join ', '): use claude, codex, antigravity, both, all or a list such as claude,antigravity" }
+$useClaude = -not $Agent -or (Get-AgentSet $Agent) -contains 'claude'
+$useCodex = (Get-AgentSet $Agent) -contains 'codex'
+$useAntigravity = (Get-AgentSet $Agent) -contains 'antigravity'
 Write-Host "  agent: $(if ($Agent) { $Agent } else { 'auto (what is installed)' })"
 
 # --- 1. hardware -------------------------------------------------------------------------------------------------------
@@ -144,9 +157,10 @@ $packages = @(
     @{ id = 'GitHub.GitLFS'; name = 'Git LFS'; test = { (Has git) -and (Quiet { git lfs version }).code -eq 0 } },
     @{ id = 'GitHub.cli'; name = 'GitHub CLI'; test = { Has gh } },
     @{ id = 'Python.Python.3.12'; name = 'Python 3.12'; test = { Test-Python } },
-    @{ id = 'OpenAI.Codex'; name = 'Codex CLI (OpenAI)'; agent = 'codex'; test = { Has codex } }
+    @{ id = 'OpenAI.Codex'; name = 'Codex CLI (OpenAI)'; agent = 'codex'; test = { Has codex } },
+    @{ id = 'Google.AntigravityCLI'; name = 'Antigravity CLI agy (Google)'; agent = 'antigravity'; test = { Has agy } }
 )
-$packages = @($packages | Where-Object { -not $_.agent -or ($_.agent -eq 'codex' -and $useCodex) })
+$packages = @($packages | Where-Object { -not $_.agent -or ($_.agent -eq 'codex' -and $useCodex) -or ($_.agent -eq 'antigravity' -and $useAntigravity) })
 $missing = @($packages | Where-Object { -not (& $_.test) })
 foreach ($p in $packages) { if ($missing -notcontains $p) { Item PASS $p.name 'installed' } }
 if ($missing) {
@@ -222,13 +236,15 @@ if ($haveRepo) {
 
 # A dry run changes nothing outside the root, and bootstrap.ps1 writes the config, the hooks dir, the skills and (after
 # its question) the agents' settings: in a dry run it runs only when every one of those is given (a scratch home).
-$notGiven = @('ConfigPath', 'ClaudeDir', 'CodexDir', 'AgentsSkillsDir', 'HooksDir' | Where-Object { -not $PSBoundParameters.ContainsKey($_) })
+$notGiven = @(@('ConfigPath', 'ClaudeDir', 'CodexDir', 'AgentsSkillsDir', 'HooksDir') + @($(if ($useAntigravity) { 'AntigravityDir' })) |
+    Where-Object { $_ -and -not $PSBoundParameters.ContainsKey($_) })
 if ($DryRun -and $notGiven) { Item INFO 'bootstrap.ps1' "not run: a dry run runs it only with every scratch folder given (missing -$($notGiven -join ', -'))" }
 elseif ($haveRepo) {
     $ba = [ordered]@{ Root = $Root; ClaudeDir = $ClaudeDir }
     if ($Agent) { $ba.Agent = $Agent }
     if ($CodexDir) { $ba.CodexDir = $CodexDir }
     if ($AgentsSkillsDir) { $ba.AgentsSkillsDir = $AgentsSkillsDir }
+    if ($AntigravityDir) { $ba.AntigravityDir = $AntigravityDir }
     if ($HooksDir) { $ba.HooksDir = $HooksDir }
     if ($Org) { $ba.Org = $Org }
     if ($env:GGF_CONFIG) { $ba.ConfigPath = $env:GGF_CONFIG }
@@ -260,13 +276,14 @@ if ($haveRepo -and $Android) {
 
 # --- 5. what cannot be scripted -------------------------------------------------------------------------------------------
 Write-Host "5. sign-ins only you can do"
-if ($Agent -in '', 'claude', 'both') { Item INFO 'Claude Code sign-in' 'run claude once (or open the desktop app) and sign in with your account; not detectable' }
+if ($useClaude) { Item INFO 'Claude Code sign-in' 'run claude once (or open the desktop app) and sign in with your account; not detectable' }
+if ($useAntigravity) { Item INFO 'Antigravity sign-in' 'run agy once (or open the Antigravity App) and sign in with your Google account; not detectable' }
 if ($useCodex) {
     if (-not (Has codex)) { Item TODO 'Codex sign-in' 'needs the Codex CLI' 'install it (step 2), then run setup again' }
     elseif ((Quiet { codex login status }).code -eq 0) { Item PASS 'Codex sign-in' ((Quiet { codex login status }).out -split "`n")[0] }
     else { Item TODO 'Codex sign-in' 'not signed in' 'codex login (or codex login --device-auth), then run setup again' }
 }
-Item INFO 'First session' "start Claude Code (claude) or Codex (codex) in $Root and paste the brief (docs/new-machine.md, 'The first session')"
+Item INFO 'First session' "start Claude Code (claude), Codex (codex) or Antigravity (agy) in $Root and paste the brief (docs/new-machine.md, 'The first session')"
 
 # --- check + summary -----------------------------------------------------------------------------------------------------
 $check = Join-Path $repo 'machine\check.ps1'
@@ -276,6 +293,7 @@ if (Test-Path $check) {
     $ca = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $check, '-Root', $Root, '-ClaudeDir', $ClaudeDir, '-Json', $json)
     if ($CodexDir) { $ca += @('-CodexDir', $CodexDir) }
     if ($AgentsSkillsDir) { $ca += @('-AgentsSkillsDir', $AgentsSkillsDir) }
+    if ($AntigravityDir) { $ca += @('-AntigravityDir', $AntigravityDir) }
     if ($HooksDir) { $ca += @('-HooksDir', $HooksDir) }
     if ($env:GGF_CONFIG) { $ca += @('-ConfigPath', $env:GGF_CONFIG) }
     $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'

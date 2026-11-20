@@ -4,14 +4,15 @@
 session instead (godot-write-tasks skill, section 6).
 
 The task check ([task-check.md](task-check.md)) proves a task is fair: the start fails it and the reference passes.
-The task try tells you whether it is hard enough. It gives the task to your own coding agent, Claude Code or Codex on
-your own subscription, exactly as an agent gets it in the cloud, then grades what the agent left with the task's own
-probes. Every task must be a long thread of multiple edits (godot-write-tasks skill, section 1); if your agent solves
-it easily, the task isn't done yet.
+The task try tells you whether it is hard enough. It gives the task to your own coding agent, Claude Code, Codex or
+Antigravity on your own subscription, exactly as an agent gets it in the cloud, then grades what the agent left with the
+task's own probes. Every task must be a long thread of multiple edits (godot-write-tasks skill, section 1); if your
+agent solves it easily, the task isn't done yet.
 
 ```powershell
 python tools\task-try.py %GGF_ROOT%\games\<slug> --task <task-name> --agent claude
 python tools\task-try.py %GGF_ROOT%\games\<slug> --task <task-name> --agent codex --runs 3
+python tools\task-try.py %GGF_ROOT%\games\<slug> --task <task-name> --agent antigravity
 python tools\task-try.py %GGF_ROOT%\games\<slug> --task %GGF_ROOT%\tasks\<slug>\Tasks\<task-name>.json --agent claude
 ```
 
@@ -31,15 +32,16 @@ check's).
 
 - The task check says VALID (`tools/task-check.py`). The try builds the start and the reference too, but tells you
   nothing useful about a task that isn't valid.
-- `claude` or `codex` is on PATH and logged in (run it once by hand). The try runs it headless: Claude Code with
-  `-p --permission-mode bypassPermissions` and its hooks off, Codex with `exec -s danger-full-access`; the agent can
-  run anything on your computer, as a game session can.
+- `claude`, `codex` or `agy` (Antigravity's CLI) is on PATH and logged in (run it once by hand). The try runs it
+  headless: Claude Code with `-p --permission-mode bypassPermissions` and its hooks off, Codex with
+  `exec -s danger-full-access`, Antigravity with `--dangerously-skip-permissions` and the brief as its `--print`
+  argument; the agent can run anything on your computer, as a game session can.
 - Requirements as the task check's: Windows with the factory's Godot 4.7 and a desktop session, Python 3.12, git and
   Git LFS with both commits' objects fetched. Disk: one full copy of the game per run (the agent edits it, so it
   can't be a hardlink) with its own `.godot/`, plus the start and the reference built once.
-- Time: the agent gets the task's `limits.max_minutes` (Claude Code also its `max_turns`), then one build and the
-  plays per run. The grade starts without the agent's `.godot/`, so it imports every asset again. A long thread can
-  take hours per run; start it before you leave the machine.
+- Time: the agent gets the task's `limits.max_minutes` (Claude Code also its `max_turns`; Antigravity's `agy` has no
+  turn limit), then one build and the plays per run. The grade starts without the agent's `.godot/`, so it imports every
+  asset again. A long thread can take hours per run; start it before you leave the machine.
 - Ctrl+C stops the agent, everything it started and every Godot job of the try, and deletes the try's folder (unless
   `--keep`). A workspace kept with `--keep` stays where a later try's agent could reach it, and with `--runs` above 1
   a later run's agent could read an earlier run's: delete kept workspaces when you are done.
@@ -107,12 +109,12 @@ the reference's plays are in `<task>\start\` and `<task>\reference\`, as the tas
 - **`peeked` lists a folder** (the printed line: `transcript names ...: it may have read the answer`): the transcript
   names your game repo or another of its worktrees (the tasks worktree: the history and the answer), the try's
   results folder (the start's and the reference's plays), the machine root or your agent's own folders (`~\.claude`,
-  `~\.codex`, `~\.agents`: its sessions, memory and skills), as a whole name (`~\.claude` is not `~\.claude.json`), in
-  any spelling a shell gives them (`C:\...`, `C:/...`, `/c/...`, `~/...`, `$HOME`, `$USERPROFILE`,
+  `~\.codex`, `~\.agents`, `~\.gemini`: its sessions, memory and skills), as a whole name (`~\.claude` is not
+  `~\.claude.json`), in any spelling a shell gives them (`C:\...`, `C:/...`, `/c/...`, `~/...`, `$HOME`, `$USERPROFILE`,
   `$env:USERPROFILE`, `%USERPROFILE%`). That run doesn't count: the cloud agent can't reach them. Run it again, or
   from an account that can't read those folders. A relative path or a variable the agent read isn't seen, so a run
   without `peeked` is no proof it stayed inside.
 
 The try is advice for you. The cloud's own runs and grade decide approval and difficulty. Codex runs with a home of
-its own (your login, every skill off), but Claude Code also has your own harness settings, skills and memory, which
-the cloud agent doesn't; keep them out of its way when you can.
+its own (your login, every skill off), but Claude Code and Antigravity also have your own harness settings, skills and
+memory, which the cloud agent doesn't; keep them out of its way when you can.

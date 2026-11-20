@@ -386,6 +386,9 @@ def build_rules(user, machine, session_ids, identities):
     # Codex: the tool's names, its model ids and the provider; a bare "codex" stays (games have lore codices)
     add('agent-mention', 'all', r'(?i)\b(?:openai[-_ ])?codex[-_ ](?:cli|exec)\b|\bopenai[-_ ]codex\b', 'agent-tool', 'codex')
     add('agent-mention', 'all', r'(?i)\bgpt-\d+(?:\.\d+)?(?:-[a-z0-9]+)*\b', 'agent-model', 'gpt-')
+    # Antigravity (Google): the tool's names and Gemini model ids; a bare "antigravity" or "Gemini" stays (game words)
+    add('agent-mention', 'all', r'(?i)\bgoogle[-_ ]antigravity\b|\bantigravity[-_ ](?:cli|ide|app)\b', 'agent-tool', 'antigravity')
+    add('agent-mention', 'all', r'(?i)\bgemini[-_ ]?\d+(?:\.\d+)*(?:-[a-z0-9]+)*\b', 'agent-model', 'gemini')
     add('agent-mention', 'all', r'(?i)chatgpt', cased('agent', 'Agent', 'AGENT'), 'chatgpt')
     add('agent-mention', 'all', r'(?i)openai', cased('provider', 'Provider', 'PROVIDER'), 'openai')
     add('agent-mention', 'all', r'(?i)\bclaude[-_ ]?(?:opus|sonnet|haiku|fable|instant)(?:[-_ ]?[0-9]+(?:[._-][0-9]+)*)?[\w.-]*', 'agent-model', 'claude')
@@ -2440,6 +2443,11 @@ def self_check():
                   ('session-folder', 'scrub', 'pass', f'C:\\Users\\{u1}\\AppData\\Local\\Temp\\claude\\C--x\\11111111-2222-4333-8444-555555555555\\scratchpad'),
                   ('user-glued', 'scrub', 'refuse', f'the shortcut Owner{u1}Desktop'),
                   ('user-word-left', 'scan', 'refuse', f'thanks {u1}!')]
+    # what the scrub leaves of a text: Antigravity's tool names and Gemini model ids go; the bare words are a game's own
+    outputs = [('agent-antigravity-scrubbed', 'Google Antigravity ran gemini-3.8-flash-medium, then Gemini 3 Pro',
+                'agent-tool ran agent-model, then agent-model Pro'),
+               ('agent-antigravity-game-words', 'antigravity boots under the Gemini constellation',
+                'antigravity boots under the Gemini constellation')]
     rnd = random.Random(7)
     noise = bytes(rnd.randrange(256) for _ in range(600))
 
@@ -2466,6 +2474,10 @@ def self_check():
         got = 'refuse' if enforced.search(t) else 'pass'
         bad += got != expect
         print(f'{"ok  " if got == expect else "FAIL"} {cid}: {got}' + ('' if got == expect else f' (expected {expect})'))
+    for cid, text, want in outputs:
+        got = apply_rules(text, rules, False, False)
+        bad += got != want
+        print(f'{"ok  " if got == want else "FAIL"} {cid}: {got}' + ('' if got == want else f' (expected {want})'))
     tmp = tempfile.mkdtemp(prefix='ggf-selfcheck-')
     try:
         for cid, name, data, expect in bins:
@@ -2477,7 +2489,7 @@ def self_check():
             print(f'{"ok  " if got == expect else "FAIL"} {cid}: {got}' + ('' if got == expect else f' (expected {expect})'))
     finally:
         remove_tree(tmp)
-    total = len(cases) + len(bins)
+    total = len(cases) + len(outputs) + len(bins)
     print(f'{"PASS" if not bad else "FAIL"}  self-check: {total - bad} of {total} samples as expected')
     return 1 if bad else 0
 

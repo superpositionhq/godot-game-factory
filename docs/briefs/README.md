@@ -1,14 +1,15 @@
 # Session briefs
 
-The prompts that start each session of godot-game-factory (Claude Code or Codex), as reusable templates. The rules
-every session follows are in the skills (`skills/`: godot-commit-always, godot-game-session, godot-desktop-game or
-godot-mobile-game, godot-sound, godot-write-tasks); the briefs carry the task. The coordinator and its helper and game
-sessions use the Claude desktop app's side sessions; a solo game runs in a terminal with either agent.
+The prompts that start each session of godot-game-factory (Claude Code, Codex or Antigravity), as reusable
+templates. The rules every session follows are in the skills (`skills/`: godot-commit-always, godot-game-session,
+godot-desktop-game or godot-mobile-game, godot-sound, godot-write-tasks); the briefs carry the task. The coordinator and
+its helper and game sessions use the Claude desktop app's side sessions; a solo game runs in a terminal with any of the
+agents.
 
 | File | For |
 |---|---|
 | [game-session.md](game-session.md) | template for a game-building session (placeholders) |
-| [solo-game.md](solo-game.md) | one game with one plain `claude` or `codex` session (terminal, no desktop app, no coordinator): paste and fill |
+| [solo-game.md](solo-game.md) | one game with one plain `claude`, `codex` or `agy` session (terminal, no desktop app, no coordinator): paste and fill |
 
 Both start a desktop game as they are; each ends with "A mobile game", the three changes that start an Android phone
 game instead.

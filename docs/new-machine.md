@@ -21,7 +21,7 @@ the screen), so together they never run more heavy or GPU jobs than the PC holds
 | Windows 11, 8+ logical cores, 16 GB RAM (32 GB recommended), 100 GB free on the drive that will hold the root | setup checks these first; the job slots scale with RAM |
 | A GPU with Vulkan and a current driver, and a signed-in desktop | plays, recordings and task plays are rendered; imports, exports and generator scripts run headless without one |
 | Only to push game repos: a GitHub account that is a member of `<org>` (the organisation, or user, that owns `godot-game-factory` and the private `godot-game-<slug>` repos), allowed to create private repos there. A game that is built and submitted from this PC stays on it and ships in the dataset zip: that needs no GitHub account, and a note that no GitHub repo was made is expected | setup asks whether to sign in |
-| A coding-agent account: Claude, or OpenAI (a ChatGPT plan or an API key) | the agent that builds the game: Claude Code in a terminal or the Claude desktop app (Code tab), or the Codex CLI in a terminal (`setup.ps1 -Agent claude\|codex\|both`) |
+| A coding-agent account: Claude, OpenAI (a ChatGPT plan or an API key) or Google (for Antigravity) | the agent that builds the game: Claude Code in a terminal or the Claude desktop app (Code tab), the Codex CLI in a terminal, or Antigravity (its CLI `agy` in a terminal, or its App or IDE) (`setup.ps1 -Agent claude\|codex\|antigravity\|both\|all`) |
 
 No engine licence and no engine account are needed. The engine and the Android toolchain are unpacked under the root;
 only the winget packages below are installed machine-wide (some show a UAC prompt).
@@ -38,7 +38,8 @@ The one command (in the folder holding `setup.ps1`):
 powershell -ExecutionPolicy Bypass -File setup.ps1 -Org <org>
 ```
 
-Options: `-Agent claude|codex|both` (the coding agent; default: what is installed), `-Root D:\GodotWork` (the machine
+Options: `-Agent claude|codex|antigravity|both|all` (the coding agent; `both` is Claude Code and Codex, a list such as
+`claude,antigravity` also works; default: what is installed), `-Root D:\GodotWork` (the machine
 root; default `%USERPROFILE%\GodotWork`, asked on the first run), `-Android` (also the Android toolchain, section 3),
 `-CloneGames` (clone every `<org>/godot-game-*` repo), `-Yes` (answer yes to every question).
 
@@ -46,7 +47,8 @@ What it does, in order (log: `<root>\.setup\setup.log`):
 
 1. **Hardware precheck** against the minimums above.
 2. **Software through winget**, after one question (winget accepts each package's licence; some show a UAC prompt):
-   Git + Git LFS, GitHub CLI, Python 3.12; with Codex the Codex CLI (`OpenAI.Codex`).
+   Git + Git LFS, GitHub CLI, Python 3.12; with Codex the Codex CLI (`OpenAI.Codex`); with Antigravity its CLI `agy`
+   (`Google.AntigravityCLI`; the App, `Google.Antigravity`, works too when you prefer it).
 3. **GitHub sign-in, asked first** (`gh auth login` in the browser; only people who push game repos need it) and your
    git `user.name` / `user.email`.
 4. **godot-game-factory**: cloned into `<root>\godot-game-factory`, then
@@ -63,7 +65,7 @@ What it does, in order (log: `<root>\.setup\setup.log`):
 
 | Step | How | Detected by |
 |---|---|---|
-| Agent sign-in | Claude Code: run `claude` once (or open the desktop app) and sign in. Codex: `codex login` (`--device-auth` without a browser) | Claude: not detectable; Codex: `codex login status` |
+| Agent sign-in | Claude Code: run `claude` once (or open the desktop app) and sign in. Codex: `codex login` (`--device-auth` without a browser). Antigravity: run `agy` once (or open the App) and sign in with your Google account | Claude, Antigravity: not detectable; Codex: `codex login status` |
 | GPU driver | the vendor's current driver; Godot renders with Vulkan | `check.ps1` lists the GPU |
 
 ## 3. The Android toolchain (for a mobile game's APK)
@@ -112,9 +114,9 @@ A missing piece is a WARN that names `get-android.ps1`.
 - **Desktop app, several games at once (Claude only):** open the Code tab in the root folder and start a coordinator
   session; add its session id to `<hooks dir>\recording-exclude.txt`. It starts the game sessions (`CONTINUE` for
   cloned games, `NEW` for new ones) from [briefs/game-session.md](briefs/game-session.md).
-- **Solo, one game in a terminal:** `cd <root>`, run `claude` or `codex -s danger-full-access`, and paste
+- **Solo, one game in a terminal:** `cd <root>`, run `claude`, `codex -s danger-full-access` or `agy`, and paste
   [briefs/solo-game.md](briefs/solo-game.md) with its placeholders filled. Same rules and the same recording with
-  either agent; you take the coordinator's decisions (pushes, recordings). What differs between the agents:
+  every agent; you take the coordinator's decisions (pushes, recordings). What differs between the agents:
   [AGENTS.md](../AGENTS.md), "Agents".
 
 Start sessions in the GodotWork root (or a game folder under it), never in another factory's root: the root's
@@ -137,10 +139,11 @@ makes it self-contained, `editor_data\export_templates\<version>.stable\`). Noth
 - `tools\godot-heavy.ps1` (the machine-wide job limiter) with `tools\ggf-root.ps1` and `tools\godot.json`; ffmpeg (one
   that is already on the machine is used; else the pinned 8.1.2, SHA-256 verified, into `tools\ffmpeg-8.1.2\`);
 - the recording hooks in the hooks dir (`hooks_dir` in the config, default `~\.godot-game-factory\hooks\`), wired into
-  `~\.claude\settings.json` for Claude Code and `~\.codex\hooks.json` + trust entries in `~\.codex\config.toml` for
-  Codex (backup first; asked first, `-Yes` skips the question; only the handlers that run `record-godot-action.ps1`
-  are added or updated, any other hook stays); the `godot-*` skills from `skills\` in
-  `~\.claude\skills\` and/or `~\.agents\skills\` (other skill folders untouched); `<root>\CLAUDE.md` importing
+  `~\.claude\settings.json` for Claude Code, `~\.codex\hooks.json` + trust entries in `~\.codex\config.toml` for
+  Codex and `~\.gemini\config\hooks.json` (the hook `godot-game-factory-recording`) for Antigravity (backup first;
+  asked first, `-Yes` skips the question; only the handlers that run `record-godot-action.ps1` are added or updated,
+  any other hook stays); the `godot-*` skills from `skills\` in `~\.claude\skills\`, `~\.agents\skills\` and/or
+  `~\.gemini\config\skills\` (other skill folders untouched); `<root>\CLAUDE.md` importing
   `godot-game-factory/CLAUDE.md` and/or `<root>\AGENTS.md` naming `godot-game-factory\AGENTS.md`;
 - Git LFS filters, the post-commit hook in every game repo (the commit recorder), and with `-CloneGames` every
   `<org>/godot-game-*` repo.
@@ -176,7 +179,7 @@ file: [../machine/README.md](../machine/README.md).
 given a scratch config, hooks dir and agent folders (bootstrap writes to all of them), and then against those only:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File machine/setup.ps1 -Org <org> -DryRun -Agent both -Root C:/ggf-test/GodotWork -ClaudeDir C:/ggf-test/home/.claude -CodexDir C:/ggf-test/home/.codex -AgentsSkillsDir C:/ggf-test/home/.agents/skills -HooksDir C:/ggf-test/home/.godot-game-factory/hooks -ConfigPath C:/ggf-test/home/.godot-game-factory/config.json
+powershell -ExecutionPolicy Bypass -File machine/setup.ps1 -Org <org> -DryRun -Agent all -Root C:/ggf-test/GodotWork -ClaudeDir C:/ggf-test/home/.claude -CodexDir C:/ggf-test/home/.codex -AgentsSkillsDir C:/ggf-test/home/.agents/skills -AntigravityDir C:/ggf-test/home/.gemini/config -HooksDir C:/ggf-test/home/.godot-game-factory/hooks -ConfigPath C:/ggf-test/home/.godot-game-factory/config.json
 ```
 
 Copy the real `settings.json`, `hooks.json` and `config.toml` into the scratch agent folders first to see exactly what

@@ -3,6 +3,7 @@ stood when a run started. No engine.
 
     python -m unittest discover -s tools/godot-replay/tests -v
 """
+import json
 import os
 import unittest
 
@@ -153,6 +154,83 @@ class Build(unittest.TestCase):
         self.assertEqual([s["paths"] for s in w["shell"]], [["assets/tmp_note.txt"]])
         self.assertEqual(self.paths(3, "content"), ["assets/mystery.tres"])
         self.assertEqual(self.paths(3, "inputs"), ["assets/orphan.wav.import", "steps/make.gd"])
+
+
+def ag(row):
+    """A row as Antigravity's hook leaves it: its own tool name and arguments, agent "antigravity"."""
+    return dict(row, agent="antigravity")
+
+
+class AsClaude(unittest.TestCase):
+    def test_known_tools_are_read_as_claude_codes(self):
+        bash = ledger.as_claude(ag({"tool": "run_command", "input": {"CommandLine": "godot.ps1 step", "Cwd": "C:/w"}}))
+        self.assertEqual((bash["tool"], bash["input"]["command"], bash["input"]["Cwd"]),
+                         ("Bash", "godot.ps1 step", "C:/w"))
+        w = ledger.as_claude(ag({"tool": "write_file", "input": {"Path": "C:/w/a.gd", "Content": "x\n"}}))
+        self.assertEqual((w["tool"], w["input"]), ("Write", {"file_path": "C:/w/a.gd", "content": "x\n"}))
+        e = ledger.as_claude(ag({"tool": "edit_file", "input": {"Path": "C:/w/a.gd", "Target": "x", "Replacement": "y",
+                                                               "AllowMultiple": True}}))
+        self.assertEqual((e["tool"], e["input"]), ("Edit", {"file_path": "C:/w/a.gd", "old_string": "x",
+                                                           "new_string": "y", "replace_all": True}))
+        a = ledger.as_claude(ag({"tool": "write_file", "input": {"Path": "C:/w/a.gd", "Content": "z", "Append": True}}))
+        self.assertEqual((a["tool"], a["input"]), ("Append", {"file_path": "C:/w/a.gd", "content": "z"}))
+
+    def test_another_file_tool_is_unreplayed_and_other_rows_stay(self):
+        r = ledger.as_claude(ag({"tool": "replace_file_content", "input": {"TargetFile": "C:/w/b.gd"}}))
+        self.assertEqual((r["tool"], r["input"]["file_path"]), ("Unreplayed", "C:/w/b.gd"))
+        for row in (ag({"tool": "read_file", "input": {"Path": "C:/w/a.gd"}}),
+                    {"agent": "codex", "tool": "run_command", "input": {"CommandLine": "dir"}}):
+            self.assertIs(ledger.as_claude(row), row)
+
+
+class BuildAntigravity(unittest.TestCase):
+    """The same kind of history made by Antigravity: its writes, edits and appends reconstruct the commit, its step run
+    is found in run_command, and a file another of its tools wrote is unknown."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = helpers.scratch()
+        repo = cls.repo = cls.root + "/games/tiny"
+        os.makedirs(repo)
+        helpers.git(repo, "init", "-q")
+        helpers.write(repo, "project.godot", "config_version=5\n")
+        helpers.write(repo, "workflow.jsonl", '{"id": "tiny-0001", "op": "game.create"}\n')
+        helpers.commit(repo, 0, "skeleton")
+        rec = helpers.Recording(cls.root + "/.recording/tiny", repo)
+        full = lambda rel: repo + "/" + rel
+        # window 1: a script written, edited and appended to; another file written by a tool the ledger cannot replay
+        helpers.write(repo, "game/main.gd", "extends Node2D\nvar a = 2\n# end\n")
+        rec.row(at(1), "write_file", {"Path": full("game/main.gd"), "Content": "extends Node2D\nvar a = 1\n"})
+        rec.row(at(2), "edit_file", {"Path": full("game/main.gd"), "Target": "a = 1", "Replacement": "a = 2"})
+        rec.row(at(3), "write_file", {"Path": full("game/main.gd"), "Content": "# end\n", "Append": True})
+        helpers.write(repo, "game/other.gd", "extends Node\n")
+        rec.row(at(4), "replace_file_content", {"TargetFile": full("game/other.gd"), "ReplacementChunks": []})
+        helpers.commit(repo, 10, "the script")
+        # window 2: a step written and run through run_command
+        helpers.write(repo, "steps/make.gd", "extends SceneTree\n# v1\n")
+        rec.row(at(11), "write_file", {"Path": full("steps/make.gd"), "Content": "extends SceneTree\n# v1\n"})
+        helpers.write(repo, "workflow.jsonl", helpers.read(repo, "workflow.jsonl") +
+                      '{"id": "tiny-0002", "op": "editor.step", "source": {"script": "steps/make.gd", "sha256": "%s"}}\n'
+                      % ledger.sha256(b"extends SceneTree\n# v1\n"))
+        rec.row(at(12), "run_command", {"CommandLine": STEP % ("steps/make.gd", "palette")},
+                "Command exited with code 0.\n[workflow] tiny-0002 editor.step steps/make.gd\nexit code 0 (2 s)\n")
+        helpers.commit(repo, 20, "the step")
+        with open(cls.root + "/.recording/tiny/actions.jsonl", encoding="utf-8") as f:
+            rows = [ag(json.loads(l)) for l in f if l.strip()]
+        with open(cls.root + "/.recording/tiny/actions.jsonl", "w", encoding="utf-8", newline="\n") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+        cls.led, cls.blobs = ledger.build({"game": "tiny", "repo": repo, "recording": cls.root + "/.recording/tiny",
+                                           "final": "HEAD", "work_dir": cls.root + "/work"})
+
+    def test_writes_edits_and_appends_reconstruct_the_commit(self):
+        checks = {c["path"]: c for c in self.led["windows"][1]["reconstruction"]}
+        self.assertTrue(checks["game/main.gd"]["match"], checks["game/main.gd"])
+        self.assertEqual(self.led["windows"][1]["events"]["unreplayed"], 1)
+
+    def test_the_step_run_is_found_in_run_command(self):
+        w = self.led["windows"][2]
+        self.assertEqual([(r["script"], r["exit_code"]) for r in w["runs"]], [("steps/make.gd", 0)])
+        self.assertEqual(self.blobs[w["runs"][0]["texts"]["steps/make.gd"]], b"extends SceneTree\n# v1\n")
 
 
 if __name__ == "__main__":

@@ -674,7 +674,7 @@ place a play can reach; where it doesn't, the task needs another reference. Writ
 [docs/task-probes.md](../../docs/task-probes.md), then check the game's tasks **together, in one background run** (one
 run prepares a commit several tasks share once, and the person can leave it running and come back). Write and commit
 every task first, then start the check as its own process so it outlives your turn and no tool timeout cuts it short
-(PowerShell, under either agent):
+(PowerShell, under any agent):
 
 ```powershell
 Start-Process python -WindowStyle Hidden -WorkingDirectory <GGF_ROOT>\godot-game-factory `
@@ -967,12 +967,12 @@ When tasks are returned for a fix:
   touch rules, a mobile game's play that chooses a renderer or a size, and anything against the format rules of
   section 0.
 - **Judge difficulty in the session; never run the task with another agent** (a try takes long and slows contractors
-  down). Don't run `tools/task-try.py` or start a fresh Claude Code or Codex session on a
-  task. Before committing, review each task against section 1 here, with the person: would a strong agent given only
-  the brief and the start solve it easily (25 minutes is a guide, not a cut-off)? It would when the brief points at
-  one place, the issues share one obvious cause, or the reference diff is mostly one file or one system. If so, extend
-  the thread back to an earlier attempt, merge it with its neighbouring issues, or drop it. Tell the person which
-  tasks you judged long enough and why, in a line each.
+  down). Don't run `tools/task-try.py` or start a fresh Claude Code, Codex or Antigravity
+  session on a task. Before committing, review each task against section 1 here, with the person: would a strong agent
+  given only the brief and the start solve it easily (25 minutes is a guide, not a cut-off)? It would when the brief
+  points at one place, the issues share one obvious cause, or the reference diff is mostly one file or one system. If
+  so, extend the thread back to an earlier attempt, merge it with its neighbouring issues, or drop it. Tell the person
+  which tasks you judged long enough and why, in a line each.
 
 Probes may measure the cause's effect directly, since the agent never sees them.
 

@@ -119,11 +119,11 @@ recorded commands. Never start the engine another way for something a mode does.
   lay the UI out with anchors and containers so it fills that frame.
 - **Content is text you write.** Scenes (`.tscn`), resources (`.tres`: materials, themes, environments, tuning data),
   scripts (`.gd`), shaders (`.gdshader`), `project.godot` and `export_presets.cfg` are text files: write and change
-  them with your own file tools (Claude Code: Write/Edit; Codex: apply_patch) and commit them. There is no editor step
-  for building a scene. Log each with `Scripts/godot.ps1 row`. After writing or changing one, run
-  `Scripts/godot.ps1 import` (scripts must parse) and a short `Scripts/godot.ps1 play`, and read the errors it prints:
-  a scene that names a missing file, a node path that is wrong or a resource with a bad property loads with errors,
-  not silently.
+  them with your own file tools (Claude Code: Write/Edit; Codex: apply_patch; Antigravity: write_file/edit_file) and
+  commit them. There is no editor step for building a scene. Log each with `Scripts/godot.ps1 row`. After writing or
+  changing one, run `Scripts/godot.ps1 import` (scripts must parse) and a short `Scripts/godot.ps1 play`, and read the
+  errors it prints: a scene that names a missing file, a node path that is wrong or a resource with a bad property loads
+  with errors, not silently.
   - In a scene or resource, name other files by their `res://` path (`[ext_resource type="Script"
     path="res://game/player.gd" id="1"]`). Leave `uid=` out unless you copy the file's real identity from its `.uid`
     or `.import` file; never invent a `uid://` string.
@@ -274,8 +274,9 @@ Never write **Superposition**, **game-factory** or **godot-game-factory** (any s
 is the game's own title: it is the window's title and names the folder the game saves in), `export_presets.cfg` (the
 company and product names an export writes into the player), generator steps, docs, commit messages, builds, in-game
 text, process arguments. Keep agent, model and provider names (**Claude / Anthropic / Opus**, **OpenAI / Codex CLI /
-GPT** model ids) out of game content and commit messages too (deliverables refuse or scrub them). Recording traces
-are fine: `workflow.jsonl` stays in the repo, row ids in commit messages are fine.
+GPT** model ids, **Google Antigravity / Gemini** model ids) out of game content and commit messages too (deliverables
+refuse or scrub them). Recording traces are fine: `workflow.jsonl` stays in the repo, row ids in commit messages are
+fine.
 
 ## Recording
 
@@ -286,7 +287,7 @@ are fine: `workflow.jsonl` stays in the repo, row ids in commit messages are fin
   `tools/scrub-workflow-rows.py --apply`, which appends the `log.correct` row). Banned names include the machine's
   account name (in paths): enforced in every non-script file; scripts and generator steps that already ran keep it
   (the packager scrubs them in every delivery).
-- The machine hooks (the same scripts under Claude Code and Codex) record every tool call to
+- The machine hooks (the same scripts under Claude Code, Codex and Antigravity) record every tool call to
   `<GGF_ROOT>\.recording\<slug>\actions.jsonl`, every prompt the person types and every reply you write to
   `messages.jsonl` beside it, and every commit to `commits.jsonl`; a dataset delivers the first two in
   `History/sessions/`. Leftover changes are auto-committed as `WIP` at the end of a turn (commit properly instead).

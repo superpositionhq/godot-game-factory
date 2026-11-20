@@ -1,26 +1,27 @@
-# Solo game brief (plain Claude Code or Codex)
+# Solo game brief (plain Claude Code, Codex or Antigravity)
 
-For one person building one game with one coding-agent session in a terminal, Claude Code (`claude`) or OpenAI Codex
-CLI (`codex`): no desktop app, no coordinator, no other sessions. The rules are the same as for a coordinated game
-session (the `godot-game-session` and `godot-commit-always` skills, installed by `machine/setup.ps1`); what the
-coordinator would do (decide pushes, relay directions, hand out store packs) is done by you, the person at the
-keyboard. Recordings need no screen, so the session runs the recording pipeline itself once its AutoPlay test passes
-([../godot-pipeline.md](../godot-pipeline.md)); you can go on using the PC meanwhile. With the desktop app and several
-games at once, start each game session from [game-session.md](game-session.md) instead.
+For one person building one game with one coding-agent session in a terminal, Claude Code (`claude`), OpenAI Codex
+CLI (`codex`) or Google Antigravity's CLI (`agy`): no desktop app, no coordinator, no other sessions. The rules are the
+same as for a coordinated game session (the `godot-game-session` and `godot-commit-always` skills, installed by
+`machine/setup.ps1`); what the coordinator would do (decide pushes, relay directions, hand out store packs) is done by
+you, the person at the keyboard. Recordings need no screen, so the session runs the recording pipeline itself once its
+AutoPlay test passes ([../godot-pipeline.md](../godot-pipeline.md)); you can go on using the PC meanwhile. With the
+desktop app and several games at once, start each game session from [game-session.md](game-session.md) instead.
 
 Start: open a terminal in the machine root (`cd <root>`, e.g. `C:\Users\<name>\GodotWork`; not another
 factory's root, whose `CLAUDE.md` and `AGENTS.md` load its own rules) and run one of
 
 - `claude` (its `<root>\CLAUDE.md` loads the godot-game-factory rules), or
 - `codex -s danger-full-access` (its `<root>\AGENTS.md` names the rules; the full-access sandbox is needed because
-  the job limiter uses machine-wide mutexes and git / gh need the network; `codex` asks once to trust the folder),
+  the job limiter uses machine-wide mutexes and git / gh need the network; `codex` asks once to trust the folder), or
+- `agy` (its `<root>\AGENTS.md` names the rules; keep its terminal sandbox off, no `--sandbox`, for the same reasons;
+  `agy` asks once to trust the folder),
 
 then paste the `text` block below with the placeholders filled. Stay in this one session for the whole game where you
-can (resume it with `claude --continue` or `codex resume --last`): the recording (every tool call, every prompt you
-type and every reply the model writes) follows the session, and a new session is filed under the game only from its
-first tool call that names the game folder. For a game that has a fill-in in
-`games/` next to this file, take the pitch, scenarios and story from it; for a new game, write them in a few lines
-each.
+can (resume it with `claude --continue`, `codex resume --last` or `agy --continue`): the recording (every tool call,
+every prompt you type and every reply the model writes) follows the session, and a new session is filed under the game
+only from its first tool call that names the game folder. For a game that has a fill-in in `games/` next to this file,
+take the pitch, scenarios and story from it; for a new game, write them in a few lines each.
 
 | Placeholder | From |
 |---|---|

@@ -115,7 +115,8 @@ source (config set by hand, config from bootstrap, or computed at run time). The
 A PC may also run other factories (roots `%USERPROFILE%\Work` and `%USERPROFILE%\UnityWork`, configs
 `%USERPROFILE%\.game-factory\` and `%USERPROFILE%\.unity-game-factory\`). Each keeps its own root, config, hooks
 folder, session map and skills, and each one's bootstrap adds its hook entries next to the others' in
-`~\.claude\settings.json` / `~\.codex\hooks.json` without touching them (ours run `record-godot-action.ps1`, theirs
+`~\.claude\settings.json` / `~\.codex\hooks.json` / `~\.gemini\config\hooks.json` (each factory's own named hook there)
+without touching them (ours run `record-godot-action.ps1`, theirs
 `record-action.ps1` and `record-unity-action.ps1`). A session is recorded by the factory whose `games\<slug>` (or
 extra project) one of its tool calls names, and from then on every call of it is recorded there (see Recording
 below); for every other session this factory's hook ends at once. Nothing of another factory is ever written. What
@@ -136,27 +137,28 @@ they share on purpose:
 
 | Path | Installed to | What |
 |---|---|---|
-| `setup.ps1` | | the one entry point for a clean PC: hardware precheck, winget installs (Git, Git LFS, gh, Python, the Codex CLI with Codex), gh sign-in (asked) + git identity, the godot-game-factory clone, then `get-godot.ps1`, `bootstrap.ps1`, with `-Android` `get-android.ps1`, and `check.ps1`; PASS/TODO list, log `<root>\.setup\setup.log` |
+| `setup.ps1` | | the one entry point for a clean PC: hardware precheck, winget installs (Git, Git LFS, gh, Python, the Codex CLI with Codex, the Antigravity CLI `agy` with Antigravity), gh sign-in (asked) + git identity, the godot-game-factory clone, then `get-godot.ps1`, `bootstrap.ps1`, with `-Android` `get-android.ps1`, and `check.ps1`; PASS/TODO list, log `<root>\.setup\setup.log` |
 | `godot.json` | `<root>\tools\` | the pinned engine: version, exe names, export templates' folder, download URLs, SHA-512 |
 | `get-godot.ps1` | `<root>\godot\<version>\` | downloads the editor and the export templates godot.json names, verifies SHA-512, unpacks them self-contained; a part that is there is left alone |
 | `android.json` | | the pinned JDK and Android command-line tools: URLs, SHA-256 |
 | `get-android.ps1` | `<root>\android\` | the Android toolchain (above) and the editor settings an export reads; asks before accepting the Android SDK licence agreements (`-Yes` accepts) |
-| `bootstrap.ps1` | | idempotent setup: config + layout, tools, ffmpeg, hooks + each agent's settings merge (`-Agent claude\|codex\|both`; prints what the hooks record and asks first; `-Yes` skips the question), the `godot-*` skills, root CLAUDE.md / AGENTS.md, LFS, gh, game repo hooks (`-CloneGames`) |
+| `bootstrap.ps1` | | idempotent setup: config + layout, tools, ffmpeg, hooks + each agent's settings merge (`-Agent claude\|codex\|antigravity\|both\|all` or a list; prints what the hooks record and asks first; `-Yes` skips the question), the `godot-*` skills, root CLAUDE.md / AGENTS.md, LFS, gh, game repo hooks (`-CloneGames`) |
 | `check.ps1` | | read-only PASS/WARN/FAIL report: the engine and its export templates, git, Git LFS, gh, Python, ffmpeg, disk, the job slots and where each count comes from, hooks, agents, skills, and the Android toolchain (`Android toolchain (mobile games)`; a missing piece is a WARN: mobile games still work, except the APK) |
 | `get-ffmpeg.ps1` | `<root>\tools\ffmpeg-8.1.2\` | uses an ffmpeg that is already there (the config's, PATH); else downloads gyan.dev ffmpeg 8.1.2 full_build .7z, verifies SHA-256 `0fff1889...7059`, unpacks |
 | `lib/ggf-root.ps1` | `<root>\tools\`, the hooks dir | root/config resolver (also `Get-GGFHooksDir`, `Get-GGFAgents`, `Get-GGFGodot`, `Get-GGFPlatform`, `Get-GGFAndroid`, `Set-GGFAndroidEnv`, `Get-GGFFfmpeg`, the slot mutexes), dot-sourced by every script |
 | `lib/ggfroot.py` | | the same for Python tools (`root`, `ggb`, `org`, `engine`, `godot_exe`, `android`, `android_env`, `ffmpeg`, `computed_slots`, `slot_plan`, `out`, `check_free`) |
 | `lib/codex-hooks.ps1` | | Codex hook trust: the `[hooks.state]` entries Codex needs in `config.toml` before it runs a hook (bootstrap writes ours, check compares) |
 | `tools/godot-heavy.ps1` | `<root>\tools\godot-heavy.ps1` | machine-wide job limiter: `heavy_slots` general slots + `gpu_slots` GPU slots, one named mutex per slot (shared with other factories, see above: a killed job leaks none; VRAM guard), counts from the config or the hardware formula above, `-Low` for background work, GPU auto-detected (the Godot exe without `--headless`, an exported player under a `Build` or `builds` folder, also behind a launcher; `-Gpu` forces it, `--headless` always rules it out), log `.recording\_heavy-jobs.jsonl`. Installed next to a copy of `lib\ggf-root.ps1` |
-| `hooks/record-godot-action.ps1` | the hooks dir | the agent hook (Claude Code: PostToolUse / PostToolUseFailure / Stop, and UserPromptSubmit / SessionEnd with `-Messages`; Codex: PostToolUse / Stop, and UserPromptSubmit / SessionEnd / SubagentStop with `-Messages`, all with `-Agent codex`): every tool call of a game session to `.recording\<project>\actions.jsonl` (earlier calls backfilled from the transcript, see Recording), every prompt the person typed and every reply the model wrote to `.recording\<project>\messages.jsonl` (read from the transcript); Stop auto-commits leftovers as `WIP` (none while conflicts are unresolved or HEAD is detached) |
+| `hooks/record-godot-action.ps1` | the hooks dir | the agent hook (Claude Code: PostToolUse / PostToolUseFailure / Stop, and UserPromptSubmit / SessionEnd with `-Messages`; Codex: PostToolUse / Stop, and UserPromptSubmit / SessionEnd / SubagentStop with `-Messages`, all with `-Agent codex`; Antigravity: PostToolUse / Stop with `-Agent antigravity`): every tool call of a game session to `.recording\<project>\actions.jsonl` (earlier calls backfilled from the transcript, see Recording), every prompt the person typed and every reply the model wrote to `.recording\<project>\messages.jsonl` (read from the transcript); Stop auto-commits leftovers as `WIP` (none while conflicts are unresolved or HEAD is detached) |
 | `hooks/record-godot-commit.ps1` | the hooks dir | called by each game repo's post-commit hook: `.recording\<repo>\commits.jsonl` |
 | `hooks/settings-hooks.json` | merged into `~\.claude\settings.json` | Claude Code: the five hook entries (PostToolUse, PostToolUseFailure, Stop, UserPromptSubmit, SessionEnd; `{{HOOKS_DIR}}` filled in) |
 | `hooks/codex-hooks.json` | merged into `~\.codex\hooks.json` | Codex: the five hook entries (PostToolUse, Stop, SubagentStop, UserPromptSubmit, SessionEnd; `{{HOOKS_DIR}}` filled in), trusted in `~\.codex\config.toml` |
+| `hooks/antigravity-hooks.json` | merged into `~\.gemini\config\hooks.json` | Antigravity: the hook `godot-game-factory-recording` with PostToolUse and Stop (`{{HOOKS_DIR}}` filled in); its CLI, App and IDE read that file |
 | `hooks/recording-exclude.txt` | the hooks dir (once) | session ids never recorded (the coordinator) |
 | `install-git-hook.ps1` | `<game>\.git\hooks\post-commit` | appends the commit recorder's line after Git LFS's own lines (before another tool's final `exit` or `exec`); warns when the recorder isn't in the hooks dir or another tool's hook can end before it. bootstrap.ps1 runs it for every game under `<root>\games` |
-| `tests/test-recording.ps1` | | the recording hook and the reasoning-summary settings on made-up transcripts in a scratch folder of its own (`-Scratch`, else `<clone>\.local\tests\`): whole tool results, the cut at 1,000,000 characters, picture markers, a saved command output, a session of no game of this root leaving nothing, `thinking` rows of both agents, subagents of both agents, `-Backfill`, `config.toml`: `powershell -NoProfile -ExecutionPolicy Bypass -File machine\tests\test-recording.ps1`; exit code = failed checks |
+| `tests/test-recording.ps1` | | the recording hook and the reasoning-summary settings on made-up transcripts in a scratch folder of its own (`-Scratch`, else `<clone>\.local\tests\`): whole tool results, the cut at 1,000,000 characters, picture markers, a saved command output, a session of no game of this root leaving nothing, `thinking` rows of Claude Code and Codex, their subagents, Antigravity's own hook input and transcript, `-Backfill`, `config.toml`: `powershell -NoProfile -ExecutionPolicy Bypass -File machine\tests\test-recording.ps1`; exit code = failed checks |
 
-The hooks dir is `hooks_dir` in the config, default `~\.godot-game-factory\hooks\`. One copy serves both agents.
+The hooks dir is `hooks_dir` in the config, default `~\.godot-game-factory\hooks\`. One copy serves every agent.
 `recording-sessions.json` (session id -> project map) is runtime state: bootstrap creates it empty next to the hooks
 and never overwrites it. The hook keeps two more state files there: `recording-backfill.json` (the sessions whose
 earlier tool calls were imported) and `recording-messages.json` (transcript file -> bytes read, for `messages.jsonl`).
@@ -190,10 +192,11 @@ replay (`tools/godot-replay/`, [../docs/godot-replay.md](../docs/godot-replay.md
   once (`recording-backfill.json` next to the hooks: count, transcript, imported tool_use_ids), and a call imported this
   way is never written again by its own live hook.
 - **A session mapped without its backfill:** `powershell -ExecutionPolicy Bypass -File
-  <hooks dir>\record-godot-action.ps1 -Backfill <session id> [-TranscriptPath <file>] [-Agent codex]` inserts the rows
-  before that session's first row in `actions.jsonl` (finds the transcript under `~\.claude\projects\`, or
-  `~\.codex\sessions\` with `-Agent codex`, when not given); a second run does nothing. The same call also imports
-  that session's messages.
+  <hooks dir>\record-godot-action.ps1 -Backfill <session id> [-TranscriptPath <file>] [-Agent codex|antigravity]`
+  inserts the rows before that session's first row in `actions.jsonl` (finds the transcript under
+  `~\.claude\projects\`, `~\.codex\sessions\` with `-Agent codex`, or `~\.gemini\antigravity-cli\brain\`
+  (`antigravity`, `antigravity-ide`) with `-Agent antigravity`, when not given); a second run does nothing. The same
+  call also imports that session's messages.
 - Live rows carry no `status`; every row of a backfill carries `from_transcript`, so the two are never confused.
 - **Subagents.** A subagent's tool calls and messages are filed under its session, each row with `subagent`: Claude
   Code `agent-<agent_id>` (its transcript `<session>\subagents\agent-<agent_id>.jsonl`), Codex its thread id (its own
@@ -204,6 +207,19 @@ replay (`tools/godot-replay/`, [../docs/godot-replay.md](../docs/godot-replay.md
   other message one agent sends another, so such a message is a `user` row with only its readable header (message
   type, task name, sender) and `encrypted` true. When a subagent's call maps the session (its hook names its own rollout
   as `transcript_path`), the backfill reads the session's rollout and every subagent's.
+- **Antigravity.** Its hook input is its own (camelCase: `conversationId`, `transcriptPath`, `toolCall`, `stepIdx`; the
+  session id is the conversation id) and holds no tool result, and it reads every hook's answer from stdout as JSON
+  (the hook prints `{}`). The rows come from its transcript, `transcript_full.jsonl` beside the `transcript.jsonl` the
+  hook names (`<app data>\brain\<conversation>\.system_generated\logs\`; app data is `~\.gemini\antigravity-cli` for
+  the CLI, `antigravity` for the App, `antigravity-ide` for the IDE): one step per line; a `PLANNER_RESPONSE` step holds
+  the reply, the reasoning (`thinking`) and the tool calls, and the k-th call's result is the step after it at
+  `step_index` + 1 + k. Antigravity writes that result after the call's hook has run, so every hook call of a recorded
+  session writes the calls the transcript completed since the last one (`recording-antigravity.json` next to the
+  hooks: transcript file, bytes read, calls waiting for their result), all with `"status": "from_transcript"`: a call's
+  row lands at the next tool call or at the turn's Stop. `tool_use_id` is `<conversation id>:<result step>`. A prompt
+  is the text inside the `USER_INPUT` step's `<USER_REQUEST>` (Antigravity adds the time and setting changes around it).
+  It has no `UserPromptSubmit` or `SessionEnd` hook: prompts and replies are read at every Stop. A subagent is a
+  conversation of its own, recorded as a session of its own once its calls name a game.
 - **Messages.** Every prompt the person typed, every reply the model wrote and every reasoning summary the agent saved
   goes to `<root>\.recording\<project>\messages.jsonl`, one row each: `time`, `project`, `session_id`, `agent`, `role`
   (`user`, `assistant` or `thinking`), `message_id`, `text`, and where they apply `model`, `images` (pictures attached
@@ -214,7 +230,7 @@ replay (`tools/godot-replay/`, [../docs/godot-replay.md](../docs/godot-replay.md
   read what the transcript gained since the last read (`recording-messages.json` next to the hooks: transcript file ->
   bytes read), so a session mapped late gets its earlier messages too. A `thinking` row is a reasoning summary the
   agent saved for a turn (`redacted` true and no text when the agent saved it without readable text);
-  `machine/bootstrap.ps1` turns the summaries on for both agents (Claude Code `showThinkingSummaries` and
+  `machine/bootstrap.ps1` turns the summaries on for Claude Code and Codex (Claude Code `showThinkingSummaries` and
   `alwaysThinkingEnabled` in `settings.json`; Codex `model_reasoning_summary = "detailed"` and
   `hide_agent_reasoning = false` in `config.toml`) and `machine/check.ps1` checks them; a Codex model that gives no
   summaries leaves only the textless rows. Not recorded here: tool calls and results (`actions.jsonl` has them, each
@@ -222,7 +238,7 @@ replay (`tools/godot-replay/`, [../docs/godot-replay.md](../docs/godot-replay.md
   picture or other binary payload as a short marker), text the agent tool puts into a turn itself (meta rows,
   compaction summaries, background-task notices, API error notices) and a fork's copied context.
 - **`record-godot-action.ps1 -Backfill all`** imports the messages of every mapped session whose transcript is still on
-  this machine (either agent), and nothing else. It reads each transcript from its start, adds what is not yet in
+  this machine (any agent), and nothing else. It reads each transcript from its start, adds what is not yet in
   `messages.jsonl` and puts that session's rows back in the transcript's order. A transcript written while the agent's
   summary setting was off holds no summary text: those rows come out `redacted`.
   The summary is what the agent saved: Claude Code's `thinking` blocks, Codex's `summary_text` and, where the rollout
@@ -230,9 +246,13 @@ replay (`tools/godot-replay/`, [../docs/godot-replay.md](../docs/godot-replay.md
   result and saved to a file (`persistedOutputPath`) is read from that file while it is there.
 - Row schemas: `actions.jsonl` rows carry `"schema": "agent-action/v0"`, `messages.jsonl` rows
   `"schema": "agent-message/v0"`, `commits.jsonl` rows `"schema": "commit/v0"`.
-- Every row carries `agent` (`claude` or `codex`). Codex rows differ in two ways: file edits are `apply_patch` rows
-  (`input.command` = the patch), and there is no `PostToolUseFailure` (a failed call is a `PostToolUse` whose
-  response shows the exit code).
+- Every row carries `agent` (`claude`, `codex` or `antigravity`). Codex rows differ in two ways: file edits are
+  `apply_patch` rows (`input.command` = the patch), and there is no `PostToolUseFailure` (a failed call is a
+  `PostToolUse` whose response shows the exit code). Antigravity rows keep its own tool names and arguments
+  (`run_command` with `CommandLine`, `write_file`, `edit_file`, `replace_file_content`, ...); a failed call is a
+  `PostToolUse` row with `error`. The replay ledger reads `run_command` as `Bash`, `write_file` as `Write` (or an
+  append) and `edit_file` as `Edit` (`tools/godot-replay/ledger.py` `as_claude`); a file another of its tools writes is
+  unknown until the next commit.
 - Nothing is recorded while `GGF_NO_RECORDING` (or another factory's `UGF_NO_RECORDING` / `GF_NO_RECORDING`) is set:
   a task try's agent is not a game session.
 - **Codex hook trust.** Codex runs a hook from `hooks.json` only after it is trusted (a hash of the hook in
